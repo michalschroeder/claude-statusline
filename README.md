@@ -4,6 +4,17 @@ My Claude Code statusline and supporting hooks. Renders a compact, ANSI-colored 
 
 ![tests](https://github.com/michalschroeder/claude-statusline/actions/workflows/test.yml/badge.svg)
 
+**API session** (cost + tokens + duration + lines + context bar):
+![api session](screenshot-api.svg)
+
+**Claude.ai plan session** (rate limits + higher context usage):
+![plan session](screenshot-plan.svg)
+
+## Requirements
+
+- Node.js 18+
+- A [Nerd Font](https://www.nerdfonts.com/) in your terminal (for `󰾅` `󰉋` `󰷈` `󰔚` `󰃭` glyphs)
+
 ## Install
 
 Clone the repo:
@@ -75,13 +86,18 @@ Segments shown left to right:
 
 **Skills chip:** reads `/tmp/claude-skills-<session>.log`; each line is `<timestamp> <skill-name>`. Written by the two bash hooks. `plugin:skill` entries have the prefix stripped. Uses `${CLAUDE_CONFIG_DIR:-$HOME/.claude}` for skill-existence checks.
 
-## Screenshot
+## Screenshots
 
-Generate via [freeze](https://github.com/charmbracelet/freeze):
+Regenerate via [freeze](https://github.com/charmbracelet/freeze):
 
 ```sh
-echo '{"model":{"display_name":"claude-sonnet-4-6"},"session_id":"abc123","workspace":{"current_dir":"/home/ms/projects/claude-statusline","project_dir":"/home/ms/projects/claude-statusline"},"context_window":{"remaining_percentage":72,"total_input_tokens":15420,"total_output_tokens":3201},"cost":{"total_cost_usd":0.42,"total_duration_ms":45000},"worktree":null}' \
-  | node hooks/statusline.js | freeze -o screenshot.svg
+# API session
+echo '{"model":{"display_name":"claude-sonnet-4-6"},"session_id":"demo-api","effort":{"level":"medium"},"workspace":{"current_dir":"/home/ms/projects/claude-statusline","project_dir":"/home/ms/projects/claude-statusline"},"context_window":{"remaining_percentage":58,"total_input_tokens":28400,"total_output_tokens":5120},"cost":{"total_cost_usd":2.34,"total_duration_ms":312000,"total_lines_added":87,"total_lines_removed":23}}' \
+  | node hooks/statusline.js | freeze --language ansi -o screenshot-api.svg
+
+# Claude.ai plan session
+echo '{"model":{"display_name":"claude-sonnet-4-6"},"session_id":"demo-plan","effort":{"level":"high"},"workspace":{"current_dir":"/home/ms/projects/claude-statusline","project_dir":"/home/ms/projects/claude-statusline"},"context_window":{"remaining_percentage":28,"total_input_tokens":91200,"total_output_tokens":18340},"cost":{"total_cost_usd":8.71,"total_duration_ms":1845000,"total_lines_added":312,"total_lines_removed":104},"rate_limits":{"five_hour":{"used_percentage":67},"seven_day":{"used_percentage":23}}}' \
+  | node hooks/statusline.js | freeze --language ansi -o screenshot-plan.svg
 ```
 
 ## License
