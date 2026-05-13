@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# UserPromptSubmit hook: log slash-command skill invocations to the session skill log.
+input=$(cat)
+session=$(printf '%s' "$input" | jq -r '.session_id // empty')
+prompt=$(printf '%s' "$input" | jq -r '.prompt // empty')
+cwd=$(printf '%s' "$input" | jq -r '.cwd // empty')
+
+[ -z "$session" ] && exit 0
+
+case "$prompt" in
+  /*)
+    skill=$(printf '%s' "$prompt" | sed 's|^/||; s| .*||')
+    [ -z "$skill" ] && exit 0
+    config_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+    [ -e "${cwd:-$PWD}/.agents/skills/$skill" ] || [ -e "$config_dir/skills/$skill" ] || exit 0
+    printf '%s %s\n' "$(date +%s)" "$skill" >> "/tmp/claude-skills-$session.log"
+    ;;
+esac
+
+exit 0

@@ -1,0 +1,258 @@
+#!/usr/bin/env node
+// Claude Code Statusline - Enhanced Edition
+
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+
+// ANSI helpers
+const dim = (s) => `\x1b[2m${s}\x1b[0m`;
+const bold = (s) => `\x1b[1m${s}\x1b[0m`;
+const yellow = (s) => `\x1b[33m${s}\x1b[0m`;
+const green = (s) => `\x1b[32m${s}\x1b[0m`;
+const red = (s) => `\x1b[31m${s}\x1b[0m`;
+const cyan = (s) => `\x1b[36m${s}\x1b[0m`;
+const orange = (s) => `\x1b[38;5;208m${s}\x1b[0m`;
+const blink_red = (s) => `\x1b[5;31m${s}\x1b[0m`;
+const dimCyan = (s) => `\x1b[2;36m${s}\x1b[0m`;
+
+/**
+ * Format a number with k/M suffixes for compact display.
+ * 523 → "523", 4500 → "4.5k", 15000 → "15k", 1200000 → "1.2M"
+ */
+function formatCompact(n) {
+  if (n == null || n <= 0) return '';
+  if (n < 1000) return String(Math.round(n));
+  if (n < 10000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+  if (n < 1000000) return Math.round(n / 1000) + 'k';
+  return (n / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
+}
+
+/**
+ * Read current git branch from .git/HEAD directly (no subprocess).
+ * Supports worktrees (.git file with gitdir: indirection).
+ * Returns '' on any failure.
+ */
+function getGitBranch(projectDir) {
+  try {
+    let gitPath = path.join(projectDir, '.git');
+    const stat = fs.statSync(gitPath);
+
+    // Worktree support: .git is a file containing "gitdir: <path>"
+    if (stat.isFile()) {
+      const content = fs.readFileSync(gitPath, 'utf8').trim();
+      const match = content.match(/^gitdir:\s*(.+)$/);
+      if (!match) return '';
+      gitPath = path.resolve(projectDir, match[1]);
+    }
+
+    const headPath = path.join(gitPath, 'HEAD');
+    const head = fs.readFileSync(headPath, 'utf8').trim();
+
+    // Normal branch: "ref: refs/heads/feature/my-branch"
+    if (head.startsWith('ref: refs/heads/')) {
+      return head.slice('ref: refs/heads/'.length);
+    }
+
+    // Detached HEAD: return short hash
+    if (/^[0-9a-f]{40}$/.test(head)) {
+      return head.slice(0, 7);
+    }
+
+    return '';
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Format cost as $X.XX with color thresholds.
+ */
+function formatCost(totalCost) {
+  if (totalCost == null || totalCost <= 0) return '';
+  const formatted = '$' + totalCost.toFixed(2);
+  if (totalCost < 1) return green(formatted);
+  if (totalCost < 5) return yellow(formatted);
+  if (totalCost < 10) return orange(formatted);
+  return red(formatted);
+}
+
+/**
+ * Format milliseconds as compact human duration: 45s, 10m, 1h 5m.
+ */
+function formatDuration(ms) {
+  if (ms == null || ms <= 0) return '';
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `⏱ ${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `⏱ ${m}m`;
+  const h = Math.floor(m / 60);
+  const rem = m % 60;
+  return rem > 0 ? `⏱ ${h}h ${rem}m` : `⏱ ${h}h`;
+}
+
+/**
+ * Build context bar with colored progress indicator.
+ */
+function buildContextBar(remaining) {
+  if (remaining == null) return '';
+  const rem = Math.round(remaining);
+  const used = Math.max(0, Math.min(100, 100 - rem));
+  const filled = Math.floor(used / 10);
+  const bar = '\u2588'.repeat(filled) + '\u2591'.repeat(10 - filled);
+  const label = `${bar} ${used}%`;
+
+  if (used < 50) return green(label);
+  if (used < 65) return yellow(label);
+  if (used < 80) return orange(label);
+  return blink_red(`\u{1F480} ${label}`);
+}
+
+// Read JSON from stdin
+let input = '';
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', (chunk) => (input += chunk));
+process.stdin.on('end', () => {
+  try {
+    const data = JSON.parse(input);
+    const homeDir = os.homedir();
+
+    // Extract data fields
+    const model = data.model?.display_name || 'Claude';
+    const dir = data.workspace?.current_dir || process.cwd();
+    const projectDir = data.workspace?.project_dir || dir;
+    const session = data.session_id || '';
+    const remaining = data.context_window?.remaining_percentage;
+    const totalCost = data.cost?.total_cost_usd;
+    const inputTokens = data.context_window?.total_input_tokens;
+    const outputTokens = data.context_window?.total_output_tokens;
+    const linesAdded = data.cost?.total_lines_added;
+    const linesRemoved = data.cost?.total_lines_removed;
+    const effortLevel = data.effort?.level;
+    const thinkingEnabled = data.thinking?.enabled;
+    const vimMode = data.vim?.mode;
+    const agentName = data.agent?.name;
+    const sessionName = data.session_name;
+    const outputStyle = data.output_style?.name;
+    const rateLimitFiveHour = data.rate_limits?.five_hour?.used_percentage;
+    const rateLimitSevenDay = data.rate_limits?.seven_day?.used_percentage;
+    const totalDurationMs = data.cost?.total_duration_ms;
+    const addedDirs = data.workspace?.added_dirs;
+    const worktreeName = data.worktree?.name;
+    const version = data.version;
+
+    const segments = [];
+
+
+    // Model
+    segments.push(dim(model));
+
+    // Effort + thinking
+    if (effortLevel) segments.push(yellow(`󰾅 ${effortLevel}`));
+
+    // Loaded skills (most-recently invoked first 3, written by PreToolUse Skill hook)
+    if (session) {
+      try {
+        const lines = fs
+          .readFileSync(`/tmp/claude-skills-${session}.log`, 'utf8')
+          .trim()
+          .split('\n');
+        const order = [];
+        const seen = new Set();
+        for (let i = lines.length - 1; i >= 0; i--) {
+          const name = lines[i].split(' ').slice(1).join(' ');
+          if (!name || seen.has(name)) continue;
+          seen.add(name);
+          order.push(name);
+        }
+        if (order.length) {
+          const shown = order
+            .slice(0, 3)
+            .reverse()
+            .map((n) => (n.includes(':') ? n.split(':').slice(1).join(':') : n));
+          const more = order.length > 3 ? ` +${order.length - 3}` : '';
+          segments.push(dim(` ${shown.join(',')}${more}`));
+        }
+      } catch {}
+    }
+
+// Output style (only when non-default)
+    if (outputStyle && outputStyle.toLowerCase() !== 'default') segments.push(dim(`style:${outputStyle}`));
+
+    // Vim mode
+    if (vimMode) segments.push(dim(`vim:${vimMode}`));
+
+    // Git branch — hidden inside a worktree when branch is the expected
+    // `worktree-<name>` (the ⊕ chip already conveys it). Surfaces only when
+    // the branch has diverged from that convention (manual checkout, detached
+    // HEAD, rename, etc.).
+    const branch = getGitBranch(projectDir);
+    const expectedWorktreeBranch = worktreeName ? `worktree-${worktreeName}` : null;
+    if (branch && branch !== expectedWorktreeBranch) {
+      const MAX = 50;
+      const shown = branch.length > MAX
+        ? `${branch.slice(0, 30)}...${branch.slice(-(MAX - 30 - 3))}`
+        : branch;
+      segments.push(dimCyan(`⎇ ${shown}`));
+    }
+
+    // Worktree
+    if (worktreeName) segments.push(dim(`⊕ ${worktreeName}`));
+
+    // Agent name
+    if (agentName) segments.push(bold(agentName));
+
+    // Directory (when inside a worktree, show the parent project name instead of the worktree dir)
+    let dirLabel = path.basename(dir);
+    if (worktreeName) {
+      const marker = `${path.sep}.claude${path.sep}worktrees${path.sep}`;
+      const idx = dir.indexOf(marker);
+      if (idx !== -1) dirLabel = path.basename(dir.slice(0, idx));
+    }
+    segments.push(dim(`󰉋 ${dirLabel}`));
+
+    // Added dirs
+    if (addedDirs?.length) segments.push(dim(`+${addedDirs.length}dir`));
+
+    // Cost
+    const costStr = formatCost(totalCost);
+    if (costStr) segments.push(costStr);
+
+    // Tokens
+    const inStr = formatCompact(inputTokens);
+    const outStr = formatCompact(outputTokens);
+    if (inStr || outStr) {
+      const parts = [];
+      if (inStr) parts.push(`${inStr}\u2191`);
+      if (outStr) parts.push(`${outStr}\u2193`);
+      segments.push(dim(parts.join(' ')));
+    }
+
+    // Duration
+    const durStr = formatDuration(totalDurationMs);
+    if (durStr) segments.push(dim(durStr));
+
+    // Lines changed
+    const addedParts = [];
+    if (linesAdded > 0) addedParts.push(green(`+${linesAdded}`));
+    if (linesRemoved > 0) addedParts.push(red(`-${linesRemoved}`));
+    if (addedParts.length > 0) segments.push(`󰷈 ${addedParts.join(' ')}`);
+
+    // Rate limits (Claude.ai Pro/Max) — merged into one segment
+    if (rateLimitFiveHour != null || rateLimitSevenDay != null) {
+      const parts = [];
+      if (rateLimitFiveHour != null) parts.push(`󰔚 5h ${Math.round(rateLimitFiveHour)}%`);
+      if (rateLimitSevenDay != null) parts.push(`󰃭 7d ${Math.round(rateLimitSevenDay)}%`);
+      segments.push(dim(parts.join(' · ')));
+    }
+
+    // Context bar
+    const ctxBar = buildContextBar(remaining);
+    if (ctxBar) segments.push(ctxBar);
+
+    // Join all segments with dimmed separator
+    process.stdout.write(segments.join(` ${dim('\u2502')} `));
+  } catch {
+    // Silent fail - don't break statusline on parse errors
+  }
+});
