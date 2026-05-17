@@ -19,6 +19,8 @@ Single-process statusline renderer plus two bash logging hooks. Data flow:
    - `hooks/log-slash-skill.sh` — `UserPromptSubmit`, parses `/<skill>` from prompts; logs only when the skill exists under `$CLAUDE_CONFIG_DIR/skills/` or `./.agents/skills/`.
    Log format: `<unix_ts> <skill_name>` per line. Renderer reads last entries, dedupes most-recent-first, shows 3 with `+N` overflow; strips `plugin:` prefix.
 
+Output is two lines when any skills are logged: line 1 = segments below; line 2 = `skills: a, b, c, ...` (all unique skills, oldest→newest, `plugin:` prefix stripped, no truncation). Line 2 is suppressed otherwise.
+
 ## Supported segments (rendered left-to-right)
 
 Each segment is emitted only when its source field is present/non-empty. Separator: dim `│`.

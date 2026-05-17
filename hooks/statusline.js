@@ -192,26 +192,26 @@ process.stdin.on('end', () => {
     if (effortLevel) add('effort', yellow(`${icons.effort} ${effortLevel}`));
 
     // Loaded skills (most-recently invoked first 3, written by PreToolUse Skill hook)
+    let allSkills = [];
     if (session) {
       try {
         const lines = fs
           .readFileSync(`/tmp/claude-skills-${session}.log`, 'utf8')
           .trim()
           .split('\n');
-        const order = [];
         const seen = new Set();
         for (let i = lines.length - 1; i >= 0; i--) {
           const name = lines[i].split(' ').slice(1).join(' ');
           if (!name || seen.has(name)) continue;
           seen.add(name);
-          order.push(name);
+          allSkills.push(name);
         }
-        if (order.length) {
-          const shown = order
+        if (allSkills.length) {
+          const shown = allSkills
             .slice(0, 3)
             .reverse()
             .map((n) => (n.includes(':') ? n.split(':').slice(1).join(':') : n));
-          const more = order.length > 3 ? ` +${order.length - 3}` : '';
+          const more = allSkills.length > 3 ? ` +${allSkills.length - 3}` : '';
           add('skills', dim(` ${shown.join(',')}${more}`));
         }
       } catch {}
@@ -307,6 +307,16 @@ process.stdin.on('end', () => {
     if (iconHint) {
       out += `  ${dim('[icons=ascii; set STATUSLINE_ICONS=nerd|unicode|ascii \u2014 see README]')}`;
     }
+
+    if (allSkills.length) {
+      const full = allSkills
+        .slice()
+        .reverse()
+        .map((n) => (n.includes(':') ? n.split(':').slice(1).join(':') : n))
+        .join(', ');
+      out += `\n${dim(`skills: ${full}`)}`;
+    }
+
     process.stdout.write(out);
   } catch {
     // Silent fail - don't break statusline on parse errors

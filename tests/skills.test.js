@@ -47,16 +47,27 @@ test('3 unique skills — all shown most-recent-first', async () => {
   } finally { cleanup(); }
 });
 
-test('4+ unique skills — first 3 + overflow indicator', async () => {
+test('4+ unique skills — line 1 truncated w/ +N, line 2 lists all', async () => {
   writeLog('1000 alpha\n1001 beta\n1002 gamma\n1003 delta\n');
   try {
     const i = baseInput();
     i.session_id = SESSION;
     const out = await run(i);
-    assert.ok(out.includes('+1'));
-    // only 3 shown
-    assert.ok(!out.includes('alpha'));
+    const [line1, line2] = out.split('\n');
+    assert.ok(line1.includes('+1'));
+    assert.ok(!line1.includes('alpha'));
+    assert.ok(line2.startsWith('skills:'));
+    assert.ok(line2.includes('alpha'));
+    assert.ok(line2.includes('delta'));
   } finally { cleanup(); }
+});
+
+test('skills line absent when no skills logged', async () => {
+  cleanup();
+  const i = baseInput();
+  i.session_id = SESSION;
+  const out = await run(i);
+  assert.ok(!out.includes('\n'));
 });
 
 test('plugin:skill prefix stripped', async () => {
