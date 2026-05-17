@@ -13,7 +13,7 @@ My Claude Code statusline and supporting hooks. Renders a compact, ANSI-colored 
 ## Requirements
 
 - Node.js 18+
-- A [Nerd Font](https://www.nerdfonts.com/) in your terminal (for `󰾅` `󰉋` `󰷈` `󰔚` `󰃭` glyphs)
+- For the `nerd` icon set (prettiest): a [Nerd Font](https://www.nerdfonts.com/) in your terminal. Other icon sets work without one — see [Icons](#icons).
 
 ## Install
 
@@ -55,6 +55,26 @@ Add to `~/.claude/settings.json` (replace `<repo>` with your clone path):
 ```
 
 Alternatively, symlink individual files into `~/.claude/hooks/`.
+
+## Icons
+
+Three icon sets are available via `STATUSLINE_ICONS`:
+
+| value | glyphs | requires |
+|---|---|---|
+| `nerd` | `󰾅 󰉋 󰷈 󰔚 󰃭 ⎇ ⊕ ⏱ 💀 │` | A [Nerd Font](https://www.nerdfonts.com/) installed and selected in your terminal |
+| `unicode` | `⚡ ▸ Δ ⎇ ⊕ ⏱ ‼ │` | Any modern Unicode-capable font (almost every desktop terminal) |
+| `ascii` | `! dir: d 5h 7d git: wt: t: !! \|` | Nothing — pure ASCII, works anywhere |
+
+**First-run behaviour:** if `STATUSLINE_ICONS` is unset and no cached choice exists, the statusline defaults to `ascii` and emits a one-line hint. Set the env var to opt into a fancier set:
+
+```json
+"env": {
+  "STATUSLINE_ICONS": "nerd"
+}
+```
+
+The cached choice lives at `~/.cache/claude-statusline/icons`; delete it to see the hint again. `STATUSLINE_ICONS` always wins over the cache.
 
 ## Configuration
 

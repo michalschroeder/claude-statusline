@@ -16,6 +16,43 @@ const orange = (s) => `\x1b[38;5;208m${s}\x1b[0m`;
 const blink_red = (s) => `\x1b[5;31m${s}\x1b[0m`;
 const dimCyan = (s) => `\x1b[2;36m${s}\x1b[0m`;
 
+// Icon sets — three tiers. nerd: requires Nerd Font. unicode: BMP-only fallback.
+// ascii: pure ASCII (works on any terminal/font).
+const ICON_SETS = {
+  nerd:    { effort: '󰾅', branch: '⎇', worktree: '⊕', dir: '󰉋', duration: '⏱',
+             lines: '󰷈', r5h: '󰔚 5h', r7d: '󰃭 7d', rsep: '·', skull: '\u{1F480}',
+             up: '↑', down: '↓', barFill: '█', barEmpty: '░',
+             sep: '│' },
+  unicode: { effort: '⚡', branch: '⎇', worktree: '⊕', dir: '▸',  duration: '⏱',
+             lines: 'Δ', r5h: '5h', r7d: '7d', rsep: '·', skull: '‼',
+             up: '↑', down: '↓', barFill: '█', barEmpty: '░',
+             sep: '│' },
+  ascii:   { effort: '!', branch: 'git:', worktree: 'wt:', dir: 'dir:', duration: 't:',
+             lines: 'd', r5h: '5h', r7d: '7d', rsep: ',', skull: '!!',
+             up: '^', down: 'v', barFill: '#', barEmpty: '-',
+             sep: '|' },
+};
+
+// Resolve icon mode. Priority: STATUSLINE_ICONS env > cached choice > first-run default.
+// First run writes a cache file and signals (via returned `hint`) that we should
+// append a one-time nudge to the statusline.
+function resolveIconMode() {
+  const env = process.env.STATUSLINE_ICONS;
+  if (env && ICON_SETS[env]) return { mode: env, hint: false };
+
+  const cacheFile = path.join(os.homedir(), '.cache', 'claude-statusline', 'icons');
+  try {
+    const cached = fs.readFileSync(cacheFile, 'utf8').trim();
+    if (ICON_SETS[cached]) return { mode: cached, hint: false };
+  } catch {}
+
+  try {
+    fs.mkdirSync(path.dirname(cacheFile), { recursive: true });
+    fs.writeFileSync(cacheFile, 'ascii\n');
+  } catch {}
+  return { mode: 'ascii', hint: true };
+}
+
 /**
  * Format a number with k/M suffixes for compact display.
  * 523 → "523", 4500 → "4.5k", 15000 → "15k", 1200000 → "1.2M"
@@ -80,32 +117,32 @@ function formatCost(totalCost) {
 /**
  * Format milliseconds as compact human duration: 45s, 10m, 1h 5m.
  */
-function formatDuration(ms) {
+function formatDuration(ms, icon) {
   if (ms == null || ms <= 0) return '';
   const s = Math.floor(ms / 1000);
-  if (s < 60) return `⏱ ${s}s`;
+  if (s < 60) return `${icon} ${s}s`;
   const m = Math.floor(s / 60);
-  if (m < 60) return `⏱ ${m}m`;
+  if (m < 60) return `${icon} ${m}m`;
   const h = Math.floor(m / 60);
   const rem = m % 60;
-  return rem > 0 ? `⏱ ${h}h ${rem}m` : `⏱ ${h}h`;
+  return rem > 0 ? `${icon} ${h}h ${rem}m` : `${icon} ${h}h`;
 }
 
 /**
  * Build context bar with colored progress indicator.
  */
-function buildContextBar(remaining) {
+function buildContextBar(remaining, icons) {
   if (remaining == null) return '';
   const rem = Math.round(remaining);
   const used = Math.max(0, Math.min(100, 100 - rem));
   const filled = Math.floor(used / 10);
-  const bar = '\u2588'.repeat(filled) + '\u2591'.repeat(10 - filled);
+  const bar = icons.barFill.repeat(filled) + icons.barEmpty.repeat(10 - filled);
   const label = `${bar} ${used}%`;
 
   if (used < 50) return green(label);
   if (used < 65) return yellow(label);
   if (used < 80) return orange(label);
-  return blink_red(`\u{1F480} ${label}`);
+  return blink_red(`${icons.skull} ${label}`);
 }
 
 // Read JSON from stdin
@@ -141,6 +178,9 @@ process.stdin.on('end', () => {
     const worktreeName = data.worktree?.name;
     const version = data.version;
 
+    const { mode: iconMode, hint: iconHint } = resolveIconMode();
+    const icons = ICON_SETS[iconMode];
+
     const segments = [];
     const add = (name, value) => segments.push({ name, value });
 
@@ -149,7 +189,7 @@ process.stdin.on('end', () => {
     add('model', dim(model));
 
     // Effort + thinking
-    if (effortLevel) add('effort', yellow(`󰾅 ${effortLevel}`));
+    if (effortLevel) add('effort', yellow(`${icons.effort} ${effortLevel}`));
 
     // Loaded skills (most-recently invoked first 3, written by PreToolUse Skill hook)
     if (session) {
@@ -194,11 +234,11 @@ process.stdin.on('end', () => {
       const shown = branch.length > MAX
         ? `${branch.slice(0, 30)}...${branch.slice(-(MAX - 30 - 3))}`
         : branch;
-      add('branch', dimCyan(`⎇ ${shown}`));
+      add('branch', dimCyan(`${icons.branch} ${shown}`));
     }
 
     // Worktree
-    if (worktreeName) add('worktree', dim(`⊕ ${worktreeName}`));
+    if (worktreeName) add('worktree', dim(`${icons.worktree} ${worktreeName}`));
 
     // Agent name
     if (agentName) add('agent', bold(agentName));
@@ -210,7 +250,7 @@ process.stdin.on('end', () => {
       const idx = dir.indexOf(marker);
       if (idx !== -1) dirLabel = path.basename(dir.slice(0, idx));
     }
-    add('dir', dim(`󰉋 ${dirLabel}`));
+    add('dir', dim(`${icons.dir} ${dirLabel}`));
 
     // Added dirs
     if (addedDirs?.length) add('addeddirs', dim(`+${addedDirs.length}dir`));
@@ -224,31 +264,31 @@ process.stdin.on('end', () => {
     const outStr = formatCompact(outputTokens);
     if (inStr || outStr) {
       const parts = [];
-      if (inStr) parts.push(`${inStr}\u2191`);
-      if (outStr) parts.push(`${outStr}\u2193`);
+      if (inStr) parts.push(`${inStr}${icons.up}`);
+      if (outStr) parts.push(`${outStr}${icons.down}`);
       add('tokens', dim(parts.join(' ')));
     }
 
     // Duration
-    const durStr = formatDuration(totalDurationMs);
+    const durStr = formatDuration(totalDurationMs, icons.duration);
     if (durStr) add('duration', dim(durStr));
 
     // Lines changed
     const addedParts = [];
     if (linesAdded > 0) addedParts.push(green(`+${linesAdded}`));
     if (linesRemoved > 0) addedParts.push(red(`-${linesRemoved}`));
-    if (addedParts.length > 0) add('lines', `󰷈 ${addedParts.join(' ')}`);
+    if (addedParts.length > 0) add('lines', `${icons.lines} ${addedParts.join(' ')}`);
 
     // Rate limits (Claude.ai Pro/Max) — merged into one segment
     if (rateLimitFiveHour != null || rateLimitSevenDay != null) {
       const parts = [];
-      if (rateLimitFiveHour != null) parts.push(`󰔚 5h ${Math.round(rateLimitFiveHour)}%`);
-      if (rateLimitSevenDay != null) parts.push(`󰃭 7d ${Math.round(rateLimitSevenDay)}%`);
-      add('ratelimits', dim(parts.join(' · ')));
+      if (rateLimitFiveHour != null) parts.push(`${icons.r5h} ${Math.round(rateLimitFiveHour)}%`);
+      if (rateLimitSevenDay != null) parts.push(`${icons.r7d} ${Math.round(rateLimitSevenDay)}%`);
+      add('ratelimits', dim(parts.join(` ${icons.rsep} `)));
     }
 
     // Context bar
-    const ctxBar = buildContextBar(remaining);
+    const ctxBar = buildContextBar(remaining, icons);
     if (ctxBar) add('context', ctxBar);
 
     // Optional allowlist + order via STATUSLINE_SEGMENTS env var.
@@ -263,7 +303,11 @@ process.stdin.on('end', () => {
     }
 
     // Join all segments with dimmed separator
-    process.stdout.write(final.join(` ${dim('\u2502')} `));
+    let out = final.join(` ${dim(icons.sep)} `);
+    if (iconHint) {
+      out += `  ${dim('[icons=ascii; set STATUSLINE_ICONS=nerd|unicode|ascii \u2014 see README]')}`;
+    }
+    process.stdout.write(out);
   } catch {
     // Silent fail - don't break statusline on parse errors
   }

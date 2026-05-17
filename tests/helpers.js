@@ -15,9 +15,11 @@ function baseInput() {
   };
 }
 
-function _invoke(inputObj) {
+function _invoke(inputObj, env) {
   return new Promise((resolve, reject) => {
-    const proc = spawn(process.execPath, [STATUSLINE]);
+    const proc = spawn(process.execPath, [STATUSLINE], {
+      env: { ...process.env, STATUSLINE_ICONS: 'nerd', ...(env || {}) },
+    });
     let out = '';
     let err = '';
     proc.stdout.on('data', (d) => (out += d));
@@ -31,12 +33,12 @@ function _invoke(inputObj) {
   });
 }
 
-async function run(inputObj) {
-  return stripAnsi(await _invoke(inputObj));
+async function run(inputObj, env) {
+  return stripAnsi(await _invoke(inputObj, env));
 }
 
-async function runRaw(inputObj) {
-  return _invoke(inputObj);
+async function runRaw(inputObj, env) {
+  return _invoke(inputObj, env);
 }
 
 module.exports = { stripAnsi, baseInput, run, runRaw };
