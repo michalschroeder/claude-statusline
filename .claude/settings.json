@@ -1,0 +1,23 @@
+{
+  "autoMode": {
+    "environment": [
+      "$defaults",
+      "Node.js statusline tool for Claude Code. Pure stdlib, no dependencies, no build step. Tests run via `node --test tests/*.test.js`. Distributed by users wiring hooks/statusline.js into their settings.json — no npm publish, no server, no secrets."
+    ],
+    "allow": [
+      "$defaults",
+      "Running `node --test tests/*.test.js` or any single test file under tests/",
+      "Running `node hooks/statusline.js` with synthetic JSON piped on stdin for manual checks",
+      "Editing files under hooks/, tests/, and the repo's CLAUDE.md / README.md"
+    ],
+    "soft_deny": [
+      "$defaults",
+      "Deleting or renaming files under hooks/ or tests/ without explicit instruction"
+    ],
+    "hard_deny": [
+      "$defaults",
+      "Pushing to origin/main, force-pushing any branch, or creating GitHub releases without explicit instruction",
+      "Modifying .github/workflows/ without explicit instruction"
+    ]
+  }
+}
