@@ -1,33 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert');
-const { spawn } = require('child_process');
-const path = require('path');
-const { baseInput } = require('./helpers');
-
-const STATUSLINE = path.resolve(__dirname, '../hooks/statusline.js');
-
-function stripAnsi(str) {
-  return str.replace(/\x1b\[[0-9;]*m/g, '');
-}
-
-function runWithEnv(inputObj, env) {
-  return new Promise((resolve, reject) => {
-    const proc = spawn(process.execPath, [STATUSLINE], {
-      env: { ...process.env, ...env },
-    });
-    let out = '';
-    let err = '';
-    proc.stdout.on('data', (d) => (out += d));
-    proc.stderr.on('data', (d) => (err += d));
-    proc.on('close', (code) => {
-      if (code !== 0 && err) reject(new Error(err));
-      else resolve(stripAnsi(out));
-    });
-    proc.stdin.write(JSON.stringify(inputObj));
-    proc.stdin.end();
-  });
-}
+const { baseInput, run } = require('./helpers');
 
 // A rich input that exercises many segments at once.
 function richInput() {
@@ -49,10 +23,7 @@ function richInput() {
 }
 
 test('unset STATUSLINE_SEGMENTS renders all available segments', async () => {
-  // Strip any inherited value so the test reflects unset behaviour.
-  const env = { ...process.env };
-  delete env.STATUSLINE_SEGMENTS;
-  const out = await runWithEnv(richInput(), { STATUSLINE_SEGMENTS: '' });
+  const out = await run(richInput(), { STATUSLINE_SEGMENTS: '' });
   assert.match(out, /Claude/);
   assert.match(out, /\$0\.50/);
   assert.match(out, /1\.5k/);
@@ -61,7 +32,7 @@ test('unset STATUSLINE_SEGMENTS renders all available segments', async () => {
 });
 
 test('STATUSLINE_SEGMENTS=model renders only the model segment', async () => {
-  const out = await runWithEnv(richInput(), { STATUSLINE_SEGMENTS: 'model' });
+  const out = await run(richInput(), { STATUSLINE_SEGMENTS: 'model' });
   assert.match(out, /Claude/);
   assert.doesNotMatch(out, /\$0\.50/);
   assert.doesNotMatch(out, /1\.5k/);
@@ -70,7 +41,7 @@ test('STATUSLINE_SEGMENTS=model renders only the model segment', async () => {
 });
 
 test('STATUSLINE_SEGMENTS controls order', async () => {
-  const out = await runWithEnv(richInput(), {
+  const out = await run(richInput(), {
     STATUSLINE_SEGMENTS: 'cost,model',
   });
   const costIdx = out.indexOf('$0.50');
@@ -80,7 +51,7 @@ test('STATUSLINE_SEGMENTS controls order', async () => {
 });
 
 test('STATUSLINE_SEGMENTS ignores unknown names', async () => {
-  const out = await runWithEnv(richInput(), {
+  const out = await run(richInput(), {
     STATUSLINE_SEGMENTS: 'nope,model,bogus',
   });
   assert.match(out, /Claude/);
@@ -89,7 +60,7 @@ test('STATUSLINE_SEGMENTS ignores unknown names', async () => {
 });
 
 test('STATUSLINE_SEGMENTS tolerates whitespace and empty entries', async () => {
-  const out = await runWithEnv(richInput(), {
+  const out = await run(richInput(), {
     STATUSLINE_SEGMENTS: ' model , , cost ',
   });
   assert.match(out, /Claude/);
@@ -98,7 +69,7 @@ test('STATUSLINE_SEGMENTS tolerates whitespace and empty entries', async () => {
 
 test('absent segments stay absent under filter', async () => {
   const input = baseInput(); // no cost
-  const out = await runWithEnv(input, {
+  const out = await run(input, {
     STATUSLINE_SEGMENTS: 'model,cost',
   });
   assert.match(out, /Claude/);

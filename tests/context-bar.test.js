@@ -1,7 +1,7 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { baseInput, run, runRaw } = require('./helpers.js');
+const { baseInput, runRaw, stripAnsi } = require('./helpers.js');
 
 function inp(remaining) {
   const i = baseInput();
@@ -10,11 +10,12 @@ function inp(remaining) {
 }
 
 test('context null — no bar', async () => {
-  assert.ok(!(await run(baseInput())).includes('█'));
+  assert.ok(!stripAnsi(await runRaw(baseInput())).includes('█'));
 });
 
 test('context 80% remaining (20% used) — green, no skull', async () => {
-  const [plain, raw] = await Promise.all([run(inp(80)), runRaw(inp(80))]);
+  const raw = await runRaw(inp(80));
+  const plain = stripAnsi(raw);
   assert.ok(plain.includes('20%'));
   assert.ok(!plain.includes('💀'));
   assert.ok(raw.includes('\x1b[32m'));
@@ -46,13 +47,13 @@ test('context 21% remaining (79% used) — orange', async () => {
 });
 
 test('context 20% remaining (80% used) — blink red + skull', async () => {
-  const [plain, raw] = await Promise.all([run(inp(20)), runRaw(inp(20))]);
-  assert.ok(plain.includes('💀'));
+  const raw = await runRaw(inp(20));
+  assert.ok(stripAnsi(raw).includes('💀'));
   assert.ok(raw.includes('\x1b[5;31m'));
 });
 
 test('context 0% remaining (100% used) — blink red + skull', async () => {
-  const [plain, raw] = await Promise.all([run(inp(0)), runRaw(inp(0))]);
-  assert.ok(plain.includes('💀'));
+  const raw = await runRaw(inp(0));
+  assert.ok(stripAnsi(raw).includes('💀'));
   assert.ok(raw.includes('\x1b[5;31m'));
 });

@@ -1,5 +1,7 @@
 'use strict';
 const { spawn } = require('child_process');
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 const STATUSLINE = path.resolve(__dirname, '../hooks/statusline.js');
@@ -41,4 +43,12 @@ async function runRaw(inputObj, env) {
   return _invoke(inputObj, env);
 }
 
-module.exports = { stripAnsi, baseInput, run, runRaw };
+function mkTmpGit(headContent, prefix = 'csl-git-') {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  const gitDir = path.join(dir, '.git');
+  fs.mkdirSync(gitDir);
+  fs.writeFileSync(path.join(gitDir, 'HEAD'), headContent);
+  return dir;
+}
+
+module.exports = { stripAnsi, baseInput, run, runRaw, mkTmpGit };

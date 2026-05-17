@@ -4,15 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { baseInput, run } = require('./helpers.js');
-
-function mkTmpGit(headContent) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-git-'));
-  const gitDir = path.join(dir, '.git');
-  fs.mkdirSync(gitDir);
-  fs.writeFileSync(path.join(gitDir, 'HEAD'), headContent);
-  return dir;
-}
+const { baseInput, run, mkTmpGit } = require('./helpers.js');
 
 test('no .git dir — branch absent', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-nogit-'));
@@ -50,7 +42,6 @@ test('detached HEAD → ⎇ short hash', async () => {
 });
 
 test('worktree .git file indirection', async () => {
-  // Create a bare-style real git dir with HEAD
   const realGitDir = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-realgit-'));
   fs.writeFileSync(path.join(realGitDir, 'HEAD'), 'ref: refs/heads/feat\n');
 
@@ -75,7 +66,6 @@ test('branch > 50 chars — ellipsized', async () => {
     const out = await run(i);
     assert.ok(out.includes('⎇'));
     assert.ok(out.includes('...'));
-    // full branch name should NOT appear
     assert.ok(!out.includes(longBranch));
   } finally {
     fs.rmSync(dir, { recursive: true });

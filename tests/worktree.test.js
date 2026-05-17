@@ -2,16 +2,10 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
-const path = require('path');
-const os = require('os');
-const { baseInput, run } = require('./helpers.js');
+const { baseInput, run, mkTmpGit: mkTmpGitRaw } = require('./helpers.js');
 
 function mkTmpGit(branch) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-wt-'));
-  const gitDir = path.join(dir, '.git');
-  fs.mkdirSync(gitDir);
-  fs.writeFileSync(path.join(gitDir, 'HEAD'), `ref: refs/heads/${branch}\n`);
-  return dir;
+  return mkTmpGitRaw(`ref: refs/heads/${branch}\n`, 'csl-wt-');
 }
 
 test('matching worktree branch — ⎇ hidden', async () => {
