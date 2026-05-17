@@ -142,13 +142,14 @@ process.stdin.on('end', () => {
     const version = data.version;
 
     const segments = [];
+    const add = (name, value) => segments.push({ name, value });
 
 
     // Model
-    segments.push(dim(model));
+    add('model', dim(model));
 
     // Effort + thinking
-    if (effortLevel) segments.push(yellow(`󰾅 ${effortLevel}`));
+    if (effortLevel) add('effort', yellow(`󰾅 ${effortLevel}`));
 
     // Loaded skills (most-recently invoked first 3, written by PreToolUse Skill hook)
     if (session) {
@@ -171,16 +172,16 @@ process.stdin.on('end', () => {
             .reverse()
             .map((n) => (n.includes(':') ? n.split(':').slice(1).join(':') : n));
           const more = order.length > 3 ? ` +${order.length - 3}` : '';
-          segments.push(dim(` ${shown.join(',')}${more}`));
+          add('skills', dim(` ${shown.join(',')}${more}`));
         }
       } catch {}
     }
 
 // Output style (only when non-default)
-    if (outputStyle && outputStyle.toLowerCase() !== 'default') segments.push(dim(`style:${outputStyle}`));
+    if (outputStyle && outputStyle.toLowerCase() !== 'default') add('style', dim(`style:${outputStyle}`));
 
     // Vim mode
-    if (vimMode) segments.push(dim(`vim:${vimMode}`));
+    if (vimMode) add('vim', dim(`vim:${vimMode}`));
 
     // Git branch — hidden inside a worktree when branch is the expected
     // `worktree-<name>` (the ⊕ chip already conveys it). Surfaces only when
@@ -193,14 +194,14 @@ process.stdin.on('end', () => {
       const shown = branch.length > MAX
         ? `${branch.slice(0, 30)}...${branch.slice(-(MAX - 30 - 3))}`
         : branch;
-      segments.push(dimCyan(`⎇ ${shown}`));
+      add('branch', dimCyan(`⎇ ${shown}`));
     }
 
     // Worktree
-    if (worktreeName) segments.push(dim(`⊕ ${worktreeName}`));
+    if (worktreeName) add('worktree', dim(`⊕ ${worktreeName}`));
 
     // Agent name
-    if (agentName) segments.push(bold(agentName));
+    if (agentName) add('agent', bold(agentName));
 
     // Directory (when inside a worktree, show the parent project name instead of the worktree dir)
     let dirLabel = path.basename(dir);
@@ -209,14 +210,14 @@ process.stdin.on('end', () => {
       const idx = dir.indexOf(marker);
       if (idx !== -1) dirLabel = path.basename(dir.slice(0, idx));
     }
-    segments.push(dim(`󰉋 ${dirLabel}`));
+    add('dir', dim(`󰉋 ${dirLabel}`));
 
     // Added dirs
-    if (addedDirs?.length) segments.push(dim(`+${addedDirs.length}dir`));
+    if (addedDirs?.length) add('addeddirs', dim(`+${addedDirs.length}dir`));
 
     // Cost
     const costStr = formatCost(totalCost);
-    if (costStr) segments.push(costStr);
+    if (costStr) add('cost', costStr);
 
     // Tokens
     const inStr = formatCompact(inputTokens);
@@ -225,33 +226,44 @@ process.stdin.on('end', () => {
       const parts = [];
       if (inStr) parts.push(`${inStr}\u2191`);
       if (outStr) parts.push(`${outStr}\u2193`);
-      segments.push(dim(parts.join(' ')));
+      add('tokens', dim(parts.join(' ')));
     }
 
     // Duration
     const durStr = formatDuration(totalDurationMs);
-    if (durStr) segments.push(dim(durStr));
+    if (durStr) add('duration', dim(durStr));
 
     // Lines changed
     const addedParts = [];
     if (linesAdded > 0) addedParts.push(green(`+${linesAdded}`));
     if (linesRemoved > 0) addedParts.push(red(`-${linesRemoved}`));
-    if (addedParts.length > 0) segments.push(`󰷈 ${addedParts.join(' ')}`);
+    if (addedParts.length > 0) add('lines', `󰷈 ${addedParts.join(' ')}`);
 
     // Rate limits (Claude.ai Pro/Max) — merged into one segment
     if (rateLimitFiveHour != null || rateLimitSevenDay != null) {
       const parts = [];
       if (rateLimitFiveHour != null) parts.push(`󰔚 5h ${Math.round(rateLimitFiveHour)}%`);
       if (rateLimitSevenDay != null) parts.push(`󰃭 7d ${Math.round(rateLimitSevenDay)}%`);
-      segments.push(dim(parts.join(' · ')));
+      add('ratelimits', dim(parts.join(' · ')));
     }
 
     // Context bar
     const ctxBar = buildContextBar(remaining);
-    if (ctxBar) segments.push(ctxBar);
+    if (ctxBar) add('context', ctxBar);
+
+    // Optional allowlist + order via STATUSLINE_SEGMENTS env var.
+    const filter = process.env.STATUSLINE_SEGMENTS;
+    let final;
+    if (filter && filter.trim()) {
+      const allowed = filter.split(',').map((s) => s.trim()).filter(Boolean);
+      const byName = new Map(segments.map((s) => [s.name, s.value]));
+      final = allowed.map((n) => byName.get(n)).filter((v) => v);
+    } else {
+      final = segments.map((s) => s.value);
+    }
 
     // Join all segments with dimmed separator
-    process.stdout.write(segments.join(` ${dim('\u2502')} `));
+    process.stdout.write(final.join(` ${dim('\u2502')} `));
   } catch {
     // Silent fail - don't break statusline on parse errors
   }

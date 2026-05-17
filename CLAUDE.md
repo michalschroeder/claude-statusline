@@ -44,6 +44,10 @@ Each segment is emitted only when its source field is present/non-empty. Separat
 
 Read but currently unused: `data.thinking.enabled`, `data.session_name`, `data.version`.
 
+## Configuration
+
+`STATUSLINE_SEGMENTS` env var (set via `"env"` in `~/.claude/settings.json`) is an optional comma-separated allowlist that also controls render order. Unset/empty = render all. Names match the segment column above. Unknown names ignored. Each segment is tagged via `add(name, value)`; filter applied just before joining.
+
 ## Conventions
 
 - **No subprocesses from the renderer.** Statusline runs frequently — keep it cheap. Git branch reads `.git/HEAD` directly.

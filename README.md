@@ -56,6 +56,41 @@ Add to `~/.claude/settings.json` (replace `<repo>` with your clone path):
 
 Alternatively, symlink individual files into `~/.claude/hooks/`.
 
+## Configuration
+
+Set `STATUSLINE_SEGMENTS` to render only the named segments, in the order listed. Unset = render all (current behaviour).
+
+In `~/.claude/settings.json`:
+
+```json
+"env": {
+  "STATUSLINE_SEGMENTS": "model,cost,tokens,context"
+}
+```
+
+Segment names:
+
+| name | what it shows |
+|---|---|
+| `model` | display name |
+| `effort` | effort level |
+| `skills` | last 3 invoked skills |
+| `style` | output style (non-default) |
+| `vim` | vim mode |
+| `branch` | ⎇ git branch |
+| `worktree` | ⊕ worktree name |
+| `agent` | agent name |
+| `dir` | directory label |
+| `addeddirs` | +N added dirs |
+| `cost` | $ cost |
+| `tokens` | input↑ output↓ |
+| `duration` | ⏱ session duration |
+| `lines` | +added -removed |
+| `ratelimits` | 5h / 7d usage % |
+| `context` | context bar |
+
+Unknown names are ignored; absent data still hides the segment.
+
 ## Files
 
 - `hooks/statusline.js` — statusline renderer; reads JSON from stdin, writes ANSI to stdout
