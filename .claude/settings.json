@@ -8,7 +8,8 @@
       "$defaults",
       "Running `node --test tests/*.test.js` or any single test file under tests/",
       "Running `node hooks/statusline.js` with synthetic JSON piped on stdin for manual checks",
-      "Editing files under hooks/, tests/, and the repo's CLAUDE.md / README.md"
+      "Editing files under hooks/, tests/, and the repo's CLAUDE.md / README.md",
+      "Creating local git commits, including with a `Co-Authored-By: Claude …` trailer — the Claude Code system prompt instructs this trailer format and the user has approved it for this repo"
     ],
     "soft_deny": [
       "$defaults",
