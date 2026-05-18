@@ -195,8 +195,9 @@ process.stdin.on('end', () => {
     let allSkills = [];
     if (session) {
       try {
+        const stateDir = process.env.XDG_STATE_HOME || path.join(os.homedir(), '.local', 'state');
         const lines = fs
-          .readFileSync(`/tmp/claude-skills-${session}.log`, 'utf8')
+          .readFileSync(path.join(stateDir, 'claude-statusline', 'skills', `${session}.log`), 'utf8')
           .trim()
           .split('\n');
         const seen = new Set();

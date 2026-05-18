@@ -54,6 +54,15 @@ Add to `~/.claude/settings.json` (replace `<repo>` with your clone path):
 }
 ```
 
+**Skills-log cleanup (optional — removes the session log on exit, prunes >30d stragglers):**
+```json
+"hooks": {
+  "SessionEnd": [
+    { "hooks": [{ "type": "command", "command": "<repo>/hooks/cleanup-skills-log.sh" }] }
+  ]
+}
+```
+
 Alternatively, symlink individual files into `~/.claude/hooks/`.
 
 ## Icons
@@ -114,8 +123,9 @@ Unknown names are ignored; absent data still hides the segment.
 ## Files
 
 - `hooks/statusline.js` — statusline renderer; reads JSON from stdin, writes ANSI to stdout
-- `hooks/log-skill.sh` — `PreToolUse` hook; logs `Skill` tool invocations to `/tmp/claude-skills-<session>.log`
+- `hooks/log-skill.sh` — `PreToolUse` hook; logs `Skill` tool invocations to `${XDG_STATE_HOME:-$HOME/.local/state}/claude-statusline/skills/<session>.log`
 - `hooks/log-slash-skill.sh` — `UserPromptSubmit` hook; logs `/slash` skill invocations to the same log
+- `hooks/cleanup-skills-log.sh` — `SessionEnd` hook; deletes the session's skill log and prunes any older than 30 days
 
 ## How it works
 
@@ -139,7 +149,7 @@ Segments shown left to right:
 
 **Worktree convention:** the `⎇` chip is hidden when the branch name matches `worktree-<name>` (the `⊕` chip already conveys it). It reappears when the branch diverges (manual checkout, detached HEAD, rename).
 
-**Skills chip:** reads `/tmp/claude-skills-<session>.log`; each line is `<timestamp> <skill-name>`. Written by the two bash hooks. `plugin:skill` entries have the prefix stripped. Uses `${CLAUDE_CONFIG_DIR:-$HOME/.claude}` for skill-existence checks.
+**Skills chip:** reads `${XDG_STATE_HOME:-$HOME/.local/state}/claude-statusline/skills/<session>.log`; each line is `<timestamp> <skill-name>`. Written by the two bash hooks. `plugin:skill` entries have the prefix stripped. Uses `${CLAUDE_CONFIG_DIR:-$HOME/.claude}` for skill-existence checks.
 
 ## License
 

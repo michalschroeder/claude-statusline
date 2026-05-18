@@ -14,9 +14,10 @@ Single-process statusline renderer plus two bash logging hooks. Data flow:
 
 1. Claude Code spawns `hooks/statusline.js` per render and pipes a JSON status payload on stdin.
 2. `statusline.js` reads stdin, extracts fields, writes one ANSI-colored line to stdout. **Silent failure on any parse/render error** — never break the user's prompt.
-3. The skills chip is sourced from `/tmp/claude-skills-<session_id>.log`, populated by two side-channel hooks:
+3. The skills chip is sourced from `${XDG_STATE_HOME:-$HOME/.local/state}/claude-statusline/skills/<session_id>.log`, populated by two side-channel hooks:
    - `hooks/log-skill.sh` — `PreToolUse` matcher=`Skill`, logs the invoked skill name.
    - `hooks/log-slash-skill.sh` — `UserPromptSubmit`, parses `/<skill>` from prompts; logs only when the skill exists under `$CLAUDE_CONFIG_DIR/skills/` or `./.agents/skills/`.
+   - `hooks/cleanup-skills-log.sh` — `SessionEnd`, removes the session's log file; also prunes any `*.log` older than 30 days (for sessions that crashed without firing `SessionEnd`).
    Log format: `<unix_ts> <skill_name>` per line. Renderer reads last entries, dedupes; strips `plugin:` prefix.
 
 When any skills are logged the renderer emits 4 lines: segments, dim `─` rule, `{icons.skills} loaded skills: a, b, c, ...` (all uniques, oldest→newest, no truncation), dim `─` rule. Rule width = terminal columns, clamped 20–120. With no skills logged, just the single segment line is printed (no skills chip on line 1).

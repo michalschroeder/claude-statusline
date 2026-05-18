@@ -2,10 +2,15 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
+const path = require('path');
+const os = require('os');
 const { baseInput, run } = require('./helpers.js');
 
 const SESSION = `test-${process.pid}`;
-const LOG = `/tmp/claude-skills-${SESSION}.log`;
+const STATE_DIR = process.env.XDG_STATE_HOME || path.join(os.homedir(), '.local', 'state');
+const LOG_DIR = path.join(STATE_DIR, 'claude-statusline', 'skills');
+const LOG = path.join(LOG_DIR, `${SESSION}.log`);
+fs.mkdirSync(LOG_DIR, { recursive: true });
 
 function writeLog(content) {
   fs.writeFileSync(LOG, content);
