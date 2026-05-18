@@ -19,10 +19,10 @@ const dimCyan = (s) => `\x1b[2;36m${s}\x1b[0m`;
 // Icon sets — three tiers. nerd: requires Nerd Font. unicode: BMP-only fallback.
 // ascii: pure ASCII (works on any terminal/font).
 const ICON_SETS = {
-  nerd:    { effort: '󰾅', branch: '⎇', worktree: '⊕', dir: '󰉋', duration: '⏱',
+  nerd:    { effort: '󰾅', branch: '󰘬', worktree: '󰘯', dir: '󰉋', duration: '󰔛',
              lines: '󰷈', r5h: '󰔚 5h', r7d: '󰃭 7d', rsep: '·', skull: '\u{1F480}',
-             up: '↑', down: '↓', barFill: '█', barEmpty: '░',
-             sep: '│', skills: '\u{F5DC}', hr: '─' },
+             up: '󰁝', down: '󰁅', barFill: '█', barEmpty: '░',
+             sep: '│', skills: '󰾄', hr: '─' },
   unicode: { effort: '⚡', branch: '⎇', worktree: '⊕', dir: '▸',  duration: '⏱',
              lines: 'Δ', r5h: '5h', r7d: '7d', rsep: '·', skull: '‼',
              up: '↑', down: '↓', barFill: '█', barEmpty: '░',

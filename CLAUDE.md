@@ -31,14 +31,14 @@ Each segment is emitted only when its source field is present/non-empty. Separat
 | effort | `effort.level` | yellow `󰾅` |
 | output style | `output_style.name` | only when not `default` |
 | vim mode | `vim.mode` | `vim:<mode>` |
-| branch | parsed from `.git/HEAD` (no subprocess) | `⎇`, truncated >50 chars (`first30...lastN`); supports worktree `gitdir:` indirection and detached HEAD (short hash) |
-| worktree | `worktree.name` | `⊕` |
+| branch | parsed from `.git/HEAD` (no subprocess) | `󰘬`, truncated >50 chars (`first30...lastN`); supports worktree `gitdir:` indirection and detached HEAD (short hash) |
+| worktree | `worktree.name` | `󰘯` |
 | agent | `agent.name` | bold |
 | dir | `workspace.current_dir` basename | `󰉋`; when inside `.../.claude/worktrees/<name>/`, shows parent project name |
 | added dirs | `workspace.added_dirs.length` | `+Ndir` |
 | cost | `cost.total_cost_usd` | `$X.XX`; green <$1, yellow <$5, orange <$10, red ≥$10 |
 | tokens | `context_window.total_input_tokens` / `total_output_tokens` | compact (`k`/`M`), `↑` input, `↓` output |
-| duration | `cost.total_duration_ms` | `⏱`; `Ns` / `Nm` / `Nh Nm` |
+| duration | `cost.total_duration_ms` | `󰔛`; `Ns` / `Nm` / `Nh Nm` |
 | lines | `cost.total_lines_added` / `total_lines_removed` | `󰷈 +A -R` (green/red) |
 | rate limits | `rate_limits.five_hour.used_percentage`, `rate_limits.seven_day.used_percentage` | `󰔚 5h N%`, `󰃭 7d N%`, joined with `·` |
 | context bar | `context_window.remaining_percentage` | 10-cell block bar + `N%`; green <50%, yellow <65%, orange <80%, blink-red 💀 ≥80% |
@@ -54,7 +54,7 @@ Read but currently unused: `data.thinking.enabled`, `data.session_name`, `data.v
 ## Conventions
 
 - **No subprocesses from the renderer.** Statusline runs frequently — keep it cheap. Git branch reads `.git/HEAD` directly.
-- **Worktree/branch chip suppression**: when inside a worktree and branch equals `worktree-<name>`, the `⎇` chip is hidden (the `⊕` chip conveys it). Reappears on divergence (manual checkout, detached HEAD, rename). Enforced by `tests/worktree.test.js`, `tests/git-branch.test.js`.
+- **Worktree/branch chip suppression**: when inside a worktree and branch equals `worktree-<name>`, the `󰘬` chip is hidden (the `󰘯` chip conveys it). Reappears on divergence (manual checkout, detached HEAD, rename). Enforced by `tests/worktree.test.js`, `tests/git-branch.test.js`.
 - **Color thresholds are part of the contract** and are tested — change them only deliberately.
 - **Token compaction** (`formatCompact`): `<1000` raw, `<10k` one decimal (`4.5k`), `<1M` rounded (`15k`), else `1.2M`.
 

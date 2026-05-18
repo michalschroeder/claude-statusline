@@ -11,31 +11,31 @@ test('no .git dir — branch absent', async () => {
   try {
     const i = baseInput();
     i.workspace.project_dir = dir;
-    assert.ok(!(await run(i)).includes('⎇'));
+    assert.ok(!(await run(i)).includes('󰘬'));
   } finally {
     fs.rmSync(dir, { recursive: true });
   }
 });
 
-test('HEAD ref → ⎇ main', async () => {
+test('HEAD ref → 󰘬 main', async () => {
   const dir = mkTmpGit('ref: refs/heads/main\n');
   try {
     const i = baseInput();
     i.workspace.project_dir = dir;
-    assert.ok((await run(i)).includes('⎇ main'));
+    assert.ok((await run(i)).includes('󰘬 main'));
   } finally {
     fs.rmSync(dir, { recursive: true });
   }
 });
 
-test('detached HEAD → ⎇ short hash', async () => {
+test('detached HEAD → 󰘬 short hash', async () => {
   const hash = 'a'.repeat(40);
   const dir = mkTmpGit(hash + '\n');
   try {
     const i = baseInput();
     i.workspace.project_dir = dir;
     const out = await run(i);
-    assert.ok(out.includes('⎇ aaaaaaa'));
+    assert.ok(out.includes('󰘬 aaaaaaa'));
   } finally {
     fs.rmSync(dir, { recursive: true });
   }
@@ -50,7 +50,7 @@ test('worktree .git file indirection', async () => {
   try {
     const i = baseInput();
     i.workspace.project_dir = wt;
-    assert.ok((await run(i)).includes('⎇ feat'));
+    assert.ok((await run(i)).includes('󰘬 feat'));
   } finally {
     fs.rmSync(realGitDir, { recursive: true });
     fs.rmSync(wt, { recursive: true });
@@ -64,7 +64,7 @@ test('branch > 50 chars — ellipsized', async () => {
     const i = baseInput();
     i.workspace.project_dir = dir;
     const out = await run(i);
-    assert.ok(out.includes('⎇'));
+    assert.ok(out.includes('󰘬'));
     assert.ok(out.includes('...'));
     assert.ok(!out.includes(longBranch));
   } finally {
