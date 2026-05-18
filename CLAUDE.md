@@ -37,11 +37,11 @@ Each segment is emitted only when its source field is present/non-empty. Separat
 | dir | `workspace.current_dir` basename | `󰉋`; when inside `.../.claude/worktrees/<name>/`, shows parent project name |
 | added dirs | `workspace.added_dirs.length` | `+Ndir` |
 | cost | `cost.total_cost_usd` | `$X.XX`; green <$1, yellow <$5, orange <$10, red ≥$10 |
-| tokens | `context_window.total_input_tokens` / `total_output_tokens` | compact (`k`/`M`), `↑` input, `↓` output |
+| tokens | `context_window.total_input_tokens` / `total_output_tokens` | compact (`k`/`M`), `󰁝` input, `󰁅` output |
 | duration | `cost.total_duration_ms` | `󰔛`; `Ns` / `Nm` / `Nh Nm` |
 | lines | `cost.total_lines_added` / `total_lines_removed` | `󰷈 +A -R` (green/red) |
 | rate limits | `rate_limits.five_hour.used_percentage`, `rate_limits.seven_day.used_percentage` | `󰔚 5h N%`, `󰃭 7d N%`, joined with `·` |
-| context bar | `context_window.remaining_percentage` | 10-cell block bar + `N%`; green <50%, yellow <65%, orange <80%, blink-red 💀 ≥80% |
+| context bar | `context_window.remaining_percentage` | 10-cell block bar + `N%`; green <50%, yellow <65%, orange <80%, blink-red `` ≥80% |
 
 Read but currently unused: `data.thinking.enabled`, `data.session_name`, `data.version`.
 
