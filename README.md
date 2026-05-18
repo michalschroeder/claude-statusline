@@ -1,29 +1,29 @@
 # claude-statusline
 
-My Claude Code statusline and supporting hooks. Renders a compact, ANSI-colored status bar showing model, cost, tokens, duration, git branch, worktree, active skills, context window usage, and more — all read from the JSON Claude Code pipes to the statusline command.
+My Claude Code statusline and the two hooks that feed it. One compact ANSI line with the stuff I actually look at: model, cost, tokens, duration, git branch, worktree, active skills, context window. All of it pulled from the JSON Claude Code pipes in.
 
 ![tests](https://github.com/michalschroeder/claude-statusline/actions/workflows/test.yml/badge.svg)
 
 ![statusline scenarios](screenshot-demo.png)
 
-Reproduce locally with `bash demo/screenshots.sh`.
+To reproduce locally, run `bash demo/screenshots.sh`.
 
 ## Requirements
 
 - Node.js 18+
-- For the `nerd` icon set (prettiest): a [Nerd Font](https://www.nerdfonts.com/) in your terminal. Other icon sets work without one — see [Icons](#icons).
+- A [Nerd Font](https://www.nerdfonts.com/) if you want the `nerd` icon set. The other two sets need no font setup. See [Icons](#icons).
 
 ## Install
 
-**Quickest path:** paste [`SETUP_PROMPT.md`](SETUP_PROMPT.md) into a Claude Code session and let it do the setup for you (clone, edit `settings.json`, pick icon mode, install hooks).
+The fast way: paste [`SETUP_PROMPT.md`](SETUP_PROMPT.md) into a Claude Code session. It'll clone the repo, edit `settings.json`, pick an icon mode, and wire up the hooks for you.
 
-Or do it manually — clone the repo:
+Doing it by hand? Clone first:
 
 ```sh
 git clone https://github.com/michalschroeder/claude-statusline.git <repo>
 ```
 
-Add to `~/.claude/settings.json` (replace `<repo>` with your clone path):
+Then add to `~/.claude/settings.json` (swap `<repo>` for your clone path):
 
 **Statusline:**
 ```json
@@ -33,7 +33,7 @@ Add to `~/.claude/settings.json` (replace `<repo>` with your clone path):
 }
 ```
 
-**Skill-tool logger (optional — required for skills chip):**
+**Skill-tool logger** (only needed if you want the skills chip):
 ```json
 "hooks": {
   "PreToolUse": [
@@ -45,7 +45,7 @@ Add to `~/.claude/settings.json` (replace `<repo>` with your clone path):
 }
 ```
 
-**Slash-command logger (optional — required for skills chip):**
+**Slash-command logger** (also for the skills chip):
 ```json
 "hooks": {
   "UserPromptSubmit": [
@@ -54,7 +54,7 @@ Add to `~/.claude/settings.json` (replace `<repo>` with your clone path):
 }
 ```
 
-**Skills-log cleanup (optional — removes the session log on exit, prunes >30d stragglers):**
+**Skills-log cleanup** (deletes the session log when you exit, sweeps anything older than 30 days):
 ```json
 "hooks": {
   "SessionEnd": [
@@ -63,19 +63,35 @@ Add to `~/.claude/settings.json` (replace `<repo>` with your clone path):
 }
 ```
 
-Alternatively, symlink individual files into `~/.claude/hooks/`.
+If you'd rather, symlink the individual files into `~/.claude/hooks/`.
 
 ## Icons
 
-Three icon sets are available via `STATUSLINE_ICONS`:
+Three icon sets, picked with `STATUSLINE_ICONS`:
 
-| value | glyphs | requires |
-|---|---|---|
-| `nerd` | `󰾅 󰉋 󰷈 󰔚 󰃭 ⎇ ⊕ ⏱ 💀 │` | A [Nerd Font](https://www.nerdfonts.com/) installed and selected in your terminal |
-| `unicode` | `⚡ ▸ Δ ⎇ ⊕ ⏱ ‼ │` | Any modern Unicode-capable font (almost every desktop terminal) |
-| `ascii` | `! dir: d 5h 7d git: wt: t: !! \|` | Nothing — pure ASCII, works anywhere |
+| value | requires |
+|---|---|
+| `nerd` | A [Nerd Font](https://www.nerdfonts.com/) installed and selected in your terminal |
+| `unicode` | Any modern Unicode-capable font (almost every desktop terminal) |
+| `ascii` | Nothing. Pure ASCII, works anywhere |
 
-**First-run behaviour:** if `STATUSLINE_ICONS` is unset and no cached choice exists, the statusline defaults to `ascii` and emits a one-line hint. Set the env var to opt into a fancier set:
+The `nerd` example is the screenshot at the top. GitHub's UI has no Nerd Font, so inline nerd glyphs would just show up as tofu boxes here.
+
+Here's the `unicode` set with the same payload as the "mid-session" panel in that screenshot:
+
+```text
+Sonnet 4.6 • ⎇ main • ▸ claude-statusline • $0.42 • 19k↑ 3.2k↓ • ⏱ 3m • Δ +47 -12 • ██░░░░░░░░ 22%
+```
+
+And `ascii`:
+
+```text
+Sonnet 4.6 | git: main | dir: claude-statusline | $0.42 | 19k^ 3.2kv | t: 3m | d +47 -12 | ##-------- 22%
+```
+
+The full glyph table for each mode lives in `ICON_SETS` inside [`hooks/statusline.js`](hooks/statusline.js).
+
+**First run:** if `STATUSLINE_ICONS` is unset and there's no cached choice yet, the statusline falls back to `ascii` and prints a one-line hint. Set the env var when you're ready to upgrade:
 
 ```json
 "env": {
@@ -83,11 +99,11 @@ Three icon sets are available via `STATUSLINE_ICONS`:
 }
 ```
 
-The cached choice lives at `~/.cache/claude-statusline/icons`; delete it to see the hint again. `STATUSLINE_ICONS` always wins over the cache.
+The cache lives at `~/.cache/claude-statusline/icons`. Delete it if you want the hint back. The env var always overrides the cache.
 
 ## Configuration
 
-Set `STATUSLINE_SEGMENTS` to render only the named segments, in the order listed. Unset = render all (current behaviour).
+Set `STATUSLINE_SEGMENTS` to limit which segments render and in what order. Leave it unset to get everything (the default).
 
 In `~/.claude/settings.json`:
 
@@ -106,50 +122,50 @@ Segment names:
 | `skills` | last 3 invoked skills |
 | `style` | output style (non-default) |
 | `vim` | vim mode |
-| `branch` | ⎇ git branch |
-| `worktree` | ⊕ worktree name |
+| `branch` | git branch |
+| `worktree` | worktree name |
 | `agent` | agent name |
 | `dir` | directory label |
 | `addeddirs` | +N added dirs |
 | `cost` | $ cost |
-| `tokens` | input↑ output↓ |
-| `duration` | ⏱ session duration |
+| `tokens` | input / output token counts |
+| `duration` | session duration |
 | `lines` | +added -removed |
 | `ratelimits` | 5h / 7d usage % |
 | `context` | context bar |
 
-Unknown names are ignored; absent data still hides the segment.
+Unknown names get dropped. Segments with no data don't render anyway.
 
 ## Files
 
-- `hooks/statusline.js` — statusline renderer; reads JSON from stdin, writes ANSI to stdout
-- `hooks/log-skill.sh` — `PreToolUse` hook; logs `Skill` tool invocations to `${XDG_STATE_HOME:-$HOME/.local/state}/claude-statusline/skills/<session>.log`
-- `hooks/log-slash-skill.sh` — `UserPromptSubmit` hook; logs `/slash` skill invocations to the same log
-- `hooks/cleanup-skills-log.sh` — `SessionEnd` hook; deletes the session's skill log and prunes any older than 30 days
+- `hooks/statusline.js` - the renderer. Reads JSON from stdin, writes one ANSI line to stdout.
+- `hooks/log-skill.sh` - `PreToolUse` hook. Logs `Skill` tool invocations to `${XDG_STATE_HOME:-$HOME/.local/state}/claude-statusline/skills/<session>.log`.
+- `hooks/log-slash-skill.sh` - `UserPromptSubmit` hook. Logs `/slash` skill invocations to the same file.
+- `hooks/cleanup-skills-log.sh` - `SessionEnd` hook. Deletes the session's skill log and sweeps any older than 30 days.
 
 ## How it works
 
-Segments shown left to right:
+Segments, left to right:
 
-- **model** — display name (e.g. `claude-sonnet-4-6`)
-- **effort** — effort level when set
-- **skills** — last 3 unique skills invoked this session, most-recent-first; `+N` when more than 3
-- **output style** — shown only when non-default
-- **vim mode** — when vim mode is active
-- **⎇ branch** — current git branch; read directly from `.git/HEAD` (no subprocess); supports worktree indirection; truncated at 50 chars
-- **⊕ worktree** — worktree name when inside a worktree
-- **agent** — agent name when set
-- **dir** — basename of current directory; shows parent project name when inside a `.claude/worktrees/<name>/` path
-- **cost** — session cost with color thresholds: green < $1, yellow $1–$4.99, orange $5–$9.99, red ≥ $10
-- **tokens** — input↑ output↓, compacted (k/M suffixes)
-- **duration** — total session duration (s / m / h m)
-- **lines** — lines added/removed
-- **rate limits** — 5h and 7d usage percentages when available
-- **context bar** — block-fill bar with percentage; color thresholds: green < 50% used, yellow 50–64%, orange 65–79%, 💀 blink-red ≥ 80%
+- **model** - display name (e.g. `claude-sonnet-4-6`)
+- **effort** - effort level, when set
+- **skills** - last 3 unique skills used this session, newest first. Adds `+N` when there are more
+- **output style** - only shows up when it isn't `default`
+- **vim mode** - when vim mode is on
+- **branch** - current git branch. Read straight from `.git/HEAD`, no subprocess. Handles worktree indirection. Truncated past 50 chars
+- **worktree** - worktree name, when you're in one
+- **agent** - agent name, when set
+- **dir** - basename of the current directory. Inside `.claude/worktrees/<name>/` it shows the parent project's name instead
+- **cost** - session cost. Green under $1, yellow $1 to $4.99, orange $5 to $9.99, red at $10+
+- **tokens** - input and output counts, compacted with k/M suffixes
+- **duration** - total session time (s / m / h m)
+- **lines** - lines added and removed
+- **rate limits** - 5h and 7d usage percentages, when the payload includes them
+- **context bar** - block-fill bar plus percentage. Green under 50% used, yellow 50 to 64%, orange 65 to 79%, blink-red plus a skull glyph at 80%+
 
-**Worktree convention:** the `⎇` chip is hidden when the branch name matches `worktree-<name>` (the `⊕` chip already conveys it). It reappears when the branch diverges (manual checkout, detached HEAD, rename).
+**Worktree convention:** when you're in a worktree and the branch name matches `worktree-<name>`, the branch chip is hidden. The worktree chip already says it. The branch chip comes back the moment the branch diverges (manual checkout, detached HEAD, rename).
 
-**Skills chip:** reads `${XDG_STATE_HOME:-$HOME/.local/state}/claude-statusline/skills/<session>.log`; each line is `<timestamp> <skill-name>`. Written by the two bash hooks. `plugin:skill` entries have the prefix stripped. Uses `${CLAUDE_CONFIG_DIR:-$HOME/.claude}` for skill-existence checks.
+**Skills chip:** reads `${XDG_STATE_HOME:-$HOME/.local/state}/claude-statusline/skills/<session>.log`, where each line is `<timestamp> <skill-name>`. The two bash hooks write it. `plugin:` prefixes get stripped. Skill-existence checks use `${CLAUDE_CONFIG_DIR:-$HOME/.claude}`.
 
 ## License
 
