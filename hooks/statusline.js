@@ -20,7 +20,7 @@ const dimCyan = (s) => `\x1b[2;36m${s}\x1b[0m`;
 // ascii: pure ASCII (works on any terminal/font).
 const ICON_SETS = {
   nerd:    { effort: '󰾅', branch: '󰘬', worktree: '󰘯', dir: '󰉋', duration: '󰔛',
-             lines: '󰷈', r5h: '󰔚 5h', r7d: '󰃭 7d', rsep: '·', skull: '\u{1F480}',
+             lines: '󰷈', r5h: '󰔚 5h', r7d: '󰃭 7d', rsep: '·', skull: '',
              up: '󰁝', down: '󰁅', barFill: '█', barEmpty: '░',
              sep: '│', skills: '', hr: '─' },
   unicode: { effort: '⚡', branch: '⎇', worktree: '⊕', dir: '▸',  duration: '⏱',
