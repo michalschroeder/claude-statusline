@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+# Render a series of statusline scenarios for README screenshots.
+# Run from repo root:   bash demo/screenshots.sh
+# Tip: maximize the terminal first; the skills rule scales to terminal width.
+
+set -u
+cd "$(dirname "$0")/.."
+export STATUSLINE_ICONS=nerd
+
+COLS=$(tput cols 2>/dev/null || echo 120)
+THICK=$(printf '━%.0s' $(seq 1 "$COLS"))
+THIN=$(printf '─%.0s' $(seq 1 "$COLS"))
+
+render() {
+  local title="$1"; shift
+  local payload="$1"; shift
+  printf '\n\033[1m%s\033[0m\n' "$THICK"
+  printf '\033[1;35m %s\033[0m\n' "$title"
+  printf '\033[2m%s\033[0m\n' "$THIN"
+  printf '%s' "$payload" | node hooks/statusline.js
+  echo
+}
+
+# 1. Fresh session — minimal payload
+render "1. Fresh session" '{
+  "model": {"display_name": "Opus 4.7"},
+  "workspace": {"current_dir": "/home/ms/projects/claude-statusline", "project_dir": "/home/ms/projects/claude-statusline"}
+}'
+
+# 2. Typical mid-session
+render "2. Mid-session (typical)" '{
+  "model": {"display_name": "Sonnet 4.6"},
+  "workspace": {"current_dir": "/home/ms/projects/claude-statusline", "project_dir": "/home/ms/projects/claude-statusline"},
+  "cost": {"total_cost_usd": 0.42, "total_duration_ms": 185000, "total_lines_added": 47, "total_lines_removed": 12},
+  "context_window": {"total_input_tokens": 18500, "total_output_tokens": 3200, "remaining_percentage": 78}
+}'
+
+# 3. Heavy session — agent, effort, output style, vim, added dirs
+render "3. Heavy session w/ agent" '{
+  "model": {"display_name": "Opus 4.7"},
+  "effort": {"level": "high"},
+  "output_style": {"name": "explanatory"},
+  "vim": {"mode": "NORMAL"},
+  "agent": {"name": "code-reviewer"},
+  "workspace": {
+    "current_dir": "/home/ms/projects/claude-statusline",
+    "project_dir": "/home/ms/projects/claude-statusline",
+    "added_dirs": ["/tmp/notes", "/var/log"]
+  },
+  "cost": {"total_cost_usd": 6.85, "total_duration_ms": 2640000, "total_lines_added": 412, "total_lines_removed": 188},
+  "context_window": {"total_input_tokens": 245000, "total_output_tokens": 18400, "remaining_percentage": 42}
+}'
+
+# 4. Worktree + rate limits
+render "4. Worktree + rate limits" '{
+  "model": {"display_name": "Sonnet 4.6"},
+  "effort": {"level": "medium"},
+  "worktree": {"name": "feature-icons"},
+  "workspace": {
+    "current_dir": "/home/ms/projects/claude-statusline/.claude/worktrees/feature-icons",
+    "project_dir": "/home/ms/projects/claude-statusline"
+  },
+  "cost": {"total_cost_usd": 2.10, "total_duration_ms": 920000, "total_lines_added": 86, "total_lines_removed": 30},
+  "context_window": {"total_input_tokens": 92000, "total_output_tokens": 7800, "remaining_percentage": 55},
+  "rate_limits": {"five_hour": {"used_percentage": 34}, "seven_day": {"used_percentage": 61}}
+}'
+
+# 5. Danger zone — context > 80% (blinking red skull), cost > $10
+render "5. Danger zone" '{
+  "model": {"display_name": "Opus 4.7"},
+  "effort": {"level": "high"},
+  "workspace": {"current_dir": "/home/ms/projects/claude-statusline", "project_dir": "/home/ms/projects/claude-statusline"},
+  "cost": {"total_cost_usd": 14.27, "total_duration_ms": 5400000, "total_lines_added": 1240, "total_lines_removed": 760},
+  "context_window": {"total_input_tokens": 920000, "total_output_tokens": 42000, "remaining_percentage": 12},
+  "rate_limits": {"five_hour": {"used_percentage": 88}, "seven_day": {"used_percentage": 74}}
+}'
+
+# 6. With loaded skills (writes a temp skills log keyed to a fake session id)
+SESSION="demo-$$"
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/claude-statusline/skills"
+mkdir -p "$STATE_DIR"
+LOG="$STATE_DIR/$SESSION.log"
+NOW=$(date +%s)
+{
+  echo "$((NOW-300)) superpowers:brainstorming"
+  echo "$((NOW-200)) superpowers:test-driven-development"
+  echo "$((NOW-100)) document-skills:frontend-design"
+  echo "$((NOW-50)) using-superpowers"
+} > "$LOG"
+
+render "6. With loaded skills" "{
+  \"session_id\": \"$SESSION\",
+  \"model\": {\"display_name\": \"Opus 4.7\"},
+  \"effort\": {\"level\": \"high\"},
+  \"workspace\": {\"current_dir\": \"/home/ms/projects/claude-statusline\", \"project_dir\": \"/home/ms/projects/claude-statusline\"},
+  \"cost\": {\"total_cost_usd\": 3.40, \"total_duration_ms\": 1200000, \"total_lines_added\": 210, \"total_lines_removed\": 64},
+  \"context_window\": {\"total_input_tokens\": 140000, \"total_output_tokens\": 11000, \"remaining_percentage\": 48}
+}"
+
+rm -f "$LOG"
+echo

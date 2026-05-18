@@ -48,12 +48,12 @@ test('context 21% remaining (79% used) — orange', async () => {
 
 test('context 20% remaining (80% used) — blink red + skull', async () => {
   const raw = await runRaw(inp(20));
-  assert.ok(stripAnsi(raw).includes(''));
+  assert.ok(stripAnsi(raw).includes('󰚌'));
   assert.ok(raw.includes('\x1b[5;31m'));
 });
 
 test('context 0% remaining (100% used) — blink red + skull', async () => {
   const raw = await runRaw(inp(0));
-  assert.ok(stripAnsi(raw).includes(''));
+  assert.ok(stripAnsi(raw).includes('󰚌'));
   assert.ok(raw.includes('\x1b[5;31m'));
 });

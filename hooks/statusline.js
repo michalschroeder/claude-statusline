@@ -20,15 +20,18 @@ const dimCyan = (s) => `\x1b[2;36m${s}\x1b[0m`;
 // ascii: pure ASCII (works on any terminal/font).
 const ICON_SETS = {
   nerd:    { effort: '󰾅', branch: '󰘬', worktree: '󰘯', dir: '󰉋', duration: '󰔛',
-             lines: '󰷈', r5h: '󰔚 5h', r7d: '󰃭 7d', rsep: '·', skull: '',
+             lines: '󰷈', r5h: '󰔚 5h', r7d: '󰃭 7d', rsep: '·', skull: '󰚌',
+             style: '󰏘', vim: '',
              up: '󰁝', down: '󰁅', barFill: '█', barEmpty: '░',
-             sep: '│', skills: '', hr: '─' },
+             sep: '•', skills: '', hr: '─' },
   unicode: { effort: '⚡', branch: '⎇', worktree: '⊕', dir: '▸',  duration: '⏱',
              lines: 'Δ', r5h: '5h', r7d: '7d', rsep: '·', skull: '‼',
+             style: '❖', vim: 'V',
              up: '↑', down: '↓', barFill: '█', barEmpty: '░',
-             sep: '│', skills: '✦', hr: '─' },
+             sep: '•', skills: '✦', hr: '─' },
   ascii:   { effort: '!', branch: 'git:', worktree: 'wt:', dir: 'dir:', duration: 't:',
              lines: 'd', r5h: '5h', r7d: '7d', rsep: ',', skull: '!!',
+             style: 'S', vim: 'V',
              up: '^', down: 'v', barFill: '#', barEmpty: '-',
              sep: '|', skills: '*', hr: '-' },
 };
@@ -211,10 +214,10 @@ process.stdin.on('end', () => {
     }
 
 // Output style (only when non-default)
-    if (outputStyle && outputStyle.toLowerCase() !== 'default') add('style', dim(`style:${outputStyle}`));
+    if (outputStyle && outputStyle.toLowerCase() !== 'default') add('style', dim(`${icons.style} ${outputStyle}`));
 
     // Vim mode
-    if (vimMode) add('vim', dim(`vim:${vimMode}`));
+    if (vimMode) add('vim', dim(`${icons.vim} ${vimMode}`));
 
     // Git branch — hidden inside a worktree when branch is the expected
     // `worktree-<name>` (the ⊕ chip already conveys it). Surfaces only when

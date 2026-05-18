@@ -4,11 +4,9 @@ My Claude Code statusline and supporting hooks. Renders a compact, ANSI-colored 
 
 ![tests](https://github.com/michalschroeder/claude-statusline/actions/workflows/test.yml/badge.svg)
 
-**API session** (cost + tokens + duration + lines + context bar):
-![api session](screenshot-api.png)
+![statusline scenarios](screenshot-demo.png)
 
-**Claude.ai plan session** (rate limits + higher context usage):
-![plan session](screenshot-plan.png)
+Reproduce locally with `bash demo/screenshots.sh`.
 
 ## Requirements
 

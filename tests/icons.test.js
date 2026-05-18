@@ -19,7 +19,7 @@ test('nerd mode keeps Nerd Font glyphs', async () => {
   assert.ok(out.includes('󰷈'));      // lines
   assert.ok(out.includes('󰔚 5h'));   // rate5h
   assert.ok(out.includes('󰃭 7d'));   // rate7d
-  assert.ok(out.includes('│'));      // separator
+  assert.ok(out.includes('•'));      // separator
 });
 
 test('unicode mode swaps Nerd glyphs for BMP fallbacks', async () => {
