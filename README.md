@@ -17,7 +17,9 @@ My Claude Code statusline and supporting hooks. Renders a compact, ANSI-colored 
 
 ## Install
 
-Clone the repo:
+**Quickest path:** paste [`SETUP_PROMPT.md`](SETUP_PROMPT.md) into a Claude Code session and let it do the setup for you (clone, edit `settings.json`, pick icon mode, install hooks).
+
+Or do it manually — clone the repo:
 
 ```sh
 git clone https://github.com/michalschroeder/claude-statusline.git <repo>
