@@ -22,7 +22,7 @@ const ICON_SETS = {
   nerd:    { effort: '󰾅', branch: '󰘬', worktree: '󰘯', dir: '󰉋', duration: '󰔛',
              lines: '󰷈', r5h: '󰔚 5h', r7d: '󰃭 7d', rsep: '·', skull: '\u{1F480}',
              up: '󰁝', down: '󰁅', barFill: '█', barEmpty: '░',
-             sep: '│', skills: '󰾄', hr: '─' },
+             sep: '│', skills: '', hr: '─' },
   unicode: { effort: '⚡', branch: '⎇', worktree: '⊕', dir: '▸',  duration: '⏱',
              lines: 'Δ', r5h: '5h', r7d: '7d', rsep: '·', skull: '‼',
              up: '↑', down: '↓', barFill: '█', barEmpty: '░',
