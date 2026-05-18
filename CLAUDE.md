@@ -17,9 +17,9 @@ Single-process statusline renderer plus two bash logging hooks. Data flow:
 3. The skills chip is sourced from `/tmp/claude-skills-<session_id>.log`, populated by two side-channel hooks:
    - `hooks/log-skill.sh` — `PreToolUse` matcher=`Skill`, logs the invoked skill name.
    - `hooks/log-slash-skill.sh` — `UserPromptSubmit`, parses `/<skill>` from prompts; logs only when the skill exists under `$CLAUDE_CONFIG_DIR/skills/` or `./.agents/skills/`.
-   Log format: `<unix_ts> <skill_name>` per line. Renderer reads last entries, dedupes most-recent-first, shows 3 with `+N` overflow; strips `plugin:` prefix.
+   Log format: `<unix_ts> <skill_name>` per line. Renderer reads last entries, dedupes; strips `plugin:` prefix.
 
-Output is two lines when any skills are logged: line 1 = segments below; line 2 = `skills: a, b, c, ...` (all unique skills, oldest→newest, `plugin:` prefix stripped, no truncation). Line 2 is suppressed otherwise.
+When any skills are logged the renderer emits 4 lines: segments, dim `─` rule, `{icons.skills} loaded skills: a, b, c, ...` (all uniques, oldest→newest, no truncation), dim `─` rule. Rule width = terminal columns, clamped 20–120. With no skills logged, just the single segment line is printed (no skills chip on line 1).
 
 ## Supported segments (rendered left-to-right)
 
@@ -29,7 +29,6 @@ Each segment is emitted only when its source field is present/non-empty. Separat
 |---|---|---|
 | model | `model.display_name` | dim; fallback `Claude` |
 | effort | `effort.level` | yellow `󰾅` |
-| skills | `/tmp/claude-skills-<session>.log` | last 3 unique, most-recent-first, reversed; `+N` overflow |
 | output style | `output_style.name` | only when not `default` |
 | vim mode | `vim.mode` | `vim:<mode>` |
 | branch | parsed from `.git/HEAD` (no subprocess) | `⎇`, truncated >50 chars (`first30...lastN`); supports worktree `gitdir:` indirection and detached HEAD (short hash) |
@@ -50,7 +49,7 @@ Read but currently unused: `data.thinking.enabled`, `data.session_name`, `data.v
 
 `STATUSLINE_SEGMENTS` env var (set via `"env"` in `~/.claude/settings.json`) is an optional comma-separated allowlist that also controls render order. Unset/empty = render all. Names match the segment column above. Unknown names ignored. Each segment is tagged via `add(name, value)`; filter applied just before joining.
 
-`STATUSLINE_ICONS=nerd|unicode|ascii` picks the icon set. `nerd` requires a Nerd Font; `unicode` is BMP symbols (no emoji); `ascii` is pure ASCII. Resolved by `resolveIconMode()`: env var wins; else read cached choice from `~/.cache/claude-statusline/icons`; else first-run writes `ascii` to the cache and appends a one-line install hint to the statusline. Per-mode glyphs live in `ICON_SETS` (`effort branch worktree dir duration lines r5h r7d rsep skull up down barFill barEmpty sep`). Tests force `nerd` via `tests/helpers.js`; `tests/icons.test.js` exercises the other modes.
+`STATUSLINE_ICONS=nerd|unicode|ascii` picks the icon set. `nerd` requires a Nerd Font; `unicode` is BMP symbols (no emoji); `ascii` is pure ASCII. Resolved by `resolveIconMode()`: env var wins; else read cached choice from `~/.cache/claude-statusline/icons`; else first-run writes `ascii` to the cache and appends a one-line install hint to the statusline. Per-mode glyphs live in `ICON_SETS` (`effort branch worktree dir duration lines r5h r7d rsep skull up down barFill barEmpty sep skills hr`). Tests force `nerd` via `tests/helpers.js`; `tests/icons.test.js` exercises the other modes.
 
 ## Conventions
 

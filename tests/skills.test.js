@@ -47,22 +47,27 @@ test('3 unique skills — all shown most-recent-first', async () => {
   } finally { cleanup(); }
 });
 
-test('4+ unique skills — line 1 truncated w/ +N, line 2 lists all', async () => {
+test('4+ unique skills — only on line 2, no truncation', async () => {
   writeLog('1000 alpha\n1001 beta\n1002 gamma\n1003 delta\n');
   try {
     const i = baseInput();
     i.session_id = SESSION;
     const out = await run(i);
-    const [line1, line2] = out.split('\n');
-    assert.ok(line1.includes('+1'));
-    assert.ok(!line1.includes('alpha'));
-    assert.ok(line2.startsWith('skills:'));
-    assert.ok(line2.includes('alpha'));
-    assert.ok(line2.includes('delta'));
+    const lines = out.split('\n');
+    // 4 lines: segments, divider, skills, divider
+    assert.equal(lines.length, 4);
+    assert.ok(!lines[0].includes('alpha'));
+    assert.ok(!lines[0].includes('+1'));
+    assert.ok(lines[2].includes('loaded skills:'));
+    assert.ok(lines[2].includes('alpha'));
+    assert.ok(lines[2].includes('delta'));
+    // dividers (line 1 and 3) are horizontal-rule glyphs
+    assert.match(lines[1], /^─+$/);
+    assert.match(lines[3], /^─+$/);
   } finally { cleanup(); }
 });
 
-test('skills line absent when no skills logged', async () => {
+test('no skills logged — single line, no dividers', async () => {
   cleanup();
   const i = baseInput();
   i.session_id = SESSION;
@@ -87,9 +92,9 @@ test('duplicate entries — deduplicated', async () => {
     const i = baseInput();
     i.session_id = SESSION;
     const out = await run(i);
-    // 2 unique: other (most recent), hookify
     assert.ok(out.includes('other'));
     assert.ok(out.includes('hookify'));
-    assert.ok(!out.includes('+'));
+    // no overflow indicator since 2 uniques and no truncation logic
+    assert.ok(!out.includes('+1'));
   } finally { cleanup(); }
 });

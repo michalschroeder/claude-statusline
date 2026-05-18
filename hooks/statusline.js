@@ -22,15 +22,15 @@ const ICON_SETS = {
   nerd:    { effort: '󰾅', branch: '⎇', worktree: '⊕', dir: '󰉋', duration: '⏱',
              lines: '󰷈', r5h: '󰔚 5h', r7d: '󰃭 7d', rsep: '·', skull: '\u{1F480}',
              up: '↑', down: '↓', barFill: '█', barEmpty: '░',
-             sep: '│' },
+             sep: '│', skills: '', hr: '─' },
   unicode: { effort: '⚡', branch: '⎇', worktree: '⊕', dir: '▸',  duration: '⏱',
              lines: 'Δ', r5h: '5h', r7d: '7d', rsep: '·', skull: '‼',
              up: '↑', down: '↓', barFill: '█', barEmpty: '░',
-             sep: '│' },
+             sep: '│', skills: '✦', hr: '─' },
   ascii:   { effort: '!', branch: 'git:', worktree: 'wt:', dir: 'dir:', duration: 't:',
              lines: 'd', r5h: '5h', r7d: '7d', rsep: ',', skull: '!!',
              up: '^', down: 'v', barFill: '#', barEmpty: '-',
-             sep: '|' },
+             sep: '|', skills: '*', hr: '-' },
 };
 
 // Resolve icon mode. Priority: STATUSLINE_ICONS env > cached choice > first-run default.
@@ -191,7 +191,7 @@ process.stdin.on('end', () => {
     // Effort + thinking
     if (effortLevel) add('effort', yellow(`${icons.effort} ${effortLevel}`));
 
-    // Loaded skills (most-recently invoked first 3, written by PreToolUse Skill hook)
+    // Loaded skills (all unique, most-recent-first; written by Skill PreToolUse + /skill UserPromptSubmit hooks)
     let allSkills = [];
     if (session) {
       try {
@@ -205,14 +205,6 @@ process.stdin.on('end', () => {
           if (!name || seen.has(name)) continue;
           seen.add(name);
           allSkills.push(name);
-        }
-        if (allSkills.length) {
-          const shown = allSkills
-            .slice(0, 3)
-            .reverse()
-            .map((n) => (n.includes(':') ? n.split(':').slice(1).join(':') : n));
-          const more = allSkills.length > 3 ? ` +${allSkills.length - 3}` : '';
-          add('skills', dim(` ${shown.join(',')}${more}`));
         }
       } catch {}
     }
@@ -314,7 +306,9 @@ process.stdin.on('end', () => {
         .reverse()
         .map((n) => (n.includes(':') ? n.split(':').slice(1).join(':') : n))
         .join(', ');
-      out += `\n${dim(`skills: ${full}`)}`;
+      const width = Math.max(20, Math.min(120, process.stdout.columns || 80));
+      const rule = dim(icons.hr.repeat(width));
+      out += `\n${rule}\n${dim(`${icons.skills} loaded skills: ${full}`)}\n${rule}`;
     }
 
     process.stdout.write(out);
@@ -322,3 +316,4 @@ process.stdin.on('end', () => {
     // Silent fail - don't break statusline on parse errors
   }
 });
+
