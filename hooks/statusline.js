@@ -22,7 +22,7 @@ const ICON_SETS = {
   nerd:    { effort: '󰾅', branch: '⎇', worktree: '⊕', dir: '󰉋', duration: '⏱',
              lines: '󰷈', r5h: '󰔚 5h', r7d: '󰃭 7d', rsep: '·', skull: '\u{1F480}',
              up: '↑', down: '↓', barFill: '█', barEmpty: '░',
-             sep: '│', skills: '', hr: '─' },
+             sep: '│', skills: '\u{F5DC}', hr: '─' },
   unicode: { effort: '⚡', branch: '⎇', worktree: '⊕', dir: '▸',  duration: '⏱',
              lines: 'Δ', r5h: '5h', r7d: '7d', rsep: '·', skull: '‼',
              up: '↑', down: '↓', barFill: '█', barEmpty: '░',
@@ -308,7 +308,8 @@ process.stdin.on('end', () => {
         .join(', ');
       const width = Math.max(20, Math.min(120, process.stdout.columns || 80));
       const rule = dim(icons.hr.repeat(width));
-      out += `\n${rule}\n${dim(`${icons.skills} loaded skills: ${full}`)}\n${rule}`;
+      const title = bold(`${icons.skills} loaded skills:`);
+      out += `\n${rule}\n${title} ${dim(full)}\n${rule}`;
     }
 
     process.stdout.write(out);
