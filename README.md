@@ -91,13 +91,15 @@ Sonnet 4.6 | git: main | dir: claude-statusline | $0.42 | 19k^ 3.2kv | t: 3m | d
 
 The full glyph table for each mode lives in `ICON_SETS` inside [`hooks/statusline.js`](hooks/statusline.js).
 
-**First run:** if `STATUSLINE_ICONS` is unset and there's no cached choice yet, the statusline falls back to `ascii` and prints a one-line hint. Set the env var when you're ready to upgrade:
+**First run:** if `STATUSLINE_ICONS` is unset and there's no cached choice yet, the statusline falls back to `ascii` and prints a one-line hint. Set the env var when you're ready to upgrade — put it in `~/.claude/settings.json` under `env` (recommended; portable across however you launch Claude Code):
 
 ```json
 "env": {
   "STATUSLINE_ICONS": "nerd"
 }
 ```
+
+A shell-level export (`export STATUSLINE_ICONS=nerd` in `.zshrc`/`.bashrc`) also works, but only when Claude Code is launched from a shell that sourced it.
 
 The cache lives at `~/.cache/claude-statusline/icons`. Delete it if you want the hint back. The env var always overrides the cache.
 
