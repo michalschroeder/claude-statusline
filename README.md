@@ -80,7 +80,7 @@ The `nerd` example is the screenshot at the top. GitHub's UI has no Nerd Font, s
 Here's the `unicode` set with the same payload as the "mid-session" panel in that screenshot:
 
 ```text
-Sonnet 4.6 • ⎇ main • ▸ claude-statusline • $0.42 • 19k↑ 3.2k↓ • ⏱ 3m • Δ +47 -12 • ██░░░░░░░░ 22%
+Sonnet 4.6 ┊ ⎇ main ┊ ▸ claude-statusline ┊ $0.42 ┊ 19k↑ 3.2k↓ ┊ ⏱ 3m ┊ Δ +47 -12 ┊ ██░░░░░░░░ 22%
 ```
 
 And `ascii`:

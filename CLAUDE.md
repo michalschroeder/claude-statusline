@@ -24,7 +24,7 @@ When any skills are logged the renderer emits 4 lines: segments, dim `─` rule,
 
 ## Supported segments (rendered left-to-right)
 
-Each segment is emitted only when its source field is present/non-empty. Separator: dim `•`.
+Each segment is emitted only when its source field is present/non-empty. Separator: dim `┊`.
 
 | Segment | Source field | Notes |
 |---|---|---|
