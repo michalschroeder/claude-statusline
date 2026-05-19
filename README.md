@@ -11,6 +11,7 @@ To reproduce locally, run `bash demo/screenshots.sh`.
 ## Requirements
 
 - Node.js 18+
+- `jq` if you want the skills chip (used by the logging hooks; not bundled on most distros or macOS — `apt install jq` / `brew install jq`). The statusline renderer itself doesn't need it.
 - A [Nerd Font](https://github.com/ryanoasis/nerd-fonts) if you want the `nerd` icon set — I use `JetBrainsMono Nerd Font`, but any official Nerd Font works (they're all patched `--complete`, so they all carry the Material Design Icons glyphs the statusline uses). The other two icon sets need no font setup. See [Icons](#icons).
 
 ## Install

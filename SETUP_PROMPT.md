@@ -19,7 +19,7 @@ Claude Code's settings live at `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.jso
    ```
    Use the absolute path as `<REPO>` everywhere below.
 
-3. Verify Node 18+ is available: `node --version`. If missing, stop and tell me to install Node 18+.
+3. Verify Node 18+ is available: `node --version`. If missing, stop and tell me to install Node 18+. Also check `command -v jq` — `jq` is required for the settings.json edit below and for the skill-logging hooks at runtime; if missing, tell me to install it (`apt install jq` / `brew install jq` / equivalent) before continuing.
 
 4. Sanity-check the renderer works:
    ```sh
