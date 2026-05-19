@@ -11,7 +11,7 @@ To reproduce locally, run `bash demo/screenshots.sh`.
 ## Requirements
 
 - Node.js 18+
-- A [Nerd Font](https://www.nerdfonts.com/) if you want the `nerd` icon set. The other two sets need no font setup. See [Icons](#icons).
+- A [Nerd Font](https://github.com/ryanoasis/nerd-fonts) if you want the `nerd` icon set — I use `JetBrainsMono Nerd Font`, but any official Nerd Font works (they're all patched `--complete`, so they all carry the Material Design Icons glyphs the statusline uses). The other two icon sets need no font setup. See [Icons](#icons).
 
 ## Install
 
@@ -71,7 +71,7 @@ Three icon sets, picked with `STATUSLINE_ICONS`:
 
 | value | requires |
 |---|---|
-| `nerd` | A [Nerd Font](https://www.nerdfonts.com/) installed and selected in your terminal |
+| `nerd` | A [Nerd Font](https://github.com/ryanoasis/nerd-fonts) installed and selected in your terminal (I use `JetBrainsMono Nerd Font`; any will work) |
 | `unicode` | Any modern Unicode-capable font (almost every desktop terminal) |
 | `ascii` | Nothing. Pure ASCII, works anywhere |
 
