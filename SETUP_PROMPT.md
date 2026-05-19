@@ -19,7 +19,7 @@ Claude Code's settings live at `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.jso
    ```
    Use the absolute path as `<REPO>` everywhere below.
 
-3. Verify Node 18+ is available: `node --version`. If missing, stop and tell me to install Node 18+.
+3. Verify Node 18+ is available: `node --version`. If missing, stop and tell me to install Node 18+. Also check `command -v jq` — `jq` is required for the settings.json edit below and for the skill-logging hooks at runtime; if missing, tell me to install it (`apt install jq` / `brew install jq` / equivalent) before continuing.
 
 4. Sanity-check the renderer works:
    ```sh
@@ -31,11 +31,11 @@ Claude Code's settings live at `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.jso
 
 Three sets are available via the `STATUSLINE_ICONS` env var:
 
-- **`nerd`** — prettiest; **requires a [Nerd Font](https://www.nerdfonts.com/) installed on the system AND selected as the terminal font.** If that's not done, `nerd` glyphs render as tofu/boxes.
+- **`nerd`** — prettiest; **requires a [Nerd Font](https://github.com/ryanoasis/nerd-fonts) installed AND selected as the terminal font.** The repo author uses `JetBrainsMono Nerd Font`, but any official Nerd Font works — they're all patched `--complete`, so they all carry the Material Design Icons glyphs the statusline uses. If no Nerd Font is selected in the terminal, `nerd` glyphs render as tofu/boxes.
 - **`unicode`** — works in any modern Unicode-capable font (almost every desktop terminal). No extra install.
 - **`ascii`** — pure ASCII, works anywhere.
 
-Ask me which mode I want. Before recommending `nerd`, explicitly ask whether my terminal is already configured with a Nerd Font; if not, tell me to install one from nerdfonts.com and set it as my terminal font first, or pick `unicode`/`ascii` instead. Remember the choice as `<ICONS>`.
+Ask me which mode I want. Before recommending `nerd`, explicitly ask whether my terminal is already configured with a Nerd Font; if not, tell me to grab one from the [Nerd Fonts repo](https://github.com/ryanoasis/nerd-fonts) and set it as my terminal font first, or pick `unicode`/`ascii` instead. Remember the choice as `<ICONS>`.
 
 ## 3. Edit `<CONFIG_DIR>/settings.json`
 

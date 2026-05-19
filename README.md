@@ -11,7 +11,8 @@ To reproduce locally, run `bash demo/screenshots.sh`.
 ## Requirements
 
 - Node.js 18+
-- A [Nerd Font](https://www.nerdfonts.com/) if you want the `nerd` icon set. The other two sets need no font setup. See [Icons](#icons).
+- `jq` if you want the skills chip (used by the logging hooks; not bundled on most distros or macOS — `apt install jq` / `brew install jq`). The statusline renderer itself doesn't need it.
+- A [Nerd Font](https://github.com/ryanoasis/nerd-fonts) if you want the `nerd` icon set — I use `JetBrainsMono Nerd Font`, but any official Nerd Font works (they're all patched `--complete`, so they all carry the Material Design Icons glyphs the statusline uses). The other two icon sets need no font setup. See [Icons](#icons).
 
 ## Install
 
@@ -71,7 +72,7 @@ Three icon sets, picked with `STATUSLINE_ICONS`:
 
 | value | requires |
 |---|---|
-| `nerd` | A [Nerd Font](https://www.nerdfonts.com/) installed and selected in your terminal |
+| `nerd` | A [Nerd Font](https://github.com/ryanoasis/nerd-fonts) installed and selected in your terminal (I use `JetBrainsMono Nerd Font`; any will work) |
 | `unicode` | Any modern Unicode-capable font (almost every desktop terminal) |
 | `ascii` | Nothing. Pure ASCII, works anywhere |
 
@@ -91,13 +92,15 @@ Sonnet 4.6 | git: main | dir: claude-statusline | $0.42 | 19k^ 3.2kv | t: 3m | d
 
 The full glyph table for each mode lives in `ICON_SETS` inside [`hooks/statusline.js`](hooks/statusline.js).
 
-**First run:** if `STATUSLINE_ICONS` is unset and there's no cached choice yet, the statusline falls back to `ascii` and prints a one-line hint. Set the env var when you're ready to upgrade:
+**First run:** if `STATUSLINE_ICONS` is unset and there's no cached choice yet, the statusline falls back to `ascii` and prints a one-line hint. Set the env var when you're ready to upgrade — put it in `~/.claude/settings.json` under `env` (recommended; portable across however you launch Claude Code):
 
 ```json
 "env": {
   "STATUSLINE_ICONS": "nerd"
 }
 ```
+
+A shell-level export (`export STATUSLINE_ICONS=nerd` in `.zshrc`/`.bashrc`) also works, but only when Claude Code is launched from a shell that sourced it.
 
 The cache lives at `~/.cache/claude-statusline/icons`. Delete it if you want the hint back. The env var always overrides the cache.
 
