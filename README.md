@@ -1,6 +1,6 @@
 # claude-statusline
 
-My Claude Code statusline and the two hooks that feed it. One compact ANSI line with the stuff I actually look at: model, cost, tokens, duration, git branch, worktree, active skills, context window. All of it pulled from the JSON Claude Code pipes in.
+My Claude Code statusline and the two hooks that feed it. One compact ANSI line with the stuff I actually look at: model, cost, tokens, duration, git branch, worktree, active skills, context window. All of it pulled from the JSON Claude Code pipes in and custom hooks for getting loaded skills.
 
 ![tests](https://github.com/michalschroeder/claude-statusline/actions/workflows/test.yml/badge.svg)
 
