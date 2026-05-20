@@ -44,6 +44,49 @@ test('different worktree name — 󰘬 shown', async () => {
   }
 });
 
+test('workspace.git_worktree fallback — 󰘯 shown, matching 󰘬 hidden', async () => {
+  const dir = mkTmpGit('worktree-plain');
+  try {
+    const i = baseInput();
+    i.workspace.project_dir = dir;
+    i.workspace.git_worktree = 'plain';
+    const out = await run(i);
+    assert.ok(out.includes('󰘯 plain'));
+    assert.ok(!out.includes('󰘬'));
+  } finally {
+    fs.rmSync(dir, { recursive: true });
+  }
+});
+
+test('workspace.git_worktree fallback — diverged 󰘬 shown', async () => {
+  const dir = mkTmpGit('main');
+  try {
+    const i = baseInput();
+    i.workspace.project_dir = dir;
+    i.workspace.git_worktree = 'plain';
+    const out = await run(i);
+    assert.ok(out.includes('󰘯 plain'));
+    assert.ok(out.includes('󰘬 main'));
+  } finally {
+    fs.rmSync(dir, { recursive: true });
+  }
+});
+
+test('worktree.name wins over workspace.git_worktree', async () => {
+  const dir = mkTmpGit('worktree-cc');
+  try {
+    const i = baseInput();
+    i.workspace.project_dir = dir;
+    i.workspace.git_worktree = 'plain';
+    i.worktree = { name: 'cc' };
+    const out = await run(i);
+    assert.ok(out.includes('󰘯 cc'));
+    assert.ok(!out.includes('plain'));
+  } finally {
+    fs.rmSync(dir, { recursive: true });
+  }
+});
+
 test('no worktree in input — 󰘬 shown normally', async () => {
   const dir = mkTmpGit('feature/my-branch');
   try {

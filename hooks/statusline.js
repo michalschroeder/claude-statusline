@@ -178,7 +178,7 @@ process.stdin.on('end', () => {
     const rateLimitSevenDay = data.rate_limits?.seven_day?.used_percentage;
     const totalDurationMs = data.cost?.total_duration_ms;
     const addedDirs = data.workspace?.added_dirs;
-    const worktreeName = data.worktree?.name;
+    const worktreeName = data.worktree?.name || data.workspace?.git_worktree;
     const version = data.version;
 
     const { mode: iconMode, hint: iconHint } = resolveIconMode();
