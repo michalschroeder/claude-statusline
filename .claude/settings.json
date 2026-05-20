@@ -20,5 +20,8 @@
       "Pushing to origin/main, force-pushing any branch, or creating GitHub releases without explicit instruction",
       "Modifying .github/workflows/ without explicit instruction"
     ]
+  },
+  "worktree": {
+    "bgIsolation": "none"
   }
 }
