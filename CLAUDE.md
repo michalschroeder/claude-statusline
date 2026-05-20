@@ -33,7 +33,7 @@ Each segment is emitted only when its source field is present/non-empty. Separat
 | output style | `output_style.name` | `󰏘`; only when not `default` |
 | vim mode | `vim.mode` | `` |
 | branch | parsed from `.git/HEAD` (no subprocess) | `󰘬`, truncated >50 chars (`first30...lastN`); supports worktree `gitdir:` indirection and detached HEAD (short hash) |
-| worktree | `worktree.name` | `󰘯` |
+| worktree | `worktree.name`, falls back to `workspace.git_worktree` | `󰘯`; covers plain `git worktree add` worktrees, not only `--worktree` sessions |
 | agent | `agent.name` | bold; `󰚩` |
 | dir | `workspace.current_dir` basename | `󰉋`; when inside `.../.claude/worktrees/<name>/`, shows parent project name |
 | added dirs | `workspace.added_dirs.length` | `+Ndir` |
