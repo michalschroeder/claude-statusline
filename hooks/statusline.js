@@ -21,17 +21,17 @@ const dimCyan = (s) => `\x1b[2;36m${s}\x1b[0m`;
 const ICON_SETS = {
   nerd:    { effort: '󰾅', branch: '󰘬', worktree: '󰘯', dir: '󰉋', duration: '󰔛',
              lines: '󰷈', r5h: '󰔚 5h', r7d: '󰃭 7d', rsep: '·', skull: '󰚌',
-             style: '󰏘', vim: '',
+             style: '󰏘', vim: '', agent: '󰚩',
              up: '󰁝', down: '󰁅', barFill: '█', barEmpty: '░',
              sep: '┊', skills: '', hr: '─' },
   unicode: { effort: '⚡', branch: '⎇', worktree: '⊕', dir: '▸',  duration: '⏱',
              lines: 'Δ', r5h: '5h', r7d: '7d', rsep: '·', skull: '‼',
-             style: '❖', vim: 'V',
+             style: '❖', vim: 'V', agent: '◉',
              up: '↑', down: '↓', barFill: '█', barEmpty: '░',
              sep: '┊', skills: '✦', hr: '─' },
   ascii:   { effort: '!', branch: 'git:', worktree: 'wt:', dir: 'dir:', duration: 't:',
              lines: 'd', r5h: '5h', r7d: '7d', rsep: ',', skull: '!!',
-             style: 'S', vim: 'V',
+             style: 'S', vim: 'V', agent: '@',
              up: '^', down: 'v', barFill: '#', barEmpty: '-',
              sep: '|', skills: '*', hr: '-' },
 };
@@ -237,7 +237,7 @@ process.stdin.on('end', () => {
     if (worktreeName) add('worktree', dim(`${icons.worktree} ${worktreeName}`));
 
     // Agent name
-    if (agentName) add('agent', bold(agentName));
+    if (agentName) add('agent', bold(`${icons.agent} ${agentName}`));
 
     // Directory (when inside a worktree, show the parent project name instead of the worktree dir)
     let dirLabel = path.basename(dir);
