@@ -133,13 +133,38 @@ function formatDuration(ms, icon) {
 
 /**
  * Build context bar with colored progress indicator.
+ *
+ * Thresholds scale with the model's total context window. Standard 200k models
+ * use percentage tiers; 1M-context models use absolute-token tiers so the user
+ * is warned at the same token counts regardless of how much headroom remains.
+ *
+ * 1M tier (detected when total context > 500k tokens):
+ *   <200k green · <300k yellow · <400k orange · <500k red · ≥500k blink-red+skull
+ * 200k tier (default):
+ *   <50% green · <65% yellow · <80% orange · ≥80% blink-red+skull
  */
-function buildContextBar(usedPct, icons) {
+function buildContextBar(usedPct, inputTokens, icons) {
   if (usedPct == null) return '';
   const used = Math.max(0, Math.min(100, Math.round(usedPct)));
   const filled = Math.floor(used / 10);
   const bar = icons.barFill.repeat(filled) + icons.barEmpty.repeat(10 - filled);
   const label = `${bar} ${used}%`;
+
+  // Infer total context size: total = inputTokens / (used/100). Need both to be meaningful.
+  const totalCtx = (inputTokens > 0 && usedPct > 0)
+    ? inputTokens / (usedPct / 100)
+    : 0;
+  const isLargeCtx = totalCtx > 500_000;
+
+  if (isLargeCtx) {
+    // Absolute-token tiers for 1M models (≈ 20/30/40/50 %).
+    const tokens = inputTokens;
+    if (tokens < 200_000) return green(label);
+    if (tokens < 300_000) return yellow(label);
+    if (tokens < 400_000) return orange(label);
+    if (tokens < 500_000) return red(label);
+    return blink_red(`${icons.skull} ${label}`);
+  }
 
   if (used < 50) return green(label);
   if (used < 65) return yellow(label);
@@ -272,7 +297,7 @@ process.stdin.on('end', () => {
     }
 
     // Context bar (with input token count appended)
-    const ctxBar = buildContextBar(usedPct, icons);
+    const ctxBar = buildContextBar(usedPct, inputTokens, icons);
     if (ctxBar) {
       const inStr = formatCompact(inputTokens);
       const suffix = inStr ? ` ${dim(`${icons.rsep} ${inStr}`)}` : '';

@@ -41,7 +41,19 @@ Each segment is emitted only when its source field is present/non-empty. Separat
 | duration | `cost.total_duration_ms` | `󰔛`; `Ns` / `Nm` / `Nh Nm` |
 | lines | `cost.total_lines_added` / `total_lines_removed` | `󰷈 +A -R` (green/red) |
 | rate limits | `rate_limits.five_hour.used_percentage`, `rate_limits.seven_day.used_percentage` | `󰔚 5h N%`, `󰃭 7d N%`, joined with `·` |
-| context | `context_window.used_percentage` (falls back to `100 − remaining_percentage`), `context_window.total_input_tokens` | 10-cell block bar + `N%` used, followed by dim compact input tokens `Xk󰁝`; bar color green <50%, yellow <65%, orange <80%, blink-red `` ≥80%. Replaces the prior standalone `tokens` segment — single segment name `context` |
+| context | `context_window.used_percentage` (falls back to `100 − remaining_percentage`), `context_window.total_input_tokens` | 10-cell block bar + `N%` used, followed by dim compact input tokens `Xk󰁝`. Color tier depends on detected model context size (see below). Replaces the prior standalone `tokens` segment — single segment name `context` |
+
+### Context bar color tiers
+
+Model context size is inferred at render time: `total = total_input_tokens / (used_percentage/100)`. If `total > 500k` the renderer switches to absolute-token tiers; otherwise it uses the percentage tiers. When `total_input_tokens` is missing or `used_percentage` is 0, the percentage tiers are used.
+
+**Standard (≤200k models) — percentage tiers, 4 levels:**
+- `<50%` green · `<65%` yellow · `<80%` orange · `≥80%` blink-red + skull ``
+
+**1M-context models — absolute-token tiers, 5 levels** (extra red step before panic to push the user toward `/compact` or handoff well before 500k):
+- `<200k` green · `<300k` yellow · `<400k` orange · `<500k` red · `≥500k` blink-red + skull ``
+
+Rationale: 1M models hide the cost of token bloat — 200k tokens is already past the working set where most models live and is the right point to start nudging the user. The non-blinking red tier (400k–500k) is a distinct urgent-but-not-panic level that doesn't exist in the 4-tier standard scheme.
 
 Read but currently unused: `data.thinking.enabled`, `data.session_name`, `data.version`.
 
