@@ -162,7 +162,32 @@ Segments, left to right:
 - **duration** - total session time (s / m / h m)
 - **lines** - lines added and removed
 - **rate limits** - 5h and 7d usage percentages, when the payload includes them
-- **context** - block-fill bar plus used % (from `context_window.used_percentage`), followed by dim input token count compacted with k/M suffixes. Green under 50% used, yellow 50 to 64%, orange 65 to 79%, blink-red plus a skull glyph at 80%+
+- **context** - block-fill bar plus used % (from `context_window.used_percentage`), followed by dim input token count compacted with k/M suffixes. Color tiers scale with the model's context window — see below
+
+### Context bar color tiers
+
+The renderer infers total context size from `total_input_tokens / used_percentage` and picks one of two tier tables. The 1M tier kicks in once inferred total exceeds 500k.
+
+**Standard (≤200k models)** — percentage tiers, 4 levels:
+
+| Used % | Color |
+|---|---|
+| `<50%` | green |
+| `<65%` | yellow |
+| `<80%` | orange |
+| `≥80%` | blink-red + skull |
+
+**1M-context models** — absolute-token tiers, 5 levels:
+
+| Input tokens | Color |
+|---|---|
+| `<200k` | green |
+| `200k–299k` | yellow |
+| `300k–399k` | orange |
+| `400k–499k` | red |
+| `≥500k` | blink-red + skull |
+
+200k is already past most models' working set, so a 1M model should nudge you toward `/compact` or handoff well before the 500k panic line. The non-blinking red tier (400k–500k) is an extra urgent-but-not-panic step that the 4-tier standard scheme does not have.
 
 **Worktree convention:** when you're in a worktree and the branch name matches `worktree-<name>`, the branch chip is hidden. The worktree chip already says it. The branch chip comes back the moment the branch diverges (manual checkout, detached HEAD, rename).
 
