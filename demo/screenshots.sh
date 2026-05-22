@@ -65,7 +65,7 @@ render "4. Worktree + rate limits" '{
   "rate_limits": {"five_hour": {"used_percentage": 34}, "seven_day": {"used_percentage": 61}}
 }'
 
-# 5. 1M context — early warning at 250k tokens (yellow 1M-tier despite only 25% used)
+# 5. 1M context — early warning at 250k tokens (yellow 1M-tier despite only 25% bar)
 render "5. 1M model — 250k tokens (1M-tier yellow)" '{
   "model": {"display_name": "Opus 4.7 (1M)"},
   "effort": {"level": "high"},
@@ -74,13 +74,13 @@ render "5. 1M model — 250k tokens (1M-tier yellow)" '{
   "context_window": {"total_input_tokens": 250000, "used_percentage": 25}
 }'
 
-# 6. Danger zone — 1M model past 500k (blinking red skull), cost > $10
-render "6. Danger zone (1M past 500k)" '{
-  "model": {"display_name": "Opus 4.7 (1M)"},
+# 6. Danger zone — context > 80% (blinking red skull), cost > $10
+render "6. Danger zone" '{
+  "model": {"display_name": "Opus 4.7"},
   "effort": {"level": "high"},
   "workspace": {"current_dir": "/home/ms/projects/claude-statusline", "project_dir": "/home/ms/projects/claude-statusline"},
   "cost": {"total_cost_usd": 14.27, "total_duration_ms": 5400000, "total_lines_added": 1240, "total_lines_removed": 760},
-  "context_window": {"total_input_tokens": 920000, "used_percentage": 92},
+  "context_window": {"total_input_tokens": 920000, "used_percentage": 88},
   "rate_limits": {"five_hour": {"used_percentage": 88}, "seven_day": {"used_percentage": 74}}
 }'
 
