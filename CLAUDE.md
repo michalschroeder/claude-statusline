@@ -45,7 +45,7 @@ Each segment is emitted only when its source field is present/non-empty. Separat
 
 ### Context bar color tiers
 
-Model context size is inferred at render time: `total = total_input_tokens / (used_percentage/100)`. If `total > 500k` the renderer switches to absolute-token tiers; otherwise it uses the percentage tiers. When `total_input_tokens` is missing or `used_percentage` is 0, the percentage tiers are used.
+Model context size is inferred at render time: `total = total_input_tokens / (used_percentage/100)`. The 1M tier engages only when `500k < total < 1.3M` — the upper bound is a guard against `total_input_tokens` ever being interpreted as cumulative session input (which would inflate `total` past the model's real context size and falsely promote 200k models into the 1M tier on long sessions). When `total_input_tokens` is missing or `used_percentage` is 0, the percentage tiers are used.
 
 **Standard (≤200k models) — percentage tiers, 4 levels:**
 - `<50%` green · `<65%` yellow · `<80%` orange · `≥80%` blink-red + skull ``

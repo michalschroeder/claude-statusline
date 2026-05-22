@@ -151,10 +151,13 @@ function buildContextBar(usedPct, inputTokens, icons) {
   const label = `${bar} ${used}%`;
 
   // Infer total context size: total = inputTokens / (used/100). Need both to be meaningful.
+  // Upper bound guards against a cumulative-session interpretation of total_input_tokens
+  // (or any other inflated value) flipping standard models into the 1M tier on long sessions.
+  // A real 1M payload satisfies totalCtx ≈ 1_000_000; anything past ~1.3M is treated as noise.
   const totalCtx = (inputTokens > 0 && usedPct > 0)
     ? inputTokens / (usedPct / 100)
     : 0;
-  const isLargeCtx = totalCtx > 500_000;
+  const isLargeCtx = totalCtx > 500_000 && totalCtx < 1_300_000;
 
   if (isLargeCtx) {
     // Absolute-token tiers for 1M models (≈ 20/30/40/50 %).

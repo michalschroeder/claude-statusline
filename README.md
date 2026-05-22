@@ -166,7 +166,7 @@ Segments, left to right:
 
 ### Context bar color tiers
 
-The renderer infers total context size from `total_input_tokens / used_percentage` and picks one of two tier tables. The 1M tier kicks in once inferred total exceeds 500k.
+The renderer infers total context size from `total_input_tokens / used_percentage` and picks one of two tier tables. The 1M tier kicks in only when the inferred total lands in `(500k, 1.3M)` — the upper bound guards against an inflated `total_input_tokens` (e.g. if ever interpreted as cumulative session input) from falsely promoting a 200k model into the 1M tier.
 
 **Standard (≤200k models)** — percentage tiers, 4 levels:
 
