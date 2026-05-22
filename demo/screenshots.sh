@@ -32,7 +32,7 @@ render "2. Mid-session (typical)" '{
   "model": {"display_name": "Sonnet 4.6"},
   "workspace": {"current_dir": "/home/ms/projects/claude-statusline", "project_dir": "/home/ms/projects/claude-statusline"},
   "cost": {"total_cost_usd": 0.42, "total_duration_ms": 185000, "total_lines_added": 47, "total_lines_removed": 12},
-  "context_window": {"total_input_tokens": 18500, "used_percentage": 22}
+  "context_window": {"total_input_tokens": 18500, "used_percentage": 9}
 }'
 
 # 3. Heavy session — agent, effort, output style, vim, added dirs
@@ -48,7 +48,7 @@ render "3. Heavy session w/ agent" '{
     "added_dirs": ["/tmp/notes", "/var/log"]
   },
   "cost": {"total_cost_usd": 6.85, "total_duration_ms": 2640000, "total_lines_added": 412, "total_lines_removed": 188},
-  "context_window": {"total_input_tokens": 245000, "used_percentage": 58}
+  "context_window": {"total_input_tokens": 116000, "used_percentage": 58}
 }'
 
 # 4. Worktree + rate limits
@@ -61,7 +61,7 @@ render "4. Worktree + rate limits" '{
     "project_dir": "/home/ms/projects/claude-statusline"
   },
   "cost": {"total_cost_usd": 2.10, "total_duration_ms": 920000, "total_lines_added": 86, "total_lines_removed": 30},
-  "context_window": {"total_input_tokens": 92000, "used_percentage": 45},
+  "context_window": {"total_input_tokens": 92000, "used_percentage": 46},
   "rate_limits": {"five_hour": {"used_percentage": 34}, "seven_day": {"used_percentage": 61}}
 }'
 
@@ -104,7 +104,7 @@ render "7. With loaded skills" "{
   \"effort\": {\"level\": \"high\"},
   \"workspace\": {\"current_dir\": \"/home/ms/projects/claude-statusline\", \"project_dir\": \"/home/ms/projects/claude-statusline\"},
   \"cost\": {\"total_cost_usd\": 3.40, \"total_duration_ms\": 1200000, \"total_lines_added\": 210, \"total_lines_removed\": 64},
-  \"context_window\": {\"total_input_tokens\": 140000, \"used_percentage\": 52}
+  \"context_window\": {\"total_input_tokens\": 140000, \"used_percentage\": 70}
 }"
 
 rm -f "$LOG"
