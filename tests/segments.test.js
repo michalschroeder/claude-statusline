@@ -16,8 +16,7 @@ function richInput() {
     },
     context_window: {
       total_input_tokens: 1500,
-      total_output_tokens: 800,
-      remaining_percentage: 70,
+      used_percentage: 30,
     },
   };
 }

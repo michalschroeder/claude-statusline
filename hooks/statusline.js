@@ -22,17 +22,17 @@ const ICON_SETS = {
   nerd:    { effort: '󰾅', branch: '󰘬', worktree: '󰘯', dir: '󰉋', duration: '󰔛',
              lines: '󰷈', r5h: '󰔚 5h', r7d: '󰃭 7d', rsep: '·', skull: '󰚌',
              style: '󰏘', vim: '', agent: '󰚩',
-             up: '󰁝', down: '󰁅', barFill: '█', barEmpty: '░',
+             barFill: '█', barEmpty: '░',
              sep: '┊', skills: '', hr: '─' },
   unicode: { effort: '⚡', branch: '⎇', worktree: '⊕', dir: '▸',  duration: '⏱',
              lines: 'Δ', r5h: '5h', r7d: '7d', rsep: '·', skull: '‼',
              style: '❖', vim: 'V', agent: '◉',
-             up: '↑', down: '↓', barFill: '█', barEmpty: '░',
+             barFill: '█', barEmpty: '░',
              sep: '┊', skills: '✦', hr: '─' },
   ascii:   { effort: '!', branch: 'git:', worktree: 'wt:', dir: 'dir:', duration: 't:',
              lines: 'd', r5h: '5h', r7d: '7d', rsep: ',', skull: '!!',
              style: 'S', vim: 'V', agent: '@',
-             up: '^', down: 'v', barFill: '#', barEmpty: '-',
+             barFill: '#', barEmpty: '-',
              sep: '|', skills: '*', hr: '-' },
 };
 
@@ -134,10 +134,9 @@ function formatDuration(ms, icon) {
 /**
  * Build context bar with colored progress indicator.
  */
-function buildContextBar(remaining, icons) {
-  if (remaining == null) return '';
-  const rem = Math.round(remaining);
-  const used = Math.max(0, Math.min(100, 100 - rem));
+function buildContextBar(usedPct, icons) {
+  if (usedPct == null) return '';
+  const used = Math.max(0, Math.min(100, Math.round(usedPct)));
   const filled = Math.floor(used / 10);
   const bar = icons.barFill.repeat(filled) + icons.barEmpty.repeat(10 - filled);
   const label = `${bar} ${used}%`;
@@ -162,10 +161,9 @@ process.stdin.on('end', () => {
     const dir = data.workspace?.current_dir || process.cwd();
     const projectDir = data.workspace?.project_dir || dir;
     const session = data.session_id || '';
-    const remaining = data.context_window?.remaining_percentage;
+    const usedPct = data.context_window?.used_percentage ?? (data.context_window?.remaining_percentage != null ? 100 - data.context_window.remaining_percentage : null);
     const totalCost = data.cost?.total_cost_usd;
     const inputTokens = data.context_window?.total_input_tokens;
-    const outputTokens = data.context_window?.total_output_tokens;
     const linesAdded = data.cost?.total_lines_added;
     const linesRemoved = data.cost?.total_lines_removed;
     const effortLevel = data.effort?.level;
@@ -255,16 +253,6 @@ process.stdin.on('end', () => {
     const costStr = formatCost(totalCost);
     if (costStr) add('cost', costStr);
 
-    // Tokens
-    const inStr = formatCompact(inputTokens);
-    const outStr = formatCompact(outputTokens);
-    if (inStr || outStr) {
-      const parts = [];
-      if (inStr) parts.push(`${inStr}${icons.up}`);
-      if (outStr) parts.push(`${outStr}${icons.down}`);
-      add('tokens', dim(parts.join(' ')));
-    }
-
     // Duration
     const durStr = formatDuration(totalDurationMs, icons.duration);
     if (durStr) add('duration', dim(durStr));
@@ -283,9 +271,13 @@ process.stdin.on('end', () => {
       add('ratelimits', dim(parts.join(` ${icons.rsep} `)));
     }
 
-    // Context bar
-    const ctxBar = buildContextBar(remaining, icons);
-    if (ctxBar) add('context', ctxBar);
+    // Context bar (with input token count appended)
+    const ctxBar = buildContextBar(usedPct, icons);
+    if (ctxBar) {
+      const inStr = formatCompact(inputTokens);
+      const suffix = inStr ? ` ${dim(`${icons.rsep} ${inStr}`)}` : '';
+      add('context', `${ctxBar}${suffix}`);
+    }
 
     // Optional allowlist + order via STATUSLINE_SEGMENTS env var.
     const filter = process.env.STATUSLINE_SEGMENTS;
