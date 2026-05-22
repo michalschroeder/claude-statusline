@@ -189,7 +189,7 @@ The 200k tier panics at 80% to keep the historical "loud blink+skull alarm" earl
 
 **Percent-only fallback**: when `total_input_tokens` is missing OR the inference is unreliable (`used_percentage == 0` makes the inferred total undefined), the bar fills at 10% per cell with the same ramp; panic kicks in at `≥ 80%` (matches the original contract).
 
-The `N%` label is the bar fill (% of the panic threshold). Non-panic uses `floor()` so a value just shy of panic reads `99%` instead of rounding to a misleading `100%`. In panic the label is capped at 100% — the skull + blink already signal the severity. For a 200k model the label roughly equals `used_percentage`; for a 1M model the label runs ahead of the model's true usage because the bar is calibrated to the 500k danger line, not the model limit.
+The `N%` label is the raw `used_percentage` from the payload — i.e. the model's actual context usage. On the 1M tier this **decouples** from the bar: the bar is calibrated to the 500k panic threshold while the label always tracks "% of the model's full context window". So 218k tokens on a 1M model renders a 4-cell bar with label `22%` (218k = 22% of 1M, but 44% of the way to the 500k danger line). The bar tells you "how close to the alarm"; the label tells you "how much of the context you've actually consumed".
 
 **Worktree convention:** when you're in a worktree and the branch name matches `worktree-<name>`, the branch chip is hidden. The worktree chip already says it. The branch chip comes back the moment the branch diverges (manual checkout, detached HEAD, rename).
 

@@ -65,9 +65,9 @@ render "4. Worktree + rate limits" '{
   "rate_limits": {"five_hour": {"used_percentage": 34}, "seven_day": {"used_percentage": 61}}
 }'
 
-# 5. 1M context — 250k tokens. With 50k/cell the bar fills 5 cells (forest→amber gradient),
-#    label reads 50% (% of the 500k panic threshold), not 25% of the 1M window.
-render "5. 1M model — 250k tokens (5/10 cells, 50% of 500k panic)" '{
+# 5. 1M context — 250k tokens. Bar fills 5/10 cells (calibrated to 500k panic),
+#    label reads 25% (raw used_percentage — 250k of 1M context).
+render "5. 1M model — 250k tokens (5/10 cells, label 25% = 250k of 1M)" '{
   "model": {"display_name": "Opus 4.7 (1M)"},
   "effort": {"level": "high"},
   "workspace": {"current_dir": "/home/ms/projects/claude-statusline", "project_dir": "/home/ms/projects/claude-statusline"},

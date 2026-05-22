@@ -58,11 +58,11 @@ So a 200k model fills cell N at `20k · N` tokens; a 1M model fills cell N at `5
 
 **Percent-driven fallback** (when `total_input_tokens` is missing OR the inference is unreliable — e.g. `used_percentage == 0`): `filled = floor(used_percentage / 10)`; panic at `used_percentage ≥ 80` (matches the original contract). Same per-cell ramp.
 
-**Panic mode**: all 10 cells switch to blink-red and a `` skull is prefixed. The `N%` label in panic is capped at 100% — the skull + blink already signal severity, so the number doesn't need to spike past it.
+**Panic mode**: all 10 cells switch to blink-red and a `` skull is prefixed. The `N%` label keeps showing the raw `used_percentage` (% of context window) in panic too — the skull + blink convey severity, the number tells the user how much of the actual context is consumed.
 
 **1M detection**: inferred `total = total_input_tokens / (used_percentage / 100)`. The 1M tier engages only when `800k < total < 1.2M` — a tight band that accepts integer-rounded 1M payloads but rejects cumulative-token leaks (e.g. a 200k-model session with cumulative input around 600k would have inferred ≈ 750k and stays on 200k thresholds).
 
-**Display percentage**: the `N%` label is the bar fill (% of the panic threshold) — `floor()` in the non-panic branch so a value just shy of panic reads e.g. `99%` instead of rounding to `100%`. For a 200k model the label is roughly `used_percentage`; for a 1M model it runs ahead of the model's true usage because the bar is calibrated to the 500k danger line, not the 1M limit.
+**Display percentage**: the `N%` label is the raw `used_percentage` from the payload — i.e. the model's actual context usage. On the 1M tier this decouples from the bar fill, which is calibrated to the 500k panic threshold: e.g. 218k tokens on a 1M model renders a 4-cell bar with label `22%` (218k is 22% of 1M but 44% of the way to the 500k danger line). Keeping the label aligned to context usage matches what users expect when they see "N%".
 
 Read but currently unused: `data.thinking.enabled`, `data.session_name`, `data.version`.
 

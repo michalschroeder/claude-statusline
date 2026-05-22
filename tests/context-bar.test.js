@@ -164,10 +164,19 @@ test('1M: 500_000 tokens → panic blink + skull', async () => {
   assert.ok(stripAnsi(raw).includes(SKULL));
 });
 
-test('1M: 900_000 tokens → panic; displayPct capped at 100%', async () => {
+test('1M: 900_000 tokens → panic; label shows raw used_percentage (90%)', async () => {
   const raw = await runRaw(inp1M(900_000));
   assert.ok(raw.includes(PANIC_CODE));
-  assert.ok(stripAnsi(raw).includes('100%'));
+  assert.ok(stripAnsi(raw).includes('90%'));
+});
+
+test('1M: 218k tokens (22% of 1M) → label "22%" with bar at 4 cells', async () => {
+  // Regression: previously the label read "43%" (% of 500k panic) — confusing because
+  // the user's mental model is "% of the model's context window".
+  const raw = await runRaw(inp1M(218_000));
+  assert.ok(stripAnsi(raw).includes('22%'));
+  assert.ok(raw.includes(cellCode(3)));
+  assert.ok(!raw.includes(cellCode(4)));
 });
 
 // ─── 1M detection band — tightened to (800k, 1.2M) ───────────────────────────
@@ -227,11 +236,11 @@ test('usedPct=0 with non-zero tokens → percent-only fallback (no premature col
 
 // ─── displayPct floor: no "100%" without panic ───────────────────────────────
 
-test('displayPct floor: 499_500 tokens (1M tier, 99.9%) shows 99% not 100%', async () => {
-  // Just under 500k panic on the 1M tier. Previously rounded to "100%" while bar still
-  // had an empty cell — confusing. Floor pushes it to "99%".
+test('1M: 499_500 tokens (just below panic) → label "50%" (raw usedPct), no panic', async () => {
+  // displayPct = round(usedPct) = round(49.95) = 50. Bar fills 9 cells but label
+  // shows actual context usage, not "% of panic".
   const raw = await runRaw(inp1M(499_500));
-  assert.ok(stripAnsi(raw).includes('99%'));
+  assert.ok(stripAnsi(raw).includes('50%'));
   assert.ok(!raw.includes(PANIC_CODE));
 });
 

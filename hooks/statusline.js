@@ -178,24 +178,24 @@ function buildContextBar(usedPct, inputTokens, icons) {
   // (which renders 0 cells, no premature coloring of a possibly-1M session).
   const useTokenPath = inputTokens > 0 && canInferTotal;
 
-  let filled, displayPct, isPanic = false;
+  // displayPct is the raw "% of context window used" from the payload — what the user
+  // expects when they see "N%". The bar fill is a separate signal calibrated to the
+  // panic threshold; the two diverge on the 1M tier (e.g. 218k tokens of a 1M model
+  // shows label "22%" with bar at 4/10 cells because 218k is 22% of the window but
+  // 44% of the way to the 500k danger line).
+  const displayPct = Math.max(0, Math.min(100, Math.round(usedPct)));
+
+  let filled, isPanic = false;
   if (useTokenPath) {
     filled = Math.min(10, Math.floor(inputTokens / stepTokens));
     if (filled >= panicCell) {
       isPanic = true;
       filled = 10;
-      displayPct = Math.min(100, Math.round((inputTokens / panicTokens) * 100));
-    } else {
-      // Floor (not round) so a value just below the panic threshold doesn't render
-      // "100%" alongside a 9-cell-with-empty-tail bar.
-      displayPct = Math.floor((inputTokens / panicTokens) * 100);
     }
   } else {
-    const used = Math.max(0, Math.min(100, Math.round(usedPct)));
     // Restore the prior contract: blink+skull at ≥80% when the renderer is in fallback.
-    if (used >= 80) isPanic = true;
-    filled = Math.min(10, Math.floor(used / 10));
-    displayPct = used;
+    if (displayPct >= 80) isPanic = true;
+    filled = Math.min(10, Math.floor(displayPct / 10));
   }
 
   if (isPanic) {
