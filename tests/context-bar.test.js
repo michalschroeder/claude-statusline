@@ -250,3 +250,37 @@ test('empty cells use dim grey 240 (not default fg)', async () => {
   const raw = await runRaw(inpPct(20));
   assert.ok(raw.includes(EMPTY_CODE));
 });
+
+// ─── Label contract: the N% label MUST equal raw used_percentage ─────────────
+// Lives above implementation details so a refactor that re-introduces "% of panic"
+// or any other denominator gets caught immediately, regardless of bar-fill logic.
+
+function extractLabelPct(plainText) {
+  const m = plainText.match(/(\d+)%/);
+  return m ? Number(m[1]) : null;
+}
+
+const labelCases = [
+  // [used_percentage payload, total_input_tokens, expected label]
+  { used: 0, tokens: undefined, label: 0 },
+  { used: 5, tokens: 10_000, label: 5 },
+  { used: 22, tokens: 218_000, label: 22 },   // 1M @ 22% — the live-session case
+  { used: 25, tokens: 250_000, label: 25 },   // 1M @ 25%
+  { used: 50, tokens: 100_000, label: 50 },   // 200k @ 50%
+  { used: 50, tokens: 500_000, label: 50 },   // 1M panic — still raw payload
+  { used: 80, tokens: 160_000, label: 80 },   // 200k @ panic threshold
+  { used: 80, tokens: undefined, label: 80 }, // percent-only fallback panic
+  { used: 90, tokens: 900_000, label: 90 },   // 1M @ 90% (panic)
+  { used: 100, tokens: 200_000, label: 100 }, // 200k @ 100%
+];
+
+for (const { used, tokens, label } of labelCases) {
+  test(`label contract: used_percentage=${used}${tokens ? ` tokens=${tokens}` : ''} → label "${label}%"`, async () => {
+    const i = baseInput();
+    i.context_window = { used_percentage: used };
+    if (tokens !== undefined) i.context_window.total_input_tokens = tokens;
+    const plain = stripAnsi(await runRaw(i));
+    assert.equal(extractLabelPct(plain), label,
+      `expected label ${label}%, got ${extractLabelPct(plain)}% in: ${plain}`);
+  });
+}
