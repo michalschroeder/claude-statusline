@@ -41,7 +41,28 @@ Each segment is emitted only when its source field is present/non-empty. Separat
 | duration | `cost.total_duration_ms` | `󰔛`; `Ns` / `Nm` / `Nh Nm` |
 | lines | `cost.total_lines_added` / `total_lines_removed` | `󰷈 +A -R` (green/red) |
 | rate limits | `rate_limits.five_hour.used_percentage`, `rate_limits.seven_day.used_percentage` | `󰔚 5h N%`, `󰃭 7d N%`, joined with `·` |
-| context | `context_window.used_percentage` (falls back to `100 − remaining_percentage`), `context_window.total_input_tokens` | 10-cell block bar + `N%` used, followed by dim compact input tokens `Xk󰁝`; bar color green <50%, yellow <65%, orange <80%, blink-red `` ≥80%. Replaces the prior standalone `tokens` segment — single segment name `context` |
+| context | `context_window.used_percentage` (falls back to `100 − remaining_percentage`), `context_window.total_input_tokens` | 10-cell block bar with per-cell coloring (256-color "ramp B": forest → olive → amber → red), dim grey empty cells, `N%` of panic threshold, followed by dim compact input tokens `Xk󰁝`. Replaces the prior standalone `tokens` segment — single segment name `context` |
+
+### Context bar — per-cell palette and thresholds
+
+The bar has 10 cells. Each filled cell gets its own 256-color code from `CTX_RAMP` (`[34, 70, 106, 142, 178, 214, 208, 202, 196, 160]` — forest-green → olive → amber → red → dark-red); empty cells use `CTX_EMPTY` (240, dim grey). So a half-full bar literally fades from forest-green at cell 0 through olive at cell 4; the rightmost filled cell tells you which tier you're in.
+
+**Token-driven fill** (when `total_input_tokens > 0` AND `used_percentage > 0`):
+
+| Model | Cell step | Panic (blink-red + ``) |
+|---|---|---|
+| 200k | 20k tokens / cell | `≥ 160k` tokens (cell 8 = 80%, restores the prior contract) |
+| 1M   | 50k tokens / cell | `≥ 500k` tokens (cell 10 = user-defined danger line) |
+
+So a 200k model fills cell N at `20k · N` tokens; a 1M model fills cell N at `50k · N` tokens. The 200k tier keeps the historical "blink+skull at 80%" alarm so users still get the loud early warning; the 1M tier panics only at the explicit 500k danger line (where `/compact` or handoff should already be considered).
+
+**Percent-driven fallback** (when `total_input_tokens` is missing OR the inference is unreliable — e.g. `used_percentage == 0`): `filled = floor(used_percentage / 10)`; panic at `used_percentage ≥ 80` (matches the original contract). Same per-cell ramp.
+
+**Panic mode**: all 10 cells switch to blink-red and a `` skull is prefixed. The `N%` label keeps showing the raw `used_percentage` (% of context window) in panic too — the skull + blink convey severity, the number tells the user how much of the actual context is consumed.
+
+**1M detection**: inferred `total = total_input_tokens / (used_percentage / 100)`. The 1M tier engages only when `800k < total < 1.2M` — a tight band that accepts integer-rounded 1M payloads but rejects cumulative-token leaks (e.g. a 200k-model session with cumulative input around 600k would have inferred ≈ 750k and stays on 200k thresholds).
+
+**Display percentage**: the `N%` label is the raw `used_percentage` from the payload — i.e. the model's actual context usage. On the 1M tier this decouples from the bar fill, which is calibrated to the 500k panic threshold: e.g. 218k tokens on a 1M model renders a 4-cell bar with label `22%` (218k is 22% of 1M but 44% of the way to the 500k danger line). Keeping the label aligned to context usage matches what users expect when they see "N%".
 
 Read but currently unused: `data.thinking.enabled`, `data.session_name`, `data.version`.
 

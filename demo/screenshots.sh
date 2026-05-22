@@ -32,7 +32,7 @@ render "2. Mid-session (typical)" '{
   "model": {"display_name": "Sonnet 4.6"},
   "workspace": {"current_dir": "/home/ms/projects/claude-statusline", "project_dir": "/home/ms/projects/claude-statusline"},
   "cost": {"total_cost_usd": 0.42, "total_duration_ms": 185000, "total_lines_added": 47, "total_lines_removed": 12},
-  "context_window": {"total_input_tokens": 18500, "used_percentage": 22}
+  "context_window": {"total_input_tokens": 18500, "used_percentage": 9}
 }'
 
 # 3. Heavy session — agent, effort, output style, vim, added dirs
@@ -48,7 +48,7 @@ render "3. Heavy session w/ agent" '{
     "added_dirs": ["/tmp/notes", "/var/log"]
   },
   "cost": {"total_cost_usd": 6.85, "total_duration_ms": 2640000, "total_lines_added": 412, "total_lines_removed": 188},
-  "context_window": {"total_input_tokens": 245000, "used_percentage": 58}
+  "context_window": {"total_input_tokens": 116000, "used_percentage": 58}
 }'
 
 # 4. Worktree + rate limits
@@ -61,21 +61,31 @@ render "4. Worktree + rate limits" '{
     "project_dir": "/home/ms/projects/claude-statusline"
   },
   "cost": {"total_cost_usd": 2.10, "total_duration_ms": 920000, "total_lines_added": 86, "total_lines_removed": 30},
-  "context_window": {"total_input_tokens": 92000, "used_percentage": 45},
+  "context_window": {"total_input_tokens": 92000, "used_percentage": 46},
   "rate_limits": {"five_hour": {"used_percentage": 34}, "seven_day": {"used_percentage": 61}}
 }'
 
-# 5. Danger zone — context > 80% (blinking red skull), cost > $10
-render "5. Danger zone" '{
-  "model": {"display_name": "Opus 4.7"},
+# 5. 1M context — 250k tokens. Bar fills 5/10 cells (calibrated to 500k panic),
+#    label reads 25% (raw used_percentage — 250k of 1M context).
+render "5. 1M model — 250k tokens (5/10 cells, label 25% = 250k of 1M)" '{
+  "model": {"display_name": "Opus 4.7 (1M)"},
+  "effort": {"level": "high"},
+  "workspace": {"current_dir": "/home/ms/projects/claude-statusline", "project_dir": "/home/ms/projects/claude-statusline"},
+  "cost": {"total_cost_usd": 4.20, "total_duration_ms": 1800000, "total_lines_added": 320, "total_lines_removed": 140},
+  "context_window": {"total_input_tokens": 250000, "used_percentage": 25}
+}'
+
+# 6. Danger zone — 1M model right at the 500k panic threshold (borderline panic)
+render "6. Danger zone (1M at 500k panic threshold)" '{
+  "model": {"display_name": "Opus 4.7 (1M)"},
   "effort": {"level": "high"},
   "workspace": {"current_dir": "/home/ms/projects/claude-statusline", "project_dir": "/home/ms/projects/claude-statusline"},
   "cost": {"total_cost_usd": 14.27, "total_duration_ms": 5400000, "total_lines_added": 1240, "total_lines_removed": 760},
-  "context_window": {"total_input_tokens": 920000, "used_percentage": 88},
+  "context_window": {"total_input_tokens": 500000, "used_percentage": 50},
   "rate_limits": {"five_hour": {"used_percentage": 88}, "seven_day": {"used_percentage": 74}}
 }'
 
-# 6. With loaded skills (writes a temp skills log keyed to a fake session id)
+# 7. With loaded skills (writes a temp skills log keyed to a fake session id)
 SESSION="demo-$$"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/claude-statusline/skills"
 mkdir -p "$STATE_DIR"
@@ -88,13 +98,13 @@ NOW=$(date +%s)
   echo "$((NOW-50)) using-superpowers"
 } > "$LOG"
 
-render "6. With loaded skills" "{
+render "7. With loaded skills" "{
   \"session_id\": \"$SESSION\",
   \"model\": {\"display_name\": \"Opus 4.7\"},
   \"effort\": {\"level\": \"high\"},
   \"workspace\": {\"current_dir\": \"/home/ms/projects/claude-statusline\", \"project_dir\": \"/home/ms/projects/claude-statusline\"},
   \"cost\": {\"total_cost_usd\": 3.40, \"total_duration_ms\": 1200000, \"total_lines_added\": 210, \"total_lines_removed\": 64},
-  \"context_window\": {\"total_input_tokens\": 140000, \"used_percentage\": 52}
+  \"context_window\": {\"total_input_tokens\": 140000, \"used_percentage\": 70}
 }"
 
 rm -f "$LOG"

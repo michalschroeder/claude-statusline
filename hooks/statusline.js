@@ -131,20 +131,85 @@ function formatDuration(ms, icon) {
   return rem > 0 ? `${icon} ${h}h ${rem}m` : `${icon} ${h}h`;
 }
 
-/**
- * Build context bar with colored progress indicator.
- */
-function buildContextBar(usedPct, icons) {
-  if (usedPct == null) return '';
-  const used = Math.max(0, Math.min(100, Math.round(usedPct)));
-  const filled = Math.floor(used / 10);
-  const bar = icons.barFill.repeat(filled) + icons.barEmpty.repeat(10 - filled);
-  const label = `${bar} ${used}%`;
+// Context-bar palette (256-color, muted "ramp B" — forest-green → dark-red).
+// One color per cell; cell N uses CTX_RAMP[N] when filled. Empty cells use CTX_EMPTY.
+const CTX_RAMP = [34, 70, 106, 142, 178, 214, 208, 202, 196, 160];
+const CTX_EMPTY = 240;
+const fg256 = (code, s) => `\x1b[38;5;${code}m${s}\x1b[0m`;
 
-  if (used < 50) return green(label);
-  if (used < 65) return yellow(label);
-  if (used < 80) return orange(label);
-  return blink_red(`${icons.skull} ${label}`);
+/**
+ * Build context bar with per-cell colored progress indicator.
+ *
+ * 10 cells, each colored by CTX_RAMP[index] when filled (fades green→red as the
+ * bar grows). Empty cells are dim grey. Step size and panic threshold scale with
+ * the model.
+ *
+ *   200k model: cell N fills at 20k·N tokens
+ *               · early warning (blink+skull) ≥ 160k (80% — restores prior contract)
+ *   1M model:   cell N fills at 50k·N tokens
+ *               · panic (blink+skull) ≥ 500k (user-defined danger line)
+ *
+ * 1M detection: inferred total = inputTokens / (usedPct/100). Engages only when the
+ * inferred total lands close to 1M (within ±200k → band (800k, 1.2M)). Outside that
+ * narrow band — including cumulative-session interpretations that fall in (500k, 800k)
+ * — we use 200k thresholds. When inputTokens is missing OR the inference is unreliable
+ * (usedPct=0), falls back to percentage-driven fill (10% per cell, panic at ≥80%).
+ *
+ * displayPct = bar fill (% of the panic threshold). In panic the label is capped
+ * at 100% — the skull+blink already signals the severity; the bar itself is full.
+ */
+function buildContextBar(usedPct, inputTokens, icons) {
+  if (usedPct == null) return '';
+
+  const canInferTotal = inputTokens > 0 && usedPct > 0;
+  const inferredTotal = canInferTotal ? inputTokens / (usedPct / 100) : 0;
+  // Tighter band: must be within ±200k of 1M. Catches cumulative-token leaks in (500k, 800k)
+  // that the older (500k, 1.3M) band let through.
+  const isLargeCtx = inferredTotal > 800_000 && inferredTotal < 1_200_000;
+  const panicTokens = isLargeCtx ? 500_000 : 200_000;
+  const stepTokens = panicTokens / 10;
+  // Early warning: trigger panic at cell 8 (80% of bar) for the 200k tier so we don't
+  // regress the prior "blink+skull at 80%" contract. The 1M tier keeps panic at the
+  // last cell (500k) as explicitly requested by the user.
+  const panicCell = isLargeCtx ? 10 : 8;
+
+  // Use the token-driven path only when we can trust the inference. usedPct=0 with
+  // non-zero inputTokens makes inference undefined → fall back to the percent path
+  // (which renders 0 cells, no premature coloring of a possibly-1M session).
+  const useTokenPath = inputTokens > 0 && canInferTotal;
+
+  // displayPct is the raw "% of context window used" from the payload — what the user
+  // expects when they see "N%". The bar fill is a separate signal calibrated to the
+  // panic threshold; the two diverge on the 1M tier (e.g. 218k tokens of a 1M model
+  // shows label "22%" with bar at 4/10 cells because 218k is 22% of the window but
+  // 44% of the way to the 500k danger line).
+  const displayPct = Math.max(0, Math.min(100, Math.round(usedPct)));
+
+  let filled, isPanic = false;
+  if (useTokenPath) {
+    filled = Math.min(10, Math.floor(inputTokens / stepTokens));
+    if (filled >= panicCell) {
+      isPanic = true;
+      filled = 10;
+    }
+  } else {
+    // Restore the prior contract: blink+skull at ≥80% when the renderer is in fallback.
+    if (displayPct >= 80) isPanic = true;
+    filled = Math.min(10, Math.floor(displayPct / 10));
+  }
+
+  if (isPanic) {
+    const bar = icons.barFill.repeat(10);
+    return blink_red(`${icons.skull} ${bar} ${displayPct}%`);
+  }
+
+  let bar = '';
+  for (let i = 0; i < 10; i++) {
+    bar += i < filled
+      ? fg256(CTX_RAMP[i], icons.barFill)
+      : fg256(CTX_EMPTY, icons.barEmpty);
+  }
+  return `${bar} ${displayPct}%`;
 }
 
 // Read JSON from stdin
@@ -272,7 +337,7 @@ process.stdin.on('end', () => {
     }
 
     // Context bar (with input token count appended)
-    const ctxBar = buildContextBar(usedPct, icons);
+    const ctxBar = buildContextBar(usedPct, inputTokens, icons);
     if (ctxBar) {
       const inStr = formatCompact(inputTokens);
       const suffix = inStr ? ` ${dim(`${icons.rsep} ${inStr}`)}` : '';

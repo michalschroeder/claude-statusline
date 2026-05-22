@@ -162,7 +162,34 @@ Segments, left to right:
 - **duration** - total session time (s / m / h m)
 - **lines** - lines added and removed
 - **rate limits** - 5h and 7d usage percentages, when the payload includes them
-- **context** - block-fill bar plus used % (from `context_window.used_percentage`), followed by dim input token count compacted with k/M suffixes. Green under 50% used, yellow 50 to 64%, orange 65 to 79%, blink-red plus a skull glyph at 80%+
+- **context** - 10-cell bar with per-cell 256-color gradient (forest-green → olive → amber → red), dim-grey empty cells, percentage-of-panic-threshold label, dim absolute token count suffix. The step size and panic threshold scale with the model — see below
+
+### Context bar — per-cell gradient
+
+Each of the 10 cells has its own color from the muted "ramp B" palette:
+
+```
+cell:    0   1   2   3   4   5   6   7   8   9
+256:    34  70 106 142 178 214 208 202 196 160
+hue:  forest…olive……amber……orange……red……dark-red
+```
+
+A half-full bar fades from forest-green at cell 0 through olive at cell 4. The rightmost filled cell tells you which tier you're in; empty cells are dim grey 240.
+
+**Step size and panic threshold scale with the model:**
+
+| Model | Cell step | Panic (blink-red + ``) |
+|---|---|---|
+| 200k | 20k tokens / cell | `≥ 160k` tokens (cell 8 = 80%) |
+| 1M   | 50k tokens / cell | `≥ 500k` tokens (cell 10 = danger line) |
+
+The 200k tier panics at 80% to keep the historical "loud blink+skull alarm" early-warning contract. The 1M tier panics only at the explicit 500k danger line — where `/compact` or handoff should already be considered. Past the panic threshold the whole bar blink-reds and gets a `` skull prefix.
+
+**1M detection**: inferred `total = total_input_tokens / (used_percentage / 100)`. The 1M scale engages only when `800k < total < 1.2M` — a tight band that accepts integer-rounded 1M payloads but rejects cumulative-token leaks that would otherwise promote a 200k model into the 1M tier.
+
+**Percent-only fallback**: when `total_input_tokens` is missing OR the inference is unreliable (`used_percentage == 0` makes the inferred total undefined), the bar fills at 10% per cell with the same ramp; panic kicks in at `≥ 80%` (matches the original contract).
+
+The `N%` label is the raw `used_percentage` from the payload — i.e. the model's actual context usage. On the 1M tier this **decouples** from the bar: the bar is calibrated to the 500k panic threshold while the label always tracks "% of the model's full context window". So 218k tokens on a 1M model renders a 4-cell bar with label `22%` (218k = 22% of 1M, but 44% of the way to the 500k danger line). The bar tells you "how close to the alarm"; the label tells you "how much of the context you've actually consumed".
 
 **Worktree convention:** when you're in a worktree and the branch name matches `worktree-<name>`, the branch chip is hidden. The worktree chip already says it. The branch chip comes back the moment the branch diverges (manual checkout, detached HEAD, rename).
 
