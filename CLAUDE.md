@@ -42,6 +42,7 @@ Each segment is emitted only when its source field is present/non-empty. Separat
 | lines | `cost.total_lines_added` / `total_lines_removed` | `󰷈 +A -R` (green/red) |
 | rate limits | `rate_limits.five_hour.used_percentage`, `rate_limits.seven_day.used_percentage` | `󰔚 5h N%`, `󰃭 7d N%`, joined with `·` |
 | context | `context_window.used_percentage` (falls back to `100 − remaining_percentage`), `context_window.total_input_tokens` | 10-cell block bar + `N%` used, followed by dim compact input tokens `Xk󰁝`; bar color green <50%, yellow <65%, orange <80%, blink-red `` ≥80%. Replaces the prior standalone `tokens` segment — single segment name `context` |
+| cache | `context_window.current_usage.{input_tokens, cache_creation_input_tokens, cache_read_input_tokens}` | `󰆼 [bar] N%` — 10-cell stacked bar (`░` fresh, `▒` creation, `▓` read; cells distributed largest-remainder so total = 10) + cache hit-rate %; % color green ≥80%, yellow ≥50%, orange <50%. Omitted when `current_usage` is null/absent or all three components are 0 (pre-first-call, post-`/compact`) |
 
 Read but currently unused: `data.thinking.enabled`, `data.session_name`, `data.version`.
 

@@ -23,16 +23,19 @@ const ICON_SETS = {
              lines: '󰷈', r5h: '󰔚 5h', r7d: '󰃭 7d', rsep: '·', skull: '󰚌',
              style: '󰏘', vim: '', agent: '󰚩',
              barFill: '█', barEmpty: '░',
+             cache: '󰆼', cacheFresh: '░', cacheCreation: '▒', cacheRead: '▓',
              sep: '┊', skills: '', hr: '─' },
   unicode: { effort: '⚡', branch: '⎇', worktree: '⊕', dir: '▸',  duration: '⏱',
              lines: 'Δ', r5h: '5h', r7d: '7d', rsep: '·', skull: '‼',
              style: '❖', vim: 'V', agent: '◉',
              barFill: '█', barEmpty: '░',
+             cache: '▦', cacheFresh: '░', cacheCreation: '▒', cacheRead: '▓',
              sep: '┊', skills: '✦', hr: '─' },
   ascii:   { effort: '!', branch: 'git:', worktree: 'wt:', dir: 'dir:', duration: 't:',
              lines: 'd', r5h: '5h', r7d: '7d', rsep: ',', skull: '!!',
              style: 'S', vim: 'V', agent: '@',
              barFill: '#', barEmpty: '-',
+             cache: 'cache', cacheFresh: '.', cacheCreation: ':', cacheRead: '#',
              sep: '|', skills: '*', hr: '-' },
 };
 
@@ -129,6 +132,42 @@ function formatDuration(ms, icon) {
   const h = Math.floor(m / 60);
   const rem = m % 60;
   return rem > 0 ? `${icon} ${h}h ${rem}m` : `${icon} ${h}h`;
+}
+
+/**
+ * Build a 10-cell stacked bar of input-token composition + colored hit-rate %.
+ * Returns '' when usage is missing or all three components are 0.
+ */
+function buildCacheSegment(usage, icons) {
+  if (!usage) return '';
+  const fresh = usage.input_tokens || 0;
+  const creation = usage.cache_creation_input_tokens || 0;
+  const read = usage.cache_read_input_tokens || 0;
+  const total = fresh + creation + read;
+  if (total === 0) return '';
+
+  const CELLS = 10;
+  const raw = [fresh, creation, read].map((v) => (v / total) * CELLS);
+  const cells = raw.map(Math.floor);
+  let placed = cells.reduce((a, b) => a + b, 0);
+  const fracs = raw
+    .map((v, i) => ({ i, f: v - Math.floor(v) }))
+    .sort((a, b) => b.f - a.f);
+  let k = 0;
+  while (placed < CELLS) {
+    cells[fracs[k % 3].i]++;
+    placed++;
+    k++;
+  }
+
+  const glyphs = [icons.cacheFresh, icons.cacheCreation, icons.cacheRead];
+  const bar = cells.map((n, i) => glyphs[i].repeat(n)).join('');
+
+  const hit = Math.round((read / total) * 100);
+  const hitStr = `${hit}%`;
+  const colored = hit >= 80 ? green(hitStr) : hit >= 50 ? yellow(hitStr) : orange(hitStr);
+
+  return `${icons.cache} ${dim(`[${bar}]`)} ${colored}`;
 }
 
 /**
@@ -278,6 +317,10 @@ process.stdin.on('end', () => {
       const suffix = inStr ? ` ${dim(`${icons.rsep} ${inStr}`)}` : '';
       add('context', `${ctxBar}${suffix}`);
     }
+
+    // Cache composition + hit rate (last API turn)
+    const cacheStr = buildCacheSegment(data.context_window?.current_usage, icons);
+    if (cacheStr) add('cache', cacheStr);
 
     // Optional allowlist + order via STATUSLINE_SEGMENTS env var.
     const filter = process.env.STATUSLINE_SEGMENTS;
