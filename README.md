@@ -1,6 +1,6 @@
 # claude-statusline
 
-My Claude Code statusline and the two hooks that feed it. One compact ANSI line with the stuff I actually look at: model, cost, tokens, duration, git branch, worktree, active skills, context window. All of it pulled from the JSON Claude Code pipes in and custom hooks for getting loaded skills.
+My Claude Code statusline and the two hooks that feed it. One compact ANSI line with the stuff I actually look at: model, cost, duration, git branch, worktree, active skills, context window with input tokens. All of it pulled from the JSON Claude Code pipes in and custom hooks for getting loaded skills.
 
 ![tests](https://github.com/michalschroeder/claude-statusline/actions/workflows/test.yml/badge.svg)
 
@@ -81,13 +81,13 @@ The `nerd` example is the screenshot at the top. GitHub's UI has no Nerd Font, s
 Here's the `unicode` set with the same payload as the "mid-session" panel in that screenshot:
 
 ```text
-Sonnet 4.6 ┊ ⎇ main ┊ ▸ claude-statusline ┊ $0.42 ┊ 19k↑ 3.2k↓ ┊ ⏱ 3m ┊ Δ +47 -12 ┊ ██░░░░░░░░ 22%
+Sonnet 4.6 ┊ ⎇ main ┊ ▸ claude-statusline ┊ $0.42 ┊ ⏱ 3m ┊ Δ +47 -12 ┊ ██░░░░░░░░ 22% · 19k
 ```
 
 And `ascii`:
 
 ```text
-Sonnet 4.6 | git: main | dir: claude-statusline | $0.42 | 19k^ 3.2kv | t: 3m | d +47 -12 | ##-------- 22%
+Sonnet 4.6 | git: main | dir: claude-statusline | $0.42 | t: 3m | d +47 -12 | ##-------- 22% , 19k
 ```
 
 The full glyph table for each mode lives in `ICON_SETS` inside [`hooks/statusline.js`](hooks/statusline.js).
@@ -112,7 +112,7 @@ In `~/.claude/settings.json`:
 
 ```json
 "env": {
-  "STATUSLINE_SEGMENTS": "model,cost,tokens,context"
+  "STATUSLINE_SEGMENTS": "model,cost,context"
 }
 ```
 
@@ -131,11 +131,10 @@ Segment names:
 | `dir` | directory label |
 | `addeddirs` | +N added dirs |
 | `cost` | $ cost |
-| `tokens` | input / output token counts |
 | `duration` | session duration |
 | `lines` | +added -removed |
 | `ratelimits` | 5h / 7d usage % |
-| `context` | context bar |
+| `context` | context bar + input token count |
 
 Unknown names get dropped. Segments with no data don't render anyway.
 
@@ -160,11 +159,10 @@ Segments, left to right:
 - **agent** - agent name, when set
 - **dir** - basename of the current directory. Inside `.claude/worktrees/<name>/` it shows the parent project's name instead
 - **cost** - session cost. Green under $1, yellow $1 to $4.99, orange $5 to $9.99, red at $10+
-- **tokens** - input and output counts, compacted with k/M suffixes
 - **duration** - total session time (s / m / h m)
 - **lines** - lines added and removed
 - **rate limits** - 5h and 7d usage percentages, when the payload includes them
-- **context bar** - block-fill bar plus percentage. Green under 50% used, yellow 50 to 64%, orange 65 to 79%, blink-red plus a skull glyph at 80%+
+- **context** - block-fill bar plus used % (from `context_window.used_percentage`), followed by dim input token count compacted with k/M suffixes. Green under 50% used, yellow 50 to 64%, orange 65 to 79%, blink-red plus a skull glyph at 80%+
 
 **Worktree convention:** when you're in a worktree and the branch name matches `worktree-<name>`, the branch chip is hidden. The worktree chip already says it. The branch chip comes back the moment the branch diverges (manual checkout, detached HEAD, rename).
 
