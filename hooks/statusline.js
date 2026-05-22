@@ -131,48 +131,67 @@ function formatDuration(ms, icon) {
   return rem > 0 ? `${icon} ${h}h ${rem}m` : `${icon} ${h}h`;
 }
 
+// Context-bar palette (256-color, muted "ramp B" — forest-green → dark-red).
+// One color per cell; cell N uses CTX_RAMP[N] when filled. Empty cells use CTX_EMPTY.
+const CTX_RAMP = [34, 70, 106, 142, 178, 214, 208, 202, 196, 160];
+const CTX_EMPTY = 240;
+const fg256 = (code, s) => `\x1b[38;5;${code}m${s}\x1b[0m`;
+
 /**
- * Build context bar with colored progress indicator.
+ * Build context bar with per-cell colored progress indicator.
  *
- * Thresholds scale with the model's total context window. Standard 200k models
- * use percentage tiers; 1M-context models use absolute-token tiers so the user
- * is warned at the same token counts regardless of how much headroom remains.
+ * 10 cells, each colored by CTX_RAMP[index] when filled (fades green→red as the
+ * bar grows). Empty cells are dim grey. Step size and panic threshold scale with
+ * the model: 200k models use 20k/cell (panic at 200k = full window); 1M models
+ * use 50k/cell (panic at 500k — half the real window, but the practical danger
+ * line where /compact or handoff should already be considered).
  *
- * 1M tier (detected when total context > 500k tokens):
- *   <200k green · <300k yellow · <400k orange · <500k red · ≥500k blink-red+skull
- * 200k tier (default):
- *   <50% green · <65% yellow · <80% orange · ≥80% blink-red+skull
+ *   200k model: cell N fills at 20k·N tokens · panic ≥ 200k
+ *   1M model:   cell N fills at 50k·N tokens · panic ≥ 500k
+ *
+ * 1M detection: inferred total = inputTokens / (usedPct/100) in (500k, 1.3M).
+ * Upper bound guards against cumulative-session interpretation of total_input_tokens.
+ * When inputTokens is missing, falls back to percentage-driven fill (10% per cell).
  */
 function buildContextBar(usedPct, inputTokens, icons) {
   if (usedPct == null) return '';
-  const used = Math.max(0, Math.min(100, Math.round(usedPct)));
-  const filled = Math.floor(used / 10);
-  const bar = icons.barFill.repeat(filled) + icons.barEmpty.repeat(10 - filled);
-  const label = `${bar} ${used}%`;
 
-  // Infer total context size: total = inputTokens / (used/100). Need both to be meaningful.
-  // Upper bound guards against a cumulative-session interpretation of total_input_tokens
-  // (or any other inflated value) flipping standard models into the 1M tier on long sessions.
-  // A real 1M payload satisfies totalCtx ≈ 1_000_000; anything past ~1.3M is treated as noise.
-  const totalCtx = (inputTokens > 0 && usedPct > 0)
+  const inferredTotal = (inputTokens > 0 && usedPct > 0)
     ? inputTokens / (usedPct / 100)
     : 0;
-  const isLargeCtx = totalCtx > 500_000 && totalCtx < 1_300_000;
+  const isLargeCtx = inferredTotal > 500_000 && inferredTotal < 1_300_000;
+  const panicTokens = isLargeCtx ? 500_000 : 200_000;
+  const stepTokens = panicTokens / 10;
 
-  if (isLargeCtx) {
-    // Absolute-token tiers for 1M models (≈ 20/30/40/50 %).
-    const tokens = inputTokens;
-    if (tokens < 200_000) return green(label);
-    if (tokens < 300_000) return yellow(label);
-    if (tokens < 400_000) return orange(label);
-    if (tokens < 500_000) return red(label);
-    return blink_red(`${icons.skull} ${label}`);
+  let filled, displayPct, isPanic = false;
+  if (inputTokens > 0) {
+    if (inputTokens >= panicTokens) {
+      isPanic = true;
+      filled = 10;
+      displayPct = Math.min(100, Math.round((inputTokens / panicTokens) * 100));
+    } else {
+      filled = Math.floor(inputTokens / stepTokens);
+      displayPct = Math.round((inputTokens / panicTokens) * 100);
+    }
+  } else {
+    const used = Math.max(0, Math.min(100, Math.round(usedPct)));
+    if (used >= 100) isPanic = true;
+    filled = Math.min(10, Math.floor(used / 10));
+    displayPct = used;
   }
 
-  if (used < 50) return green(label);
-  if (used < 65) return yellow(label);
-  if (used < 80) return orange(label);
-  return blink_red(`${icons.skull} ${label}`);
+  if (isPanic) {
+    const bar = icons.barFill.repeat(10);
+    return blink_red(`${icons.skull} ${bar} ${displayPct}%`);
+  }
+
+  let bar = '';
+  for (let i = 0; i < 10; i++) {
+    bar += i < filled
+      ? fg256(CTX_RAMP[i], icons.barFill)
+      : fg256(CTX_EMPTY, icons.barEmpty);
+  }
+  return `${bar} ${displayPct}%`;
 }
 
 // Read JSON from stdin

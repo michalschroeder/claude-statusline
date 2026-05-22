@@ -162,32 +162,34 @@ Segments, left to right:
 - **duration** - total session time (s / m / h m)
 - **lines** - lines added and removed
 - **rate limits** - 5h and 7d usage percentages, when the payload includes them
-- **context** - block-fill bar plus used % (from `context_window.used_percentage`), followed by dim input token count compacted with k/M suffixes. Color tiers scale with the model's context window — see below
+- **context** - 10-cell bar with per-cell 256-color gradient (forest-green → olive → amber → red), dim-grey empty cells, percentage-of-panic-threshold label, dim absolute token count suffix. The step size and panic threshold scale with the model — see below
 
-### Context bar color tiers
+### Context bar — per-cell gradient
 
-The renderer infers total context size from `total_input_tokens / used_percentage` and picks one of two tier tables. The 1M tier kicks in only when the inferred total lands in `(500k, 1.3M)` — the upper bound guards against an inflated `total_input_tokens` (e.g. if ever interpreted as cumulative session input) from falsely promoting a 200k model into the 1M tier.
+Each of the 10 cells has its own color from the muted "ramp B" palette:
 
-**Standard (≤200k models)** — percentage tiers, 4 levels:
+```
+cell:    0   1   2   3   4   5   6   7   8   9
+256:    34  70 106 142 178 214 208 202 196 160
+hue:  forest…olive……amber……orange……red……dark-red
+```
 
-| Used % | Color |
-|---|---|
-| `<50%` | green |
-| `<65%` | yellow |
-| `<80%` | orange |
-| `≥80%` | blink-red + skull |
+A half-full bar fades from forest-green at cell 0 through olive at cell 4. The rightmost filled cell tells you which tier you're in; empty cells are dim grey 240.
 
-**1M-context models** — absolute-token tiers, 5 levels:
+**Step size and panic threshold scale with the model:**
 
-| Input tokens | Color |
-|---|---|
-| `<200k` | green |
-| `200k–299k` | yellow |
-| `300k–399k` | orange |
-| `400k–499k` | red |
-| `≥500k` | blink-red + skull |
+| Model | Cell step | Panic |
+|---|---|---|
+| 200k | 20k tokens / cell | `≥ 200k` tokens |
+| 1M   | 50k tokens / cell | `≥ 500k` tokens |
 
-200k is already past most models' working set, so a 1M model should nudge you toward `/compact` or handoff well before the 500k panic line. The non-blinking red tier (400k–500k) is an extra urgent-but-not-panic step that the 4-tier standard scheme does not have.
+So a 200k model maxes out at the real context limit (200k = full window); a 1M model maxes the bar at 500k — half the real limit, because 500k is the practical danger line where `/compact` or handoff should already be considered. Past the panic threshold the whole bar blink-reds and gets a `` skull prefix.
+
+**1M detection**: inferred `total = total_input_tokens / (used_percentage / 100)`. The 1M scale engages only when `500k < total < 1.3M` — the upper bound guards against an inflated `total_input_tokens` (e.g. if it were ever interpreted as cumulative session input) from falsely promoting a 200k model.
+
+**Percent-only fallback**: when `total_input_tokens` is missing, the bar fills at 10% per cell with the same ramp; panic kicks in at 100%.
+
+The `N%` label is the bar fill (% of the panic threshold), so it always agrees with the bar. For a 200k model this equals `used_percentage`; for a 1M model the label runs ahead of the model's true usage because the bar is calibrated to the danger line, not the model limit.
 
 **Worktree convention:** when you're in a worktree and the branch name matches `worktree-<name>`, the branch chip is hidden. The worktree chip already says it. The branch chip comes back the moment the branch diverges (manual checkout, detached HEAD, rename).
 

@@ -15,7 +15,7 @@ function richInput() {
       total_lines_removed: 5,
     },
     context_window: {
-      total_input_tokens: 1500,
+      total_input_tokens: 60_000,
       used_percentage: 30,
     },
   };
@@ -25,16 +25,16 @@ test('unset STATUSLINE_SEGMENTS renders all available segments', async () => {
   const out = await run(richInput(), { STATUSLINE_SEGMENTS: '' });
   assert.match(out, /Claude/);
   assert.match(out, /\$0\.50/);
-  assert.match(out, /1\.5k/);
+  assert.match(out, /60k/);
   assert.match(out, /1m/);
-  assert.match(out, /30%/); // context bar
+  assert.match(out, /30%/); // context bar shows %-of-panic-threshold (60k of 200k = 30%)
 });
 
 test('STATUSLINE_SEGMENTS=model renders only the model segment', async () => {
   const out = await run(richInput(), { STATUSLINE_SEGMENTS: 'model' });
   assert.match(out, /Claude/);
   assert.doesNotMatch(out, /\$0\.50/);
-  assert.doesNotMatch(out, /1\.5k/);
+  assert.doesNotMatch(out, /60k/);
   assert.doesNotMatch(out, /30%/);
   assert.doesNotMatch(out, /│/);
 });

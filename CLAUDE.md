@@ -41,19 +41,28 @@ Each segment is emitted only when its source field is present/non-empty. Separat
 | duration | `cost.total_duration_ms` | `󰔛`; `Ns` / `Nm` / `Nh Nm` |
 | lines | `cost.total_lines_added` / `total_lines_removed` | `󰷈 +A -R` (green/red) |
 | rate limits | `rate_limits.five_hour.used_percentage`, `rate_limits.seven_day.used_percentage` | `󰔚 5h N%`, `󰃭 7d N%`, joined with `·` |
-| context | `context_window.used_percentage` (falls back to `100 − remaining_percentage`), `context_window.total_input_tokens` | 10-cell block bar + `N%` used, followed by dim compact input tokens `Xk󰁝`. Color tier depends on detected model context size (see below). Replaces the prior standalone `tokens` segment — single segment name `context` |
+| context | `context_window.used_percentage` (falls back to `100 − remaining_percentage`), `context_window.total_input_tokens` | 10-cell block bar with per-cell coloring (256-color "ramp B": forest → olive → amber → red), dim grey empty cells, `N%` of panic threshold, followed by dim compact input tokens `Xk󰁝`. Replaces the prior standalone `tokens` segment — single segment name `context` |
 
-### Context bar color tiers
+### Context bar — per-cell palette and thresholds
 
-Model context size is inferred at render time: `total = total_input_tokens / (used_percentage/100)`. The 1M tier engages only when `500k < total < 1.3M` — the upper bound is a guard against `total_input_tokens` ever being interpreted as cumulative session input (which would inflate `total` past the model's real context size and falsely promote 200k models into the 1M tier on long sessions). When `total_input_tokens` is missing or `used_percentage` is 0, the percentage tiers are used.
+The bar has 10 cells. Each filled cell gets its own 256-color code from `CTX_RAMP` (`[34, 70, 106, 142, 178, 214, 208, 202, 196, 160]` — forest-green → olive → amber → red → dark-red); empty cells use `CTX_EMPTY` (240, dim grey). So a half-full bar literally fades from forest-green at cell 0 through olive at cell 4; the rightmost filled cell tells you which tier you're in.
 
-**Standard (≤200k models) — percentage tiers, 4 levels:**
-- `<50%` green · `<65%` yellow · `<80%` orange · `≥80%` blink-red + skull ``
+**Token-driven fill** (when `total_input_tokens > 0`):
 
-**1M-context models — absolute-token tiers, 5 levels** (extra red step before panic to push the user toward `/compact` or handoff well before 500k):
-- `<200k` green · `<300k` yellow · `<400k` orange · `<500k` red · `≥500k` blink-red + skull ``
+| Model | Cell step | Panic threshold |
+|---|---|---|
+| 200k | 20k tokens / cell | `≥ 200k` tokens |
+| 1M   | 50k tokens / cell | `≥ 500k` tokens |
 
-Rationale: 1M models hide the cost of token bloat — 200k tokens is already past the working set where most models live and is the right point to start nudging the user. The non-blinking red tier (400k–500k) is a distinct urgent-but-not-panic level that doesn't exist in the 4-tier standard scheme.
+So a 200k model fills cell N at `20k · N` tokens (panic at 200k = full window); a 1M model fills cell N at `50k · N` tokens (panic at 500k — half the real window, but the practical danger line where `/compact` or handoff should already be considered).
+
+**Percent-driven fallback** (when `total_input_tokens` is missing): `filled = floor(used_percentage / 10)`; panic at `used_percentage ≥ 100`. Same per-cell ramp.
+
+**Panic mode**: all 10 cells switch to blink-red and a `` skull is prefixed.
+
+**1M detection**: inferred `total = total_input_tokens / (used_percentage / 100)`. The 1M tier engages only when `500k < total < 1.3M` — the upper bound guards against `total_input_tokens` ever being cumulative session input (would falsely promote 200k models). Inferred totals outside that band use 200k thresholds.
+
+**Display percentage**: the `N%` label is the bar fill (% of the panic threshold), so the percentage and the bar always agree. For a 200k model this is identical to `used_percentage`; for a 1M model the label runs ahead of the model's true usage because the bar is calibrated to the danger line, not the model limit.
 
 Read but currently unused: `data.thinking.enabled`, `data.session_name`, `data.version`.
 
