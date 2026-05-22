@@ -3,7 +3,6 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { baseInput, runRaw, stripAnsi } = require('./helpers.js');
 
-// Ramp B (muted): forest → olive → amber → red. One 256-color code per cell.
 const RAMP = [34, 70, 106, 142, 178, 214, 208, 202, 196, 160];
 const EMPTY_COLOR = 240;
 const EMPTY_CODE = `\x1b[38;5;${EMPTY_COLOR}m`;
@@ -18,14 +17,13 @@ function inpPct(used) {
 }
 function inp200k(tokens) {
   const i = baseInput();
-  // Inferred total = tokens / (usedPct/100). For 200k model with N tokens used,
-  // usedPct = N/2000. Inferred total = N / (N/2000 / 100) = 200_000. Stays standard.
+  // usedPct = tokens / 2000 ⇒ inferred total = 200k → standard tier.
   i.context_window = { used_percentage: tokens / 2000, total_input_tokens: tokens };
   return i;
 }
 function inp1M(tokens) {
   const i = baseInput();
-  // Inferred total = tokens / (usedPct/100). usedPct = tokens/10_000 ⇒ inferred total = 1M.
+  // usedPct = tokens / 10_000 ⇒ inferred total = 1M → 1M tier.
   i.context_window = { used_percentage: tokens / 10_000, total_input_tokens: tokens };
   return i;
 }
@@ -34,7 +32,7 @@ test('null context — no bar emitted', async () => {
   assert.ok(!stripAnsi(await runRaw(baseInput())).includes('█'));
 });
 
-// ─── Fallback (percent-only, no token info) ──────────────────────────────────
+// ─── Percent-only fallback (no token info) — panic at ≥80% (restores prior contract) ─
 
 test('fallback: 0% used → no filled cells, dim grey only', async () => {
   const raw = await runRaw(inpPct(0));
@@ -45,17 +43,23 @@ test('fallback: 0% used → no filled cells, dim grey only', async () => {
 
 test('fallback: 50% used → 5 cells, last cell color ramp[4]', async () => {
   const raw = await runRaw(inpPct(50));
-  assert.ok(raw.includes(cellCode(0)));
   assert.ok(raw.includes(cellCode(4)));
   assert.ok(!raw.includes(cellCode(5)));
+  assert.ok(!raw.includes(PANIC_CODE));
   assert.ok(stripAnsi(raw).includes('50%'));
 });
 
-test('fallback: 95% used → 9 cells, no panic blink yet', async () => {
-  const raw = await runRaw(inpPct(95));
-  assert.ok(raw.includes(cellCode(8)));
-  assert.ok(!raw.includes(cellCode(9)));
+test('fallback: 79% used → 7 cells, no panic yet', async () => {
+  const raw = await runRaw(inpPct(79));
+  assert.ok(raw.includes(cellCode(6)));
+  assert.ok(!raw.includes(cellCode(7)));
   assert.ok(!raw.includes(PANIC_CODE));
+});
+
+test('fallback: 80% used → panic blink + skull (early-warning contract)', async () => {
+  const raw = await runRaw(inpPct(80));
+  assert.ok(raw.includes(PANIC_CODE));
+  assert.ok(stripAnsi(raw).includes(SKULL));
 });
 
 test('fallback: 100% used → panic blink + skull', async () => {
@@ -64,22 +68,22 @@ test('fallback: 100% used → panic blink + skull', async () => {
   assert.ok(stripAnsi(raw).includes(SKULL));
 });
 
-test('fallback: remaining_percentage=0 → panic', async () => {
+test('fallback: remaining_percentage=20 (80% used) → panic', async () => {
   const i = baseInput();
-  i.context_window = { remaining_percentage: 0 };
+  i.context_window = { remaining_percentage: 20 };
   const raw = await runRaw(i);
   assert.ok(raw.includes(PANIC_CODE));
   assert.ok(stripAnsi(raw).includes(SKULL));
 });
 
-// ─── 200k model — 20k tokens per cell, panic ≥ 200k ──────────────────────────
+// ─── 200k model — 20k tokens / cell, panic at ≥160k (80%) ────────────────────
 
 test('200k: 0 tokens → 0 cells filled', async () => {
   const raw = await runRaw(inp200k(0));
   for (let i = 0; i < 10; i++) assert.ok(!raw.includes(cellCode(i)));
 });
 
-test('200k: 19_999 tokens (just under 1st cell) → 0 cells', async () => {
+test('200k: 19_999 tokens → 0 cells', async () => {
   const raw = await runRaw(inp200k(19_999));
   assert.ok(!raw.includes(cellCode(0)));
 });
@@ -90,23 +94,24 @@ test('200k: 20_000 tokens → 1 cell (ramp[0] forest)', async () => {
   assert.ok(!raw.includes(cellCode(1)));
 });
 
-test('200k: 100_000 tokens (50%) → 5 cells', async () => {
+test('200k: 100_000 tokens (50%) → 5 cells, no panic', async () => {
   const raw = await runRaw(inp200k(100_000));
   assert.ok(raw.includes(cellCode(4)));
   assert.ok(!raw.includes(cellCode(5)));
-});
-
-test('200k: 180_000 tokens (90%) → 9 cells, ramp[8] = 196 red, no panic', async () => {
-  const raw = await runRaw(inp200k(180_000));
-  assert.ok(raw.includes(cellCode(8)));
-  assert.ok(!raw.includes(cellCode(9)));
   assert.ok(!raw.includes(PANIC_CODE));
 });
 
-test('200k: 199_999 tokens → 9 cells, no panic', async () => {
-  const raw = await runRaw(inp200k(199_999));
-  assert.ok(raw.includes(cellCode(8)));
+test('200k: 159_999 tokens → 7 cells, no panic', async () => {
+  const raw = await runRaw(inp200k(159_999));
+  assert.ok(raw.includes(cellCode(6)));
+  assert.ok(!raw.includes(cellCode(7)));
   assert.ok(!raw.includes(PANIC_CODE));
+});
+
+test('200k: 160_000 tokens (80%) → panic blink + skull (early-warning contract)', async () => {
+  const raw = await runRaw(inp200k(160_000));
+  assert.ok(raw.includes(PANIC_CODE));
+  assert.ok(stripAnsi(raw).includes(SKULL));
 });
 
 test('200k: 200_000 tokens → panic blink + skull', async () => {
@@ -115,7 +120,7 @@ test('200k: 200_000 tokens → panic blink + skull', async () => {
   assert.ok(stripAnsi(raw).includes(SKULL));
 });
 
-// ─── 1M model — 50k tokens per cell, panic ≥ 500k ────────────────────────────
+// ─── 1M model — 50k tokens / cell, panic at ≥500k ────────────────────────────
 
 test('1M: 49_999 tokens → 0 cells', async () => {
   const raw = await runRaw(inp1M(49_999));
@@ -128,19 +133,20 @@ test('1M: 50_000 tokens → 1 cell', async () => {
   assert.ok(!raw.includes(cellCode(1)));
 });
 
-test('1M: 200_000 tokens → 4 cells (last = ramp[3] olive-amber)', async () => {
-  const raw = await runRaw(inp1M(200_000));
-  assert.ok(raw.includes(cellCode(3)));
-  assert.ok(!raw.includes(cellCode(4)));
-});
-
 test('1M: 250_000 tokens → 5 cells', async () => {
   const raw = await runRaw(inp1M(250_000));
   assert.ok(raw.includes(cellCode(4)));
   assert.ok(!raw.includes(cellCode(5)));
 });
 
-test('1M: 450_000 tokens (90% of panic) → 9 cells, ramp[8] = 196 red, no panic', async () => {
+test('1M: 400_000 tokens → 8 cells, no panic (1M tier panics only at 500k)', async () => {
+  const raw = await runRaw(inp1M(400_000));
+  assert.ok(raw.includes(cellCode(7)));
+  assert.ok(!raw.includes(cellCode(8)));
+  assert.ok(!raw.includes(PANIC_CODE));
+});
+
+test('1M: 450_000 tokens → 9 cells, no panic', async () => {
   const raw = await runRaw(inp1M(450_000));
   assert.ok(raw.includes(cellCode(8)));
   assert.ok(!raw.includes(cellCode(9)));
@@ -158,47 +164,74 @@ test('1M: 500_000 tokens → panic blink + skull', async () => {
   assert.ok(stripAnsi(raw).includes(SKULL));
 });
 
-test('1M: 900_000 tokens → panic (still blinking past threshold)', async () => {
+test('1M: 900_000 tokens → panic; displayPct capped at 100%', async () => {
   const raw = await runRaw(inp1M(900_000));
   assert.ok(raw.includes(PANIC_CODE));
+  assert.ok(stripAnsi(raw).includes('100%'));
 });
 
-// ─── Detection boundary and cumulative-token guard ───────────────────────────
+// ─── 1M detection band — tightened to (800k, 1.2M) ───────────────────────────
 
-test('detection boundary: inferred totalCtx == 500k → standard tier (20k/cell)', async () => {
-  // usedPct=80, tokens=400k → inferred 500k. `>` is strict, so standard tier kicks in.
-  // In standard tier 400k tokens is well past panic (200k) → panic.
+test('detection: inferred totalCtx 750k (cumulative-token leak) → 200k tier (panic)', async () => {
+  // Old (500k, 1.3M) band would have falsely promoted this to 1M. New (800k, 1.2M)
+  // band rejects it. 600k tokens >> 200k panic threshold → blink+skull panic.
   const i = baseInput();
-  i.context_window = { used_percentage: 80, total_input_tokens: 400_000 };
+  i.context_window = { used_percentage: 80, total_input_tokens: 600_000 };
   const raw = await runRaw(i);
   assert.ok(raw.includes(PANIC_CODE));
 });
 
-test('cumulative-token guard: inferred totalCtx > 1.3M → standard tier', async () => {
-  // usedPct=30, tokens=800k → inferred ~2.67M. Falls back to standard tier (200k panic).
-  // 800k tokens >> 200k panic threshold → panic.
+test('detection: inferred totalCtx 800k (lower edge) → still 200k tier', async () => {
+  // usedPct=50, tokens=400k → inferred 800k exactly. Strict `>` excludes → standard tier.
   const i = baseInput();
-  i.context_window = { used_percentage: 30, total_input_tokens: 800_000 };
+  i.context_window = { used_percentage: 50, total_input_tokens: 400_000 };
   const raw = await runRaw(i);
+  // 400k tokens >> 200k panic → blink+skull (would be 8 cells if treated as 1M).
   assert.ok(raw.includes(PANIC_CODE));
 });
 
-test('cumulative-token guard upper edge: inferred totalCtx == 1.3M → standard tier', async () => {
-  // usedPct=10, tokens=130k → inferred 1.3M exactly. `<` is strict, so standard tier.
+test('detection: inferred totalCtx 850k → 1M tier engages', async () => {
+  // usedPct=20, tokens=170k → inferred 850k. Inside (800k, 1.2M).
+  // 1M tier: 170k tokens → floor(170/50)=3 cells, no panic.
   const i = baseInput();
-  i.context_window = { used_percentage: 10, total_input_tokens: 130_000 };
+  i.context_window = { used_percentage: 20, total_input_tokens: 170_000 };
   const raw = await runRaw(i);
-  // 130k in standard tier = 6 cells (130k / 20k); not panicking.
-  assert.ok(raw.includes(cellCode(5)));
+  assert.ok(raw.includes(cellCode(2)));
+  assert.ok(!raw.includes(cellCode(3)));
   assert.ok(!raw.includes(PANIC_CODE));
 });
 
-test('usedPct=0 with non-zero tokens → fallback path, 0 cells, no panic', async () => {
+test('detection: inferred totalCtx 1.2M (upper edge) → 200k tier', async () => {
+  // usedPct=10, tokens=120k → inferred 1.2M exactly. Strict `<` excludes → standard tier.
   const i = baseInput();
-  i.context_window = { used_percentage: 0, total_input_tokens: 5000 };
+  i.context_window = { used_percentage: 10, total_input_tokens: 120_000 };
   const raw = await runRaw(i);
-  // inputTokens>0 ⇒ token-driven path. 5000 < 20k step → 0 cells. No panic.
-  assert.ok(!raw.includes(cellCode(0)));
+  // 120k tokens in 200k tier = 6 cells, no panic (below 160k threshold).
+  assert.ok(raw.includes(cellCode(5)));
+  assert.ok(!raw.includes(cellCode(6)));
+  assert.ok(!raw.includes(PANIC_CODE));
+});
+
+// ─── Degenerate input handling ───────────────────────────────────────────────
+
+test('usedPct=0 with non-zero tokens → percent-only fallback (no premature coloring)', async () => {
+  // Inference is unreliable when usedPct=0; we should NOT mis-color a possibly-1M
+  // session as if it were 50% full of a 200k model.
+  const i = baseInput();
+  i.context_window = { used_percentage: 0, total_input_tokens: 100_000 };
+  const raw = await runRaw(i);
+  // Fallback path with usedPct=0 → 0 cells filled, no panic, no amber/yellow.
+  for (let i = 0; i < 10; i++) assert.ok(!raw.includes(cellCode(i)));
+  assert.ok(!raw.includes(PANIC_CODE));
+});
+
+// ─── displayPct floor: no "100%" without panic ───────────────────────────────
+
+test('displayPct floor: 499_500 tokens (1M tier, 99.9%) shows 99% not 100%', async () => {
+  // Just under 500k panic on the 1M tier. Previously rounded to "100%" while bar still
+  // had an empty cell — confusing. Floor pushes it to "99%".
+  const raw = await runRaw(inp1M(499_500));
+  assert.ok(stripAnsi(raw).includes('99%'));
   assert.ok(!raw.includes(PANIC_CODE));
 });
 

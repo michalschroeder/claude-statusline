@@ -65,8 +65,9 @@ render "4. Worktree + rate limits" '{
   "rate_limits": {"five_hour": {"used_percentage": 34}, "seven_day": {"used_percentage": 61}}
 }'
 
-# 5. 1M context — early warning at 250k tokens (yellow 1M-tier despite only 25% bar)
-render "5. 1M model — 250k tokens (1M-tier yellow)" '{
+# 5. 1M context — 250k tokens. With 50k/cell the bar fills 5 cells (forest→amber gradient),
+#    label reads 50% (% of the 500k panic threshold), not 25% of the 1M window.
+render "5. 1M model — 250k tokens (5/10 cells, 50% of 500k panic)" '{
   "model": {"display_name": "Opus 4.7 (1M)"},
   "effort": {"level": "high"},
   "workspace": {"current_dir": "/home/ms/projects/claude-statusline", "project_dir": "/home/ms/projects/claude-statusline"},
@@ -84,7 +85,7 @@ render "6. Danger zone" '{
   "rate_limits": {"five_hour": {"used_percentage": 88}, "seven_day": {"used_percentage": 74}}
 }'
 
-# 6. With loaded skills (writes a temp skills log keyed to a fake session id)
+# 7. With loaded skills (writes a temp skills log keyed to a fake session id)
 SESSION="demo-$$"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/claude-statusline/skills"
 mkdir -p "$STATE_DIR"

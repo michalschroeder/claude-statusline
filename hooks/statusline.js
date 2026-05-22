@@ -142,40 +142,58 @@ const fg256 = (code, s) => `\x1b[38;5;${code}m${s}\x1b[0m`;
  *
  * 10 cells, each colored by CTX_RAMP[index] when filled (fades green→red as the
  * bar grows). Empty cells are dim grey. Step size and panic threshold scale with
- * the model: 200k models use 20k/cell (panic at 200k = full window); 1M models
- * use 50k/cell (panic at 500k — half the real window, but the practical danger
- * line where /compact or handoff should already be considered).
+ * the model.
  *
- *   200k model: cell N fills at 20k·N tokens · panic ≥ 200k
- *   1M model:   cell N fills at 50k·N tokens · panic ≥ 500k
+ *   200k model: cell N fills at 20k·N tokens
+ *               · early warning (blink+skull) ≥ 160k (80% — restores prior contract)
+ *   1M model:   cell N fills at 50k·N tokens
+ *               · panic (blink+skull) ≥ 500k (user-defined danger line)
  *
- * 1M detection: inferred total = inputTokens / (usedPct/100) in (500k, 1.3M).
- * Upper bound guards against cumulative-session interpretation of total_input_tokens.
- * When inputTokens is missing, falls back to percentage-driven fill (10% per cell).
+ * 1M detection: inferred total = inputTokens / (usedPct/100). Engages only when the
+ * inferred total lands close to 1M (within ±200k → band (800k, 1.2M)). Outside that
+ * narrow band — including cumulative-session interpretations that fall in (500k, 800k)
+ * — we use 200k thresholds. When inputTokens is missing OR the inference is unreliable
+ * (usedPct=0), falls back to percentage-driven fill (10% per cell, panic at ≥80%).
+ *
+ * displayPct = bar fill (% of the panic threshold). In panic the label is capped
+ * at 100% — the skull+blink already signals the severity; the bar itself is full.
  */
 function buildContextBar(usedPct, inputTokens, icons) {
   if (usedPct == null) return '';
 
-  const inferredTotal = (inputTokens > 0 && usedPct > 0)
-    ? inputTokens / (usedPct / 100)
-    : 0;
-  const isLargeCtx = inferredTotal > 500_000 && inferredTotal < 1_300_000;
+  const canInferTotal = inputTokens > 0 && usedPct > 0;
+  const inferredTotal = canInferTotal ? inputTokens / (usedPct / 100) : 0;
+  // Tighter band: must be within ±200k of 1M. Catches cumulative-token leaks in (500k, 800k)
+  // that the older (500k, 1.3M) band let through.
+  const isLargeCtx = inferredTotal > 800_000 && inferredTotal < 1_200_000;
   const panicTokens = isLargeCtx ? 500_000 : 200_000;
   const stepTokens = panicTokens / 10;
+  // Early warning: trigger panic at cell 8 (80% of bar) for the 200k tier so we don't
+  // regress the prior "blink+skull at 80%" contract. The 1M tier keeps panic at the
+  // last cell (500k) as explicitly requested by the user.
+  const panicCell = isLargeCtx ? 10 : 8;
+
+  // Use the token-driven path only when we can trust the inference. usedPct=0 with
+  // non-zero inputTokens makes inference undefined → fall back to the percent path
+  // (which renders 0 cells, no premature coloring of a possibly-1M session).
+  const useTokenPath = inputTokens > 0 && canInferTotal;
 
   let filled, displayPct, isPanic = false;
-  if (inputTokens > 0) {
-    if (inputTokens >= panicTokens) {
+  if (useTokenPath) {
+    filled = Math.min(10, Math.floor(inputTokens / stepTokens));
+    if (filled >= panicCell) {
       isPanic = true;
       filled = 10;
       displayPct = Math.min(100, Math.round((inputTokens / panicTokens) * 100));
     } else {
-      filled = Math.floor(inputTokens / stepTokens);
-      displayPct = Math.round((inputTokens / panicTokens) * 100);
+      // Floor (not round) so a value just below the panic threshold doesn't render
+      // "100%" alongside a 9-cell-with-empty-tail bar.
+      displayPct = Math.floor((inputTokens / panicTokens) * 100);
     }
   } else {
     const used = Math.max(0, Math.min(100, Math.round(usedPct)));
-    if (used >= 100) isPanic = true;
+    // Restore the prior contract: blink+skull at ≥80% when the renderer is in fallback.
+    if (used >= 80) isPanic = true;
     filled = Math.min(10, Math.floor(used / 10));
     displayPct = used;
   }

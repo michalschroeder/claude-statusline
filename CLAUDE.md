@@ -47,22 +47,22 @@ Each segment is emitted only when its source field is present/non-empty. Separat
 
 The bar has 10 cells. Each filled cell gets its own 256-color code from `CTX_RAMP` (`[34, 70, 106, 142, 178, 214, 208, 202, 196, 160]` — forest-green → olive → amber → red → dark-red); empty cells use `CTX_EMPTY` (240, dim grey). So a half-full bar literally fades from forest-green at cell 0 through olive at cell 4; the rightmost filled cell tells you which tier you're in.
 
-**Token-driven fill** (when `total_input_tokens > 0`):
+**Token-driven fill** (when `total_input_tokens > 0` AND `used_percentage > 0`):
 
-| Model | Cell step | Panic threshold |
+| Model | Cell step | Panic (blink-red + ``) |
 |---|---|---|
-| 200k | 20k tokens / cell | `≥ 200k` tokens |
-| 1M   | 50k tokens / cell | `≥ 500k` tokens |
+| 200k | 20k tokens / cell | `≥ 160k` tokens (cell 8 = 80%, restores the prior contract) |
+| 1M   | 50k tokens / cell | `≥ 500k` tokens (cell 10 = user-defined danger line) |
 
-So a 200k model fills cell N at `20k · N` tokens (panic at 200k = full window); a 1M model fills cell N at `50k · N` tokens (panic at 500k — half the real window, but the practical danger line where `/compact` or handoff should already be considered).
+So a 200k model fills cell N at `20k · N` tokens; a 1M model fills cell N at `50k · N` tokens. The 200k tier keeps the historical "blink+skull at 80%" alarm so users still get the loud early warning; the 1M tier panics only at the explicit 500k danger line (where `/compact` or handoff should already be considered).
 
-**Percent-driven fallback** (when `total_input_tokens` is missing): `filled = floor(used_percentage / 10)`; panic at `used_percentage ≥ 100`. Same per-cell ramp.
+**Percent-driven fallback** (when `total_input_tokens` is missing OR the inference is unreliable — e.g. `used_percentage == 0`): `filled = floor(used_percentage / 10)`; panic at `used_percentage ≥ 80` (matches the original contract). Same per-cell ramp.
 
-**Panic mode**: all 10 cells switch to blink-red and a `` skull is prefixed.
+**Panic mode**: all 10 cells switch to blink-red and a `` skull is prefixed. The `N%` label in panic is capped at 100% — the skull + blink already signal severity, so the number doesn't need to spike past it.
 
-**1M detection**: inferred `total = total_input_tokens / (used_percentage / 100)`. The 1M tier engages only when `500k < total < 1.3M` — the upper bound guards against `total_input_tokens` ever being cumulative session input (would falsely promote 200k models). Inferred totals outside that band use 200k thresholds.
+**1M detection**: inferred `total = total_input_tokens / (used_percentage / 100)`. The 1M tier engages only when `800k < total < 1.2M` — a tight band that accepts integer-rounded 1M payloads but rejects cumulative-token leaks (e.g. a 200k-model session with cumulative input around 600k would have inferred ≈ 750k and stays on 200k thresholds).
 
-**Display percentage**: the `N%` label is the bar fill (% of the panic threshold), so the percentage and the bar always agree. For a 200k model this is identical to `used_percentage`; for a 1M model the label runs ahead of the model's true usage because the bar is calibrated to the danger line, not the model limit.
+**Display percentage**: the `N%` label is the bar fill (% of the panic threshold) — `floor()` in the non-panic branch so a value just shy of panic reads e.g. `99%` instead of rounding to `100%`. For a 200k model the label is roughly `used_percentage`; for a 1M model it runs ahead of the model's true usage because the bar is calibrated to the 500k danger line, not the 1M limit.
 
 Read but currently unused: `data.thinking.enabled`, `data.session_name`, `data.version`.
 
