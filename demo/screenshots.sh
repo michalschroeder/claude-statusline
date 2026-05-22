@@ -75,13 +75,13 @@ render "5. 1M model — 250k tokens (5/10 cells, 50% of 500k panic)" '{
   "context_window": {"total_input_tokens": 250000, "used_percentage": 25}
 }'
 
-# 6. Danger zone — context > 80% (blinking red skull), cost > $10
-render "6. Danger zone" '{
-  "model": {"display_name": "Opus 4.7"},
+# 6. Danger zone — 1M model right at the 500k panic threshold (borderline panic)
+render "6. Danger zone (1M at 500k panic threshold)" '{
+  "model": {"display_name": "Opus 4.7 (1M)"},
   "effort": {"level": "high"},
   "workspace": {"current_dir": "/home/ms/projects/claude-statusline", "project_dir": "/home/ms/projects/claude-statusline"},
   "cost": {"total_cost_usd": 14.27, "total_duration_ms": 5400000, "total_lines_added": 1240, "total_lines_removed": 760},
-  "context_window": {"total_input_tokens": 920000, "used_percentage": 88},
+  "context_window": {"total_input_tokens": 500000, "used_percentage": 50},
   "rate_limits": {"five_hour": {"used_percentage": 88}, "seven_day": {"used_percentage": 74}}
 }'
 
