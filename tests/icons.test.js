@@ -7,7 +7,7 @@ function inp() {
   const i = baseInput();
   i.effort = { level: 'high' };
   i.cost = { total_duration_ms: 45000, total_lines_added: 3, total_lines_removed: 1 };
-  i.context_window = { remaining_percentage: 10, total_input_tokens: 1234, total_output_tokens: 567 };
+  i.context_window = { used_percentage: 90, total_input_tokens: 1234 };
   i.rate_limits = { five_hour: { used_percentage: 50 }, seven_day: { used_percentage: 20 } };
   return i;
 }
