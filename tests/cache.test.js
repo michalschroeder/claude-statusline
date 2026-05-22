@@ -54,8 +54,27 @@ test('bar cells sum to exactly 10 — all read', async () => {
   }));
   const bar = extractBar(out);
   assert.equal([...bar].length, 10);
-  // All filled with read glyph '▓'
-  assert.ok([...bar].every((c) => c === '▓'));
+  assert.ok([...bar].every((c) => c === '█'));
+});
+
+test('all-read bar is green', async () => {
+  const raw = await runRaw(inp({
+    input_tokens: 0,
+    cache_creation_input_tokens: 0,
+    cache_read_input_tokens: 1000,
+  }));
+  // green wraps the cells; no orange/yellow cell colors
+  assert.ok(raw.includes('\x1b[32m'));
+  assert.ok(!raw.match(/\x1b\[38;5;208m█/));
+});
+
+test('all-fresh bar is orange', async () => {
+  const raw = await runRaw(inp({
+    input_tokens: 1000,
+    cache_creation_input_tokens: 0,
+    cache_read_input_tokens: 0,
+  }));
+  assert.ok(raw.includes('\x1b[38;5;208m█'));
 });
 
 test('bar cells sum to exactly 10 — skewed', async () => {

@@ -25,7 +25,7 @@ test('nerd mode keeps Nerd Font glyphs', async () => {
   assert.ok(out.includes('󰃭 7d'));   // rate7d
   assert.ok(out.includes('┊'));      // separator
   assert.ok(out.includes('󰆼'));      // cache (nf-md-database)
-  assert.ok(out.includes('▓'));      // cache read glyph
+  assert.ok(out.includes('80%'));    // cache hit rate (800/1000)
 });
 
 test('unicode mode swaps Nerd glyphs for BMP fallbacks', async () => {

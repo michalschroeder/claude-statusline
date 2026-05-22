@@ -23,19 +23,19 @@ const ICON_SETS = {
              lines: '󰷈', r5h: '󰔚 5h', r7d: '󰃭 7d', rsep: '·', skull: '󰚌',
              style: '󰏘', vim: '', agent: '󰚩',
              barFill: '█', barEmpty: '░',
-             cache: '󰆼', cacheFresh: '░', cacheCreation: '▒', cacheRead: '▓',
+             cache: '󰆼', cacheCell: '█',
              sep: '┊', skills: '', hr: '─' },
   unicode: { effort: '⚡', branch: '⎇', worktree: '⊕', dir: '▸',  duration: '⏱',
              lines: 'Δ', r5h: '5h', r7d: '7d', rsep: '·', skull: '‼',
              style: '❖', vim: 'V', agent: '◉',
              barFill: '█', barEmpty: '░',
-             cache: '▦', cacheFresh: '░', cacheCreation: '▒', cacheRead: '▓',
+             cache: '▦', cacheCell: '█',
              sep: '┊', skills: '✦', hr: '─' },
   ascii:   { effort: '!', branch: 'git:', worktree: 'wt:', dir: 'dir:', duration: 't:',
              lines: 'd', r5h: '5h', r7d: '7d', rsep: ',', skull: '!!',
              style: 'S', vim: 'V', agent: '@',
              barFill: '#', barEmpty: '-',
-             cache: 'cache', cacheFresh: '.', cacheCreation: ':', cacheRead: '#',
+             cache: 'cache', cacheCell: '#',
              sep: '|', skills: '*', hr: '-' },
 };
 
@@ -160,14 +160,14 @@ function buildCacheSegment(usage, icons) {
     k++;
   }
 
-  const glyphs = [icons.cacheFresh, icons.cacheCreation, icons.cacheRead];
-  const bar = cells.map((n, i) => glyphs[i].repeat(n)).join('');
+  const colors = [orange, yellow, green]; // fresh, creation, read
+  const bar = cells.map((n, i) => colors[i](icons.cacheCell.repeat(n))).join('');
 
   const hit = Math.round((read / total) * 100);
   const hitStr = `${hit}%`;
   const colored = hit >= 80 ? green(hitStr) : hit >= 50 ? yellow(hitStr) : orange(hitStr);
 
-  return `${icons.cache} ${dim(`[${bar}]`)} ${colored}`;
+  return `${icons.cache} ${dim('[')}${bar}${dim(']')} ${colored}`;
 }
 
 /**
