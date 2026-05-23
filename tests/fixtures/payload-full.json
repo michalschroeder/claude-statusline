@@ -1,0 +1,31 @@
+{
+  "model": { "display_name": "Opus 4.7" },
+  "session_id": "01HXYZ0123456789ABCDEF",
+  "session_name": "context-bar work",
+  "version": "1.2.3",
+  "workspace": {
+    "current_dir": "/home/alice/projects/widget",
+    "project_dir": "/home/alice/projects/widget",
+    "added_dirs": ["/home/alice/projects/widget/docs"]
+  },
+  "effort": { "level": "high" },
+  "thinking": { "enabled": true },
+  "output_style": { "name": "concise" },
+  "vim": { "mode": "NORMAL" },
+  "agent": { "name": "feature-dev" },
+  "worktree": { "name": "context-bar-tiers" },
+  "cost": {
+    "total_cost_usd": 2.47,
+    "total_duration_ms": 3725000,
+    "total_lines_added": 142,
+    "total_lines_removed": 31
+  },
+  "rate_limits": {
+    "five_hour": { "used_percentage": 42 },
+    "seven_day": { "used_percentage": 18 }
+  },
+  "context_window": {
+    "used_percentage": 22,
+    "total_input_tokens": 218000
+  }
+}
