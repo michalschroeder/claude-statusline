@@ -72,12 +72,15 @@ test('4+ unique skills — only on line 2, no truncation', async () => {
   } finally { cleanup(); }
 });
 
-test('no skills logged — single line, no dividers', async () => {
+test('no skills logged — segments line + trailing rule, no skills chip', async () => {
   cleanup();
   const i = baseInput();
   i.session_id = SESSION;
   const out = await run(i);
-  assert.ok(!out.includes('\n'));
+  const lines = out.split('\n');
+  assert.strictEqual(lines.length, 2);
+  assert.match(lines[1], /^─+$/);
+  assert.ok(!out.includes('loaded skills'));
 });
 
 test('plugin:skill prefix stripped', async () => {

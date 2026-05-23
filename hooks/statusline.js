@@ -361,16 +361,17 @@ process.stdin.on('end', () => {
       out += `  ${dim('[icons=ascii; set STATUSLINE_ICONS=nerd|unicode|ascii \u2014 see README]')}`;
     }
 
+    const width = Math.max(20, Math.min(120, process.stdout.columns || 80));
+    const rule = dim(icons.hr.repeat(width));
+    out += `\n${rule}`;
     if (allSkills.length) {
       const full = allSkills
         .slice()
         .reverse()
         .map((n) => (n.includes(':') ? n.split(':').slice(1).join(':') : n))
         .join(', ');
-      const width = Math.max(20, Math.min(120, process.stdout.columns || 80));
-      const rule = dim(icons.hr.repeat(width));
       const title = bold(`${icons.skills} loaded skills:`);
-      out += `\n${rule}\n${title} ${dim(full)}\n${rule}`;
+      out += `\n${title} ${dim(full)}\n${rule}`;
     }
 
     process.stdout.write(out);
