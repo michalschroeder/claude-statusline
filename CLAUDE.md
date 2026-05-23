@@ -20,7 +20,7 @@ Single-process statusline renderer plus two bash logging hooks. Data flow:
    - `hooks/cleanup-skills-log.sh` — `SessionEnd`, removes the session's log file; also prunes any `*.log` older than 30 days (for sessions that crashed without firing `SessionEnd`).
    Log format: `<unix_ts> <skill_name>` per line. Renderer reads last entries, dedupes; strips `plugin:` prefix.
 
-When any skills are logged the renderer emits 4 lines: segments, dim `─` rule, `{icons.skills} loaded skills: a, b, c, ...` (all uniques, oldest→newest, no truncation), dim `─` rule. Rule width = terminal columns, clamped 20–120. With no skills logged, just the single segment line is printed (no skills chip on line 1).
+When any skills are logged the renderer emits 4 lines: segments, dim `─` rule, `{icons.skills} loaded skills: a, b, c, ...` (all uniques, oldest→newest, no truncation), dim `─` rule. Rule width = terminal columns (min 20, no upper cap). With no skills logged, just the single segment line is printed (no skills chip on line 1).
 
 ## Supported segments (rendered left-to-right)
 

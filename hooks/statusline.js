@@ -361,7 +361,7 @@ process.stdin.on('end', () => {
       out += `  ${dim('[icons=ascii; set STATUSLINE_ICONS=nerd|unicode|ascii \u2014 see README]')}`;
     }
 
-    const width = Math.max(20, Math.min(120, process.stdout.columns || 80));
+    const width = Math.max(20, process.stdout.columns || 80);
     const rule = dim(icons.hr.repeat(width));
     out += `\n${rule}`;
     if (allSkills.length) {
