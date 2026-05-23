@@ -4,6 +4,26 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const tty = require('tty');
+
+function getTerminalWidth() {
+  if (process.stdout.columns) return process.stdout.columns;
+  if (process.stderr.columns) return process.stderr.columns;
+  const envCols = parseInt(process.env.COLUMNS, 10);
+  if (envCols) return envCols;
+  try {
+    const fd = fs.openSync('/dev/tty', 'r+');
+    try {
+      const stream = new tty.WriteStream(fd);
+      const cols = stream.columns;
+      stream.destroy();
+      if (cols) return cols;
+    } finally {
+      try { fs.closeSync(fd); } catch {}
+    }
+  } catch {}
+  return 80;
+}
 
 // ANSI helpers
 const dim = (s) => `\x1b[2m${s}\x1b[0m`;
@@ -361,12 +381,7 @@ process.stdin.on('end', () => {
       out += `  ${dim('[icons=ascii; set STATUSLINE_ICONS=nerd|unicode|ascii \u2014 see README]')}`;
     }
 
-    const termCols =
-      process.stdout.columns ||
-      process.stderr.columns ||
-      parseInt(process.env.COLUMNS, 10) ||
-      80;
-    const width = Math.max(20, termCols);
+    const width = Math.max(20, getTerminalWidth());
     const rule = dim(icons.hr.repeat(width));
     out += `\n${rule}`;
     if (allSkills.length) {
