@@ -4,25 +4,12 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const tty = require('tty');
 
+// Terminal width for the trailing rule. Sizes to the terminal when run
+// interactively; Claude Code pipes stdout so columns is undefined there and
+// we fall back to 80 (rule is a fixed-width separator, not full-bleed).
 function getTerminalWidth() {
-  if (process.stdout.columns) return process.stdout.columns;
-  if (process.stderr.columns) return process.stderr.columns;
-  const envCols = parseInt(process.env.COLUMNS, 10);
-  if (envCols) return envCols;
-  try {
-    const fd = fs.openSync('/dev/tty', 'r+');
-    try {
-      const stream = new tty.WriteStream(fd);
-      const cols = stream.columns;
-      stream.destroy();
-      if (cols) return cols;
-    } finally {
-      try { fs.closeSync(fd); } catch {}
-    }
-  } catch {}
-  return 80;
+  return process.stdout.columns || 80;
 }
 
 // ANSI helpers
@@ -252,17 +239,14 @@ process.stdin.on('end', () => {
     const linesAdded = data.cost?.total_lines_added;
     const linesRemoved = data.cost?.total_lines_removed;
     const effortLevel = data.effort?.level;
-    const thinkingEnabled = data.thinking?.enabled;
     const vimMode = data.vim?.mode;
     const agentName = data.agent?.name;
-    const sessionName = data.session_name;
     const outputStyle = data.output_style?.name;
     const rateLimitFiveHour = data.rate_limits?.five_hour?.used_percentage;
     const rateLimitSevenDay = data.rate_limits?.seven_day?.used_percentage;
     const totalDurationMs = data.cost?.total_duration_ms;
     const addedDirs = data.workspace?.added_dirs;
     const worktreeName = data.worktree?.name || data.workspace?.git_worktree;
-    const version = data.version;
 
     const { mode: iconMode, hint: iconHint } = resolveIconMode();
     const icons = ICON_SETS[iconMode];

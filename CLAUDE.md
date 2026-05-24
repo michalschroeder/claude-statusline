@@ -64,8 +64,6 @@ So a 200k model fills cell N at `20k · N` tokens; a 1M model fills cell N at `5
 
 **Display percentage**: the `N%` label is the raw `used_percentage` from the payload — i.e. the model's actual context usage. On the 1M tier this decouples from the bar fill, which is calibrated to the 500k panic threshold: e.g. 218k tokens on a 1M model renders a 4-cell bar with label `22%` (218k is 22% of 1M but 44% of the way to the 500k danger line). Keeping the label aligned to context usage matches what users expect when they see "N%".
 
-Read but currently unused: `data.thinking.enabled`, `data.session_name`, `data.version`.
-
 ## Configuration
 
 `STATUSLINE_SEGMENTS` env var (set via `"env"` in `~/.claude/settings.json`) is an optional comma-separated allowlist that also controls render order. Unset/empty = render all. Names match the segment column above. Unknown names ignored. Each segment is tagged via `add(name, value)`; filter applied just before joining.
