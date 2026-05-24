@@ -20,7 +20,7 @@ Single-process statusline renderer plus two bash logging hooks. Data flow:
    - `hooks/cleanup-skills-log.sh` — `SessionEnd`, removes the session's log file; also prunes any `*.log` older than 30 days (for sessions that crashed without firing `SessionEnd`).
    Log format: `<unix_ts> <skill_name>` per line. Renderer reads last entries, dedupes; strips `plugin:` prefix.
 
-When any skills are logged the renderer emits 4 lines: segments, dim `─` rule, `{icons.skills} loaded skills: a, b, c, ...` (all uniques, oldest→newest, no truncation), dim `─` rule. Rule width = terminal columns, clamped 20–120. With no skills logged, just the single segment line is printed (no skills chip on line 1).
+When any skills are logged the renderer emits 4 lines: segments, dim `─` rule, `{icons.skills} loaded skills: a, b, c, ...` (all uniques, oldest→newest, no truncation), dim `─` rule. Rule width = terminal columns (min 20, no upper cap). With no skills logged, just the single segment line is printed (no skills chip on line 1).
 
 ## Supported segments (rendered left-to-right)
 
@@ -63,8 +63,6 @@ So a 200k model fills cell N at `20k · N` tokens; a 1M model fills cell N at `5
 **1M detection**: inferred `total = total_input_tokens / (used_percentage / 100)`. The 1M tier engages only when `800k < total < 1.2M` — a tight band that accepts integer-rounded 1M payloads but rejects cumulative-token leaks (e.g. a 200k-model session with cumulative input around 600k would have inferred ≈ 750k and stays on 200k thresholds).
 
 **Display percentage**: the `N%` label is the raw `used_percentage` from the payload — i.e. the model's actual context usage. On the 1M tier this decouples from the bar fill, which is calibrated to the 500k panic threshold: e.g. 218k tokens on a 1M model renders a 4-cell bar with label `22%` (218k is 22% of 1M but 44% of the way to the 500k danger line). Keeping the label aligned to context usage matches what users expect when they see "N%".
-
-Read but currently unused: `data.thinking.enabled`, `data.session_name`, `data.version`.
 
 ## Configuration
 
