@@ -52,3 +52,37 @@ test('readTitleRecap: recap without disclaimer left intact', () => {
   const fp = mkJsonl([{ type: 'system', subtype: 'away_summary', content: 'Bare recap' }]);
   assert.strictEqual(readTitleRecap(fp).recap, 'Bare recap');
 });
+
+const { findTranscript } = require('../lib/transcript');
+
+function mkRoot() {
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'csl-root-'));
+}
+
+test('findTranscript: finds <id>.jsonl under projects/<enc>/', () => {
+  const root = mkRoot();
+  const proj = path.join(root, 'projects', '-home-u-repo');
+  fs.mkdirSync(proj, { recursive: true });
+  const fp = path.join(proj, 'abc123.jsonl');
+  fs.writeFileSync(fp, '{}\n');
+  assert.strictEqual(findTranscript(root, 'abc123'), fp);
+});
+
+test('findTranscript: excludes subagent transcripts', () => {
+  const root = mkRoot();
+  const sub = path.join(root, 'projects', '-home-u-repo', 'sessX', 'subagents');
+  fs.mkdirSync(sub, { recursive: true });
+  fs.writeFileSync(path.join(sub, 'abc123.jsonl'), '{}\n'); // must be ignored
+  assert.strictEqual(findTranscript(root, 'abc123'), null);
+});
+
+test('findTranscript: not found → null', () => {
+  const root = mkRoot();
+  fs.mkdirSync(path.join(root, 'projects'), { recursive: true });
+  assert.strictEqual(findTranscript(root, 'nope'), null);
+});
+
+test('findTranscript: missing projects/ → null', () => {
+  const root = mkRoot();
+  assert.strictEqual(findTranscript(root, 'x'), null);
+});
