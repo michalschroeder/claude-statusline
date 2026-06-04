@@ -1,13 +1,17 @@
 'use strict';
-const { test } = require('node:test');
+const { test, after } = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { readTitleRecap } = require('../lib/transcript');
+const { readTitleRecap, findTranscript } = require('../lib/transcript');
+
+const tmpDirs = [];
+after(() => { for (const d of tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });
 
 function mkJsonl(lines) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-tr-'));
+  tmpDirs.push(dir);
   const fp = path.join(dir, 's.jsonl');
   fs.writeFileSync(fp, lines.map((o) => (typeof o === 'string' ? o : JSON.stringify(o))).join('\n') + '\n');
   return fp;
@@ -53,10 +57,10 @@ test('readTitleRecap: recap without disclaimer left intact', () => {
   assert.strictEqual(readTitleRecap(fp).recap, 'Bare recap');
 });
 
-const { findTranscript } = require('../lib/transcript');
-
 function mkRoot() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'csl-root-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-root-'));
+  tmpDirs.push(dir);
+  return dir;
 }
 
 test('findTranscript: finds <id>.jsonl under projects/<enc>/', () => {
@@ -72,8 +76,19 @@ test('findTranscript: excludes subagent transcripts', () => {
   const root = mkRoot();
   const sub = path.join(root, 'projects', '-home-u-repo', 'sessX', 'subagents');
   fs.mkdirSync(sub, { recursive: true });
-  fs.writeFileSync(path.join(sub, 'abc123.jsonl'), '{}\n'); // must be ignored
+  fs.writeFileSync(path.join(sub, 'abc123.jsonl'), '{}\n');
+  // findTranscript only probes projects/<enc>/<id>.jsonl directly, so any deeper
+  // subagent path is excluded by construction (limited search depth, not active filtering).
   assert.strictEqual(findTranscript(root, 'abc123'), null);
+});
+
+test('findTranscript: direct child of enc dir IS found (depth boundary)', () => {
+  const root = mkRoot();
+  const proj = path.join(root, 'projects', '-home-u-repo');
+  fs.mkdirSync(proj, { recursive: true });
+  const fp = path.join(proj, 'depthcheck.jsonl');
+  fs.writeFileSync(fp, '{}\n');
+  assert.strictEqual(findTranscript(root, 'depthcheck'), fp);
 });
 
 test('findTranscript: not found → null', () => {
