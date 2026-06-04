@@ -138,6 +138,21 @@ Segment names:
 
 Unknown names get dropped. Segments with no data don't render anyway.
 
+## Session viewer
+
+List recent sessions with cost + what each was about (reusing Claude Code's own
+session title and `/recap` summary, parsed from the transcript — no extra AI spend):
+
+    $ node bin/sessions.js --last 10
+    WHEN         COST     SESSION   TITLE / RECAP
+    06-05 14:02  $1.20 ●  e7ddfb1f  Refactor cost parser
+    06-05 00:25  $0.83    a3f1c0d2  Address timezone comment
+                                    └ Applied 4 reviewer changes…
+    TODAY: $5.41   WEEK: $48.20   MONTH: $210.00  (incl. live)
+
+`●` marks a still-running session. Flags: `--last N` (default 10),
+`--since YYYY-MM-DD`, `--config-dir <path>` (target another Claude Code profile).
+
 ## Files
 
 - `hooks/statusline.js` - the renderer. Reads JSON from stdin, writes one ANSI line to stdout.
