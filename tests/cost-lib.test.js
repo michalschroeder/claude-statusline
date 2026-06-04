@@ -104,3 +104,36 @@ test('readLiveCosts: missing cost/ dir → empty map', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-live2-'));
   assert.strictEqual(readLiveCosts(dir).size, 0);
 });
+
+const { bucketPeriods } = require('../lib/cost');
+
+test('bucketPeriods: sums by local-calendar day/week/month windows', () => {
+  const now = new Date();
+  const sec = (d) => Math.floor(d.getTime() / 1000);
+  const dayStart = sec(new Date(now.getFullYear(), now.getMonth(), now.getDate()));
+  const monthStart = sec(new Date(now.getFullYear(), now.getMonth(), 1));
+  const daysSinceMonday = (now.getDay() + 6) % 7;
+  const weekStart = sec(new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysSinceMonday));
+
+  const rows = [
+    { ts: dayStart, cost: 1.00 },        // today (and week, and month)
+    { ts: dayStart - 1, cost: 0.50 },    // before today: in week only if weekStart<=this
+    { ts: monthStart - 1, cost: 0.25 },  // before this month → counts in none of the three
+  ];
+  const { daily, weekly, monthly } = bucketPeriods(rows, now);
+
+  assert.ok(Math.abs(daily - 1.00) < 1e-9);
+  // weekly/monthly include the 1.00; the 0.50 and 0.25 depend on window edges:
+  let expWeek = 1.00 + (dayStart - 1 >= weekStart ? 0.50 : 0) + (monthStart - 1 >= weekStart ? 0.25 : 0);
+  let expMonth = 1.00 + (dayStart - 1 >= monthStart ? 0.50 : 0); // monthStart-1 always < monthStart
+  assert.ok(Math.abs(weekly - expWeek) < 1e-9);
+  assert.ok(Math.abs(monthly - expMonth) < 1e-9);
+});
+
+test('bucketPeriods: accepts a Map.values() iterable', () => {
+  const now = new Date();
+  const dayStart = Math.floor(new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() / 1000);
+  const m = new Map([['x', { ts: dayStart, cost: 2.00 }]]);
+  const { daily } = bucketPeriods(m.values(), now);
+  assert.ok(Math.abs(daily - 2.00) < 1e-9);
+});
