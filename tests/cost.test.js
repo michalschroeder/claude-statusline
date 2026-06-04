@@ -1,7 +1,15 @@
 'use strict';
-const { test } = require('node:test');
+const { test, after } = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const { baseInput, runRaw, stripAnsi } = require('./helpers.js');
+
+// Isolate state so no real cost.log injects the daily/weekly/monthly parts of
+// the merged cost group — these tests assert only the live session ($) part.
+const EMPTY_STATE = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-cost-only-'));
+after(() => fs.rmSync(EMPTY_STATE, { recursive: true, force: true }));
 
 function inp(cost) {
   const i = baseInput();
@@ -10,7 +18,7 @@ function inp(cost) {
 }
 
 async function rawAndPlain(cost) {
-  const raw = await runRaw(inp(cost));
+  const raw = await runRaw(inp(cost), { XDG_STATE_HOME: EMPTY_STATE });
   return { raw, plain: stripAnsi(raw) };
 }
 
