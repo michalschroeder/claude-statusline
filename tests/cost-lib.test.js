@@ -82,3 +82,25 @@ test('readCostRows: missing cost.log → empty map', () => {
   const dir = mkState(null);
   assert.strictEqual(readCostRows(dir).size, 0);
 });
+
+const { readLiveCosts } = require('../lib/cost');
+
+test('readLiveCosts: reads every cost/<id> temp, skips bad/non-positive', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-live-'));
+  const costDir = path.join(dir, 'cost');
+  fs.mkdirSync(costDir);
+  fs.writeFileSync(path.join(costDir, 'live1'), '0.75');
+  fs.writeFileSync(path.join(costDir, 'live2'), '2.50');
+  fs.writeFileSync(path.join(costDir, 'bad'), 'notanum');
+  fs.writeFileSync(path.join(costDir, 'zero'), '0');
+  const live = readLiveCosts(dir);
+  assert.strictEqual(live.get('live1'), 0.75);
+  assert.strictEqual(live.get('live2'), 2.50);
+  assert.strictEqual(live.has('bad'), false);
+  assert.strictEqual(live.has('zero'), false);
+});
+
+test('readLiveCosts: missing cost/ dir → empty map', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-live2-'));
+  assert.strictEqual(readLiveCosts(dir).size, 0);
+});
