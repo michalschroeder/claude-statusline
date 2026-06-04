@@ -4,6 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { resolveStateDir, readCostRows, bucketPeriods } = require('../lib/cost');
 
 // Terminal width for the trailing rule. Sizes to the terminal when run
 // interactively; Claude Code pipes stdout so columns is undefined there and
@@ -153,45 +154,12 @@ function formatPeriodCost(cost, limit, prefix) {
  * session's unix ts is compared against those period-start timestamps.
  */
 function readPeriodCosts(stateDir, liveSession, liveCost) {
-  const logFile = path.join(stateDir, 'cost.log');
   const now = new Date();
-  const dayStart = Math.floor(new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() / 1000);
-  const daysSinceMonday = (now.getDay() + 6) % 7; // getDay(): 0=Sun..6=Sat → Mon=0
-  const weekStart = Math.floor(new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysSinceMonday).getTime() / 1000);
-  const monthStart = Math.floor(new Date(now.getFullYear(), now.getMonth(), 1).getTime() / 1000);
-
-  const byId = new Map(); // session_id → { ts, cost } (largest cost per session)
-  try {
-    const lines = fs.readFileSync(logFile, 'utf8').trim().split('\n').filter(Boolean);
-    for (const line of lines) {
-      const parts = line.split(' ');
-      if (parts.length < 4) continue;
-      const ts = parseInt(parts[1], 10);
-      const id = parts[2];
-      const c = parseFloat(parts[3]);
-      // Ignore malformed/corrupt rows; require a positive cost (mirrors the write
-      // side, which only persists totalCost > 0) so a hand-edited negative can't
-      // subtract from a period total.
-      if (isNaN(ts) || isNaN(c) || c <= 0 || !id) continue;
-      const prev = byId.get(id);
-      if (!prev || c > prev.cost) byId.set(id, { ts, cost: c });
-    }
-  } catch {}
-
-  // Current session: not normally in cost.log yet (appended at SessionEnd); on a
-  // resume it may be, but its live cumulative supersedes the logged line. Bucket
-  // at now so it always lands in all three windows.
+  const rows = readCostRows(stateDir);
   if (liveSession && liveCost > 0) {
-    byId.set(liveSession, { ts: Math.floor(now.getTime() / 1000), cost: liveCost });
+    rows.set(liveSession, { ts: Math.floor(now.getTime() / 1000), cost: liveCost });
   }
-
-  let daily = 0, weekly = 0, monthly = 0;
-  for (const { ts, cost } of byId.values()) {
-    if (ts >= dayStart) daily += cost;
-    if (ts >= weekStart) weekly += cost;
-    if (ts >= monthStart) monthly += cost;
-  }
-  return { daily, weekly, monthly };
+  return bucketPeriods(rows.values(), now);
 }
 
 /**
@@ -296,18 +264,13 @@ process.stdin.on('data', (chunk) => (input += chunk));
 process.stdin.on('end', () => {
   try {
     const data = JSON.parse(input);
-    const homeDir = os.homedir();
     // State dir resolution (must match the bash hooks). Data always lives in our
     // own XDG namespace (never inside CLAUDE_CONFIG_DIR — that's Claude Code's
     // managed dir and could collide with a future CC feature). CLAUDE_CONFIG_DIR
     // is used only as a per-subscription KEY: its sanitized path becomes a profile
     // subdir, so distinct subscriptions keep separate cost.log/skill logs. When
     // unset (single-profile users), profile is empty → flat layout, unchanged.
-    const xdgRoot = process.env.XDG_STATE_HOME || path.join(homeDir, '.local', 'state');
-    const profile = process.env.CLAUDE_CONFIG_DIR
-      ? process.env.CLAUDE_CONFIG_DIR.replace(/^\//, '').replace(/\//g, '_')
-      : '';
-    const stateDir = path.join(xdgRoot, 'claude-statusline', profile);
+    const stateDir = resolveStateDir(process.env.CLAUDE_CONFIG_DIR);
 
     // Extract data fields
     const model = data.model?.display_name || 'Claude';
