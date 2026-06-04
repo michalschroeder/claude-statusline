@@ -34,10 +34,17 @@ unset → flat layout). Files:
 1. **Architecture A — viewer-only, read live.** No hook change, no new persisted file.
    Pure Node stdlib (matches renderer). Transcript parsed **in-process** (`fs` + `JSON.parse`
    per line) — no `jq`, no `find`, no subprocess.
-2. **Config-dir resolution.** Viewer takes config dir from env `CLAUDE_CONFIG_DIR`
-   (default `~/.claude`) or `--config-dir <path>`. State dir AND `projects/` both derive
-   from that single path → guaranteed consistent. **No `--all-profiles`** — the `/`→`_`
-   mangling is lossy and can't be reliably reversed; run once per config dir instead.
+2. **Config-dir resolution.** Source = `--config-dir <path>` if given, else env
+   `CLAUDE_CONFIG_DIR` (may be **unset**). Two derivations from that source, mirroring the
+   renderer exactly:
+   - **State-dir profile** = source mangled (`/`→`_`); **unset source → flat layout**
+     (empty profile), NOT defaulted to `~/.claude`. This must match `statusline.js` so the
+     viewer reads the same `cost.log` the renderer wrote.
+   - **Transcript root** = source if set, else default `~/.claude`. The `~/.claude` default
+     applies ONLY to transcript discovery (`<root>/projects/`), never to the profile.
+
+   **No `--all-profiles`** — the `/`→`_` mangling is lossy and can't be reliably reversed;
+   run once per config dir instead.
 3. **Label.** title line = **ai-title** strictly (`—` if absent). recap shown ONLY as the
    `└` sub-line, never promoted to the title line. Both shown when both present.
    Degradation: title+recap → both lines; title only → title line, no `└`; recap only →
@@ -83,12 +90,13 @@ at `now`, superseding any logged line), then `bucketPeriods`. Existing renderer 
 
 ### `bin/sessions.js` (new viewer)
 
-1. Parse flags. Resolve config dir (flag > env > `~/.claude`) → `resolveStateDir`.
+1. Parse flags. `source = flag ?? env CLAUDE_CONFIG_DIR` (may be undefined).
+   `stateDir = resolveStateDir(source)` (undefined → flat). `transcriptRoot = source || ~/.claude`.
 2. `rows = merge(readCostRows(stateDir), readLiveCosts(stateDir))`: live cost supersedes
    logged cost for the same id; tag live ids for the `●` marker. Live rows bucket at `now`.
 3. Filter `--since` (ts ≥ date local-midnight). Sort desc by ts. Cap to `--last`
    (skip cap when `--since` given without `--last`).
-4. Per row: `findTranscript(configDir, id)` → `readTitleRecap`. Missing transcript → both null.
+4. Per row: `findTranscript(transcriptRoot, id)` → `readTitleRecap`. Missing transcript → both null.
 5. Render table. Columns: WHEN (`MM-DD HH:MM` local), COST (`$X.XX`, `●` if live), SESSION
    (short id, e.g. first 8 chars), TITLE/RECAP. Title = ai-title or `—`; recap as `└` sub-line
    only when present. Width-cap each text line to terminal width (truncate, ellipsis `…`).
