@@ -11,13 +11,46 @@ COLS=$(tput cols 2>/dev/null || echo 120)
 THICK=$(printf '━%.0s' $(seq 1 "$COLS"))
 THIN=$(printf '─%.0s' $(seq 1 "$COLS"))
 
+# Isolated, deterministic state for the demo: a temp XDG_STATE_HOME seeded with a
+# fake cost.log so the daily/weekly/monthly chips render stable numbers (and we
+# never read or display the user's real spend). Cleaned up on exit.
+DEFAULT_BUDGET=500
+DEMO_STATE=$(mktemp -d)
+export XDG_STATE_HOME="$DEMO_STATE"
+trap 'rm -rf "$DEMO_STATE"' EXIT
+
+# Seed cost.log with ended sessions in each calendar window, anchored to the real
+# clock the renderer uses. Bucketing uses the unix-ts column; the date column is
+# cosmetic. Note: in the first calendar week of a month "since Monday" and "since
+# the 1st" cover the same span, so w == m on those days — a property of the
+# calendar, not a bug.
+seed_costs() {
+  local f="$XDG_STATE_HOME/claude-statusline/cost.log"
+  mkdir -p "$(dirname "$f")"
+  local day dow week month
+  day=$(date -d '00:00' +%s)
+  dow=$(date +%u)                                   # 1=Mon..7=Sun
+  week=$(date -d "$((dow - 1)) days ago 00:00" +%s)
+  month=$(date -d "$(date +%Y-%m-01) 00:00" +%s)
+  emit() { printf '%s %s %s %s\n' "$(date -d "@$2" +%F)" "$2" "$3" "$1"; }
+  {
+    emit 5.00 "$((month + 3600))" sess-month        # earlier this month (before this week)
+    emit 2.00 "$((week + 3600))"  sess-week         # earlier this week (before today)
+    emit 0.70 "$((day + 3600))"   sess-today-am     # earlier today
+    emit 0.50 "$((day + 36000))"  sess-recent       # later today
+  } > "$f"
+  # Cumulative (excl. live): daily = 1.20, weekly = 3.20, monthly = 8.20.
+}
+seed_costs
+
 render() {
   local title="$1"; shift
   local payload="$1"; shift
+  local budget="${1:-$DEFAULT_BUDGET}"
   printf '\n\033[1m%s\033[0m\n' "$THICK"
   printf '\033[1;35m %s\033[0m\n' "$title"
   printf '\033[2m%s\033[0m\n' "$THIN"
-  printf '%s' "$payload" | node hooks/statusline.js
+  printf '%s' "$payload" | STATUSLINE_MONTHLY_BUDGET="$budget" node hooks/statusline.js
   echo
 }
 
@@ -108,4 +141,19 @@ render "7. With loaded skills" "{
 }"
 
 rm -f "$LOG"
+
+# 8. Budget pressure — same seeded cost.log, but a low STATUSLINE_MONTHLY_BUDGET
+#    so the d/w/m parts of the cost group (s $.. · d $.. · w $.. · m $..) show
+#    their threshold colors. With budget=20 the derived limits are daily $0.67 /
+#    weekly $4.67 / monthly $20, so the small daily/weekly limits redden while
+#    monthly stays green (session keeps its absolute-$ color). Exact figures track
+#    the run date as entries fold into nearer windows.
+render "8. Budget pressure (STATUSLINE_MONTHLY_BUDGET=20 — d/w/m colors)" '{
+  "model": {"display_name": "Sonnet 4.6"},
+  "effort": {"level": "medium"},
+  "workspace": {"current_dir": "/home/ms/projects/claude-statusline", "project_dir": "/home/ms/projects/claude-statusline"},
+  "cost": {"total_cost_usd": 0.30, "total_duration_ms": 600000, "total_lines_added": 40, "total_lines_removed": 9},
+  "context_window": {"total_input_tokens": 64000, "used_percentage": 32}
+}' 20
+
 echo
