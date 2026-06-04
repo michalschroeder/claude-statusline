@@ -10,11 +10,15 @@ No build step, no linter, no package.json — pure Node stdlib (Node 18+).
 
 ## Architecture
 
-Single-process statusline renderer plus two bash logging hooks. Data flow:
+Single-process statusline renderer plus two bash logging hooks.
+
+**State dir** (`<STATE>` below): resolved identically by the renderer and all three hooks as `${XDG_STATE_HOME:-$HOME/.local/state}/claude-statusline/<profile>`. Data **always lives in our own XDG namespace — never inside `CLAUDE_CONFIG_DIR`**, which is Claude Code's own managed dir (full of generic-named subdirs it prunes via `.last-cleanup`); writing there risks colliding with a future CC feature. `CLAUDE_CONFIG_DIR` is used only as a **per-subscription key**: its path (leading `/` stripped, remaining `/`→`_`, e.g. `/home/u/.claude-x` → `home_u_.claude-x`) becomes the `<profile>` subdir, so distinct subscriptions/profiles keep separate cost.log + skill logs. When `CLAUDE_CONFIG_DIR` is unset (single-profile users), `<profile>` is empty → flat `…/claude-statusline/` layout, unchanged. The renderer (`hooks/statusline.js`, `replace(/^\//,'').replace(/\//g,'_')`) and the bash hooks (`${CLAUDE_CONFIG_DIR#/}` then `${profile//\//_}`) must produce the same profile string — covered by `tests/state-dir.test.js`.
+
+Data flow:
 
 1. Claude Code spawns `hooks/statusline.js` per render and pipes a JSON status payload on stdin.
 2. `statusline.js` reads stdin, extracts fields, writes one ANSI-colored line to stdout. **Silent failure on any parse/render error** — never break the user's prompt.
-3. The skills chip is sourced from `${XDG_STATE_HOME:-$HOME/.local/state}/claude-statusline/skills/<session_id>.log`, populated by two side-channel hooks:
+3. The skills chip is sourced from `<STATE>/skills/<session_id>.log`, populated by two side-channel hooks:
    - `hooks/log-skill.sh` — `PreToolUse` matcher=`Skill`, logs the invoked skill name.
    - `hooks/log-slash-skill.sh` — `UserPromptSubmit`, parses `/<skill>` from prompts; logs only when the skill exists under `$CLAUDE_CONFIG_DIR/skills/` or `./.agents/skills/`.
    - `hooks/cleanup-skills-log.sh` — `SessionEnd`, folds the session's cost into `cost.log` then trims it to ~45 days (see Period cost tracking), removes the session's skill log, and prunes stale skill logs and orphaned cost temp files older than 30 days (for sessions that crashed without firing `SessionEnd`).
@@ -69,7 +73,7 @@ So a 200k model fills cell N at `20k · N` tokens; a 1M model fills cell N at `5
 Cumulative spend across sessions, persisted via a temp-file relay (the `SessionEnd` payload carries no cost field, so the renderer must hand it off).
 
 **Flow** (append-always on the hook side, dedup-on-read on the renderer side):
-1. On every render `statusline.js` writes the live `cost.total_cost_usd` to `${XDG_STATE_HOME:-$HOME/.local/state}/claude-statusline/cost/<session_id>` (plain float).
+1. On every render `statusline.js` writes the live `cost.total_cost_usd` to `<STATE>/cost/<session_id>` (plain float).
 2. `SessionEnd` (`hooks/cleanup-skills-log.sh`) reads that temp file, appends `<YYYY-MM-DD> <unix_ts> <session_id> <cost>` to `.../claude-statusline/cost.log`, deletes the temp file, then **trims `cost.log` to the last ~45 days** (the monthly window never looks past ≤31 days, so older lines are dead weight on a file read every render) and **prunes orphaned `cost/<session>` temp files >30 days** (crashed sessions that never fired `SessionEnd`), mirroring the skills-log prune.
 3. Each render `readPeriodCosts()` buckets `cost.log` by period. Malformed rows (fewer than 4 fields, non-numeric ts/cost, empty id) and **non-positive costs** are skipped (the `c <= 0` guard mirrors the write side, so a corrupt/hand-edited negative can't subtract from a total). Entries are **deduped by `session_id`, keeping the largest (latest cumulative) cost per session** — `total_cost_usd` is cumulative, so a session that ends/resumes/ends-again logs a second larger line; summing both would double-count. The **current live session** is folded in at "now" using its payload cost, which supersedes any logged line for the same id (the resume case). Periods are **local-calendar windows, not rolling age**: period-start unix timestamps — today's midnight, this week's Monday (`(getDay()+6)%7` days back), this month's 1st — and a session counts when its `ts ≥` the relevant start. The `date` column in `cost.log` is cosmetic (human grep); bucketing uses the `ts` column.
 

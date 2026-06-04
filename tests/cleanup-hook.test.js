@@ -29,12 +29,20 @@ const csl = (dir, ...p) => path.join(dir, 'claude-statusline', ...p);
 const nowTs = () => Math.floor(Date.now() / 1000);
 const daysAgo = (n) => new Date(Date.now() - n * 86400 * 1000);
 
+// Env for the spawned bash/node processes: isolate via XDG_STATE_HOME and drop any
+// inherited CLAUDE_CONFIG_DIR (which now outranks XDG in the state-root resolution).
+function isoEnv(stateDir, extra) {
+  const e = { ...process.env, XDG_STATE_HOME: stateDir, ...(extra || {}) };
+  delete e.CLAUDE_CONFIG_DIR;
+  return e;
+}
+
 // Run the bash hook with a given session_id (omit the field entirely when null).
 function runHook(stateDir, sessionId) {
   const payload = sessionId != null ? { session_id: sessionId } : {};
   return spawnSync('bash', [HOOK], {
     input: JSON.stringify(payload),
-    env: { ...process.env, XDG_STATE_HOME: stateDir },
+    env: isoEnv(stateDir),
     encoding: 'utf8',
   });
 }
@@ -49,7 +57,7 @@ function render(stateDir, { session = 'reader', cost } = {}) {
   if (cost != null) payload.cost = { total_cost_usd: cost };
   const r = spawnSync(process.execPath, [STATUSLINE], {
     input: JSON.stringify(payload),
-    env: { ...process.env, XDG_STATE_HOME: stateDir, STATUSLINE_ICONS: 'nerd', STATUSLINE_MONTHLY_BUDGET: '500' },
+    env: isoEnv(stateDir, { STATUSLINE_ICONS: 'nerd', STATUSLINE_MONTHLY_BUDGET: '500' }),
     encoding: 'utf8',
   });
   return r.stdout.replace(/\x1b\[[0-9;]*m/g, '');

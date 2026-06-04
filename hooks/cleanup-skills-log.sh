@@ -3,7 +3,14 @@
 # trim old cost.log lines, and prune stale skill logs / orphaned cost temp files.
 input=$(cat)
 session=$(printf '%s' "$input" | jq -r '.session_id // empty')
-state="${XDG_STATE_HOME:-$HOME/.local/state}/claude-statusline"
+# State dir (must match hooks/statusline.js): data lives in our own XDG namespace,
+# never inside CLAUDE_CONFIG_DIR (Claude Code's managed dir). CLAUDE_CONFIG_DIR is
+# only a per-subscription key — its sanitized path becomes a profile subdir; unset
+# → empty → flat layout.
+root="${XDG_STATE_HOME:-$HOME/.local/state}/claude-statusline"
+profile="${CLAUDE_CONFIG_DIR#/}"; profile="${profile//\//_}"
+state="${profile:+$root/$profile}"
+state="${state:-$root}"
 
 if [ -n "$session" ]; then
   cost_file="$state/cost/$session"
