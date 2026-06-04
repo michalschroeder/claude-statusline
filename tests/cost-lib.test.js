@@ -42,3 +42,43 @@ test('resolveStateDir: no XDG_STATE_HOME → ~/.local/state', () => {
     if (prev !== undefined) process.env.XDG_STATE_HOME = prev;
   }
 });
+
+const { readCostRows } = require('../lib/cost');
+
+function mkState(lines) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-cost-'));
+  if (lines != null) fs.writeFileSync(path.join(dir, 'cost.log'), lines);
+  return dir;
+}
+
+test('readCostRows: dedup by id keeps the largest cumulative cost', () => {
+  const dir = mkState(
+    '2026-06-05 1000 sessA 0.50\n' +
+    '2026-06-05 1100 sessA 1.20\n' +   // resume → larger, wins
+    '2026-06-05 1000 sessB 0.30\n'
+  );
+  const rows = readCostRows(dir);
+  assert.strictEqual(rows.get('sessA').cost, 1.20);
+  assert.strictEqual(rows.get('sessA').ts, 1100);
+  assert.strictEqual(rows.get('sessB').cost, 0.30);
+  assert.strictEqual(rows.size, 2);
+});
+
+test('readCostRows: skips malformed / non-positive / short rows', () => {
+  const dir = mkState(
+    'too few fields\n' +
+    '2026-06-05 notanum sessC 0.10\n' +    // NaN ts
+    '2026-06-05 1000 sessD notanum\n' +    // NaN cost
+    '2026-06-05 1000 sessE -5\n' +         // negative
+    '2026-06-05 1000 sessF 0\n' +          // zero
+    '2026-06-05 1000  0.40\n' +            // empty id (double space → parts[2]='')
+    '2026-06-05 1000 sessG 0.40\n'         // the only valid row
+  );
+  const rows = readCostRows(dir);
+  assert.deepStrictEqual([...rows.keys()], ['sessG']);
+});
+
+test('readCostRows: missing cost.log → empty map', () => {
+  const dir = mkState(null);
+  assert.strictEqual(readCostRows(dir).size, 0);
+});
