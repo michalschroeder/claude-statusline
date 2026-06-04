@@ -1,10 +1,13 @@
 'use strict';
-const { test } = require('node:test');
+const { test, after } = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { resolveStateDir } = require('../lib/cost');
+
+const tmpDirs = [];
+after(() => { for (const d of tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });
 
 test('resolveStateDir: CLAUDE_CONFIG_DIR mangled into profile subdir', () => {
   const prev = process.env.XDG_STATE_HOME;
@@ -47,6 +50,7 @@ const { readCostRows } = require('../lib/cost');
 
 function mkState(lines) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-cost-'));
+  tmpDirs.push(dir);
   if (lines != null) fs.writeFileSync(path.join(dir, 'cost.log'), lines);
   return dir;
 }
@@ -87,6 +91,7 @@ const { readLiveCosts } = require('../lib/cost');
 
 test('readLiveCosts: reads every cost/<id> temp, skips bad/non-positive', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-live-'));
+  tmpDirs.push(dir);
   const costDir = path.join(dir, 'cost');
   fs.mkdirSync(costDir);
   fs.writeFileSync(path.join(costDir, 'live1'), '0.75');
@@ -102,6 +107,7 @@ test('readLiveCosts: reads every cost/<id> temp, skips bad/non-positive', () => 
 
 test('readLiveCosts: missing cost/ dir → empty map', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-live2-'));
+  tmpDirs.push(dir);
   assert.strictEqual(readLiveCosts(dir).size, 0);
 });
 
@@ -123,6 +129,8 @@ test('bucketPeriods: sums by local-calendar day/week/month windows', () => {
   const { daily, weekly, monthly } = bucketPeriods(rows, now);
 
   assert.ok(Math.abs(daily - 1.00) < 1e-9);
+  const { daily: dailyExcl } = bucketPeriods([{ ts: dayStart - 1, cost: 5.00 }], now);
+  assert.ok(Math.abs(dailyExcl - 0) < 1e-9, 'ts before midnight excluded from daily');
   // weekly/monthly include the 1.00; the 0.50 and 0.25 depend on window edges:
   let expWeek = 1.00 + (dayStart - 1 >= weekStart ? 0.50 : 0) + (monthStart - 1 >= weekStart ? 0.25 : 0);
   let expMonth = 1.00 + (dayStart - 1 >= monthStart ? 0.50 : 0); // monthStart-1 always < monthStart
