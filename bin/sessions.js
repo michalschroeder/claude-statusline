@@ -7,11 +7,18 @@ const { findTranscript, readTitleRecap } = require('../lib/transcript');
 
 function parseArgs(argv) {
   const opts = { last: null, since: null, configDir: undefined };
+  const needValue = (flag, i) => {
+    if (i + 1 >= argv.length || argv[i + 1].startsWith('--')) {
+      process.stderr.write(`bin/sessions.js: ${flag} requires a value\n`);
+      process.exit(1);
+    }
+    return argv[i + 1];
+  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === '--last') opts.last = parseInt(argv[++i], 10);
-    else if (a === '--since') opts.since = argv[++i];
-    else if (a === '--config-dir') opts.configDir = argv[++i];
+    if (a === '--last') { opts.last = parseInt(needValue('--last', i), 10); i++; }
+    else if (a === '--since') { opts.since = needValue('--since', i); i++; }
+    else if (a === '--config-dir') { opts.configDir = needValue('--config-dir', i); i++; }
   }
   return opts;
 }

@@ -1,5 +1,5 @@
 'use strict';
-const { test } = require('node:test');
+const { test, after } = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
@@ -8,9 +8,13 @@ const { runSessions } = require('./helpers');
 
 // Build an isolated profile: XDG_STATE_HOME → state dir; configDir → transcript root.
 // Returns { env, configDir } to pass to runSessions.
+const tmpDirs = [];
+after(() => { for (const d of tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });
+
 function mkProfile() {
   const xdg = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-xdg-'));
   const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-cfg-'));
+  tmpDirs.push(xdg, configDir);
   // state dir = <xdg>/claude-statusline/<mangled configDir>
   const profile = configDir.replace(/^\//, '').replace(/\//g, '_');
   const stateDir = path.join(xdg, 'claude-statusline', profile);
@@ -105,4 +109,29 @@ test('viewer: --since filters older rows out', async () => {
   const out = await runSessions(['--config-dir', p.configDir, '--since', since], env(p));
   assert.match(out, /sessNEW/);
   assert.doesNotMatch(out, /sessOLD/);
+});
+
+test('viewer: --since without --last does not cap at 10', async () => {
+  const p = mkProfile();
+  const nowD = new Date();
+  const todayTs = Math.floor(new Date(nowD.getFullYear(), nowD.getMonth(), nowD.getDate(), 12).getTime() / 1000);
+  const lines = [];
+  for (let i = 0; i < 12; i++) lines.push(`2026-06-05 ${todayTs - i} sess${i}yyy ${(i + 1) / 10}`);
+  writeCostLog(p.stateDir, lines);
+  const since = `${nowD.getFullYear()}-${String(nowD.getMonth() + 1).padStart(2, '0')}-${String(nowD.getDate()).padStart(2, '0')}`;
+  const out = await runSessions(['--config-dir', p.configDir, '--since', since], env(p));
+  const dataRows = out.split('\n').filter((l) => /\$\d/.test(l) && !/TODAY:/.test(l));
+  assert.ok(dataRows.length >= 11, `expected >= 11 data rows, got ${dataRows.length}`);
+});
+
+test('viewer: live cost supersedes logged cost for same id', async () => {
+  const p = mkProfile();
+  const now = Math.floor(Date.now() / 1000);
+  writeCostLog(p.stateDir, [`2026-06-05 ${now} sessDUP1 0.50`]);
+  writeLive(p.stateDir, 'sessDUP1', 1.20);
+  const out = await runSessions(['--config-dir', p.configDir], env(p));
+  assert.match(out, /\$1\.20/);
+  assert.doesNotMatch(out, /\$0\.50/);
+  assert.match(out, /●/);
+  assert.match(out, /TODAY:\s*\$1\.20/);
 });
