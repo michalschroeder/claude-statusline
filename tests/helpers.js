@@ -19,9 +19,12 @@ function baseInput() {
 
 function _invoke(inputObj, env) {
   return new Promise((resolve, reject) => {
-    const proc = spawn(process.execPath, [STATUSLINE], {
-      env: { ...process.env, STATUSLINE_ICONS: 'nerd', ...(env || {}) },
-    });
+    const childEnv = { ...process.env, STATUSLINE_ICONS: 'nerd', ...(env || {}) };
+    // The renderer now prefers CLAUDE_CONFIG_DIR over XDG_STATE_HOME for its state
+    // root; tests isolate via XDG_STATE_HOME, so drop any inherited CLAUDE_CONFIG_DIR
+    // unless a test sets it on purpose — else it would override the temp state dir.
+    if (!(env && 'CLAUDE_CONFIG_DIR' in env)) delete childEnv.CLAUDE_CONFIG_DIR;
+    const proc = spawn(process.execPath, [STATUSLINE], { env: childEnv });
     let out = '';
     let err = '';
     proc.stdout.on('data', (d) => (out += d));

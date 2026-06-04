@@ -141,7 +141,7 @@ Unknown names get dropped. Segments with no data don't render anyway.
 ## Files
 
 - `hooks/statusline.js` - the renderer. Reads JSON from stdin, writes one ANSI line to stdout.
-- `hooks/log-skill.sh` - `PreToolUse` hook. Logs `Skill` tool invocations to `${XDG_STATE_HOME:-$HOME/.local/state}/claude-statusline/skills/<session>.log`.
+- `hooks/log-skill.sh` - `PreToolUse` hook. Logs `Skill` tool invocations to `<STATE>/skills/<session>.log`, where `<STATE>` is the per-subscription state root (see "Skills chip" below).
 - `hooks/log-slash-skill.sh` - `UserPromptSubmit` hook. Logs `/slash` skill invocations to the same file.
 - `hooks/cleanup-skills-log.sh` - `SessionEnd` hook. Deletes the session's skill log and sweeps any older than 30 days.
 
@@ -193,7 +193,9 @@ The `N%` label is the raw `used_percentage` from the payload — i.e. the model'
 
 **Worktree convention:** when you're in a worktree and the branch name matches `worktree-<name>`, the branch chip is hidden. The worktree chip already says it. The branch chip comes back the moment the branch diverges (manual checkout, detached HEAD, rename).
 
-**Skills chip:** reads `${XDG_STATE_HOME:-$HOME/.local/state}/claude-statusline/skills/<session>.log`, where each line is `<timestamp> <skill-name>`. The two bash hooks write it. `plugin:` prefixes get stripped. Skill-existence checks use `${CLAUDE_CONFIG_DIR:-$HOME/.claude}`.
+**Skills chip:** reads `<STATE>/skills/<session>.log`, where each line is `<timestamp> <skill-name>`. The two bash hooks write it. `plugin:` prefixes get stripped. Skill-existence checks use `${CLAUDE_CONFIG_DIR:-$HOME/.claude}`.
+
+**State dir (`<STATE>`):** `${XDG_STATE_HOME:-$HOME/.local/state}/claude-statusline/<profile>`, resolved the same way by the renderer and all hooks. Logs always live in this XDG namespace — never inside `CLAUDE_CONFIG_DIR` (Claude Code's own managed dir). `CLAUDE_CONFIG_DIR` is used only as a per-subscription key: its path (leading `/` stripped, remaining `/`→`_`, e.g. `/home/u/.claude-x` → `home_u_.claude-x`) becomes `<profile>`, so different Claude Code subscriptions/profiles keep separate cost and skill logs. Unset → empty profile → flat `…/claude-statusline/` layout.
 
 ## License
 

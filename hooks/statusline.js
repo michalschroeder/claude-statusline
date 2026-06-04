@@ -153,7 +153,7 @@ function formatPeriodCost(cost, limit, prefix) {
  * session's unix ts is compared against those period-start timestamps.
  */
 function readPeriodCosts(stateDir, liveSession, liveCost) {
-  const logFile = path.join(stateDir, 'claude-statusline', 'cost.log');
+  const logFile = path.join(stateDir, 'cost.log');
   const now = new Date();
   const dayStart = Math.floor(new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() / 1000);
   const daysSinceMonday = (now.getDay() + 6) % 7; // getDay(): 0=Sun..6=Sat → Mon=0
@@ -297,7 +297,17 @@ process.stdin.on('end', () => {
   try {
     const data = JSON.parse(input);
     const homeDir = os.homedir();
-    const stateDir = process.env.XDG_STATE_HOME || path.join(homeDir, '.local', 'state');
+    // State dir resolution (must match the bash hooks). Data always lives in our
+    // own XDG namespace (never inside CLAUDE_CONFIG_DIR — that's Claude Code's
+    // managed dir and could collide with a future CC feature). CLAUDE_CONFIG_DIR
+    // is used only as a per-subscription KEY: its sanitized path becomes a profile
+    // subdir, so distinct subscriptions keep separate cost.log/skill logs. When
+    // unset (single-profile users), profile is empty → flat layout, unchanged.
+    const xdgRoot = process.env.XDG_STATE_HOME || path.join(homeDir, '.local', 'state');
+    const profile = process.env.CLAUDE_CONFIG_DIR
+      ? process.env.CLAUDE_CONFIG_DIR.replace(/^\//, '').replace(/\//g, '_')
+      : '';
+    const stateDir = path.join(xdgRoot, 'claude-statusline', profile);
 
     // Extract data fields
     const model = data.model?.display_name || 'Claude';
@@ -337,7 +347,7 @@ process.stdin.on('end', () => {
     if (session) {
       try {
         const lines = fs
-          .readFileSync(path.join(stateDir, 'claude-statusline', 'skills', `${session}.log`), 'utf8')
+          .readFileSync(path.join(stateDir, 'skills', `${session}.log`), 'utf8')
           .trim()
           .split('\n');
         const seen = new Set();
@@ -391,7 +401,7 @@ process.stdin.on('end', () => {
     // Persist current session cost for the SessionEnd hook to fold into cost.log.
     if (session && totalCost != null && totalCost > 0) {
       try {
-        const costDir = path.join(stateDir, 'claude-statusline', 'cost');
+        const costDir = path.join(stateDir, 'cost');
         fs.mkdirSync(costDir, { recursive: true });
         fs.writeFileSync(path.join(costDir, session), String(totalCost));
       } catch {}
