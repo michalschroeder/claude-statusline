@@ -92,7 +92,7 @@ test('viewer: --last caps rows', async () => {
   for (let i = 0; i < 5; i++) lines.push(`2026-06-05 ${now - i} sess${i}xxx ${(i + 1) / 10}`);
   writeCostLog(p.stateDir, lines);
   const out = await runSessions(['--config-dir', p.configDir, '--last', '2'], env(p));
-  const dataRows = out.split('\n').filter((l) => /\$\d/.test(l) && !/TODAY/.test(l));
+  const dataRows = out.split('\n').filter((l) => /^\d{2}-\d{2} \d{2}:\d{2}/.test(l));
   assert.strictEqual(dataRows.length, 2);
 });
 
@@ -120,7 +120,7 @@ test('viewer: --since without --last does not cap at 10', async () => {
   writeCostLog(p.stateDir, lines);
   const since = `${nowD.getFullYear()}-${String(nowD.getMonth() + 1).padStart(2, '0')}-${String(nowD.getDate()).padStart(2, '0')}`;
   const out = await runSessions(['--config-dir', p.configDir, '--since', since], env(p));
-  const dataRows = out.split('\n').filter((l) => /\$\d/.test(l) && !/TODAY/.test(l));
+  const dataRows = out.split('\n').filter((l) => /^\d{2}-\d{2} \d{2}:\d{2}/.test(l));
   assert.ok(dataRows.length >= 11, `expected >= 11 data rows, got ${dataRows.length}`);
 });
 
@@ -152,7 +152,7 @@ test('viewer: SESSION column stays aligned across cost magnitudes', async () => 
     `2026-06-05 ${now - 1} sessBIG001 12.34`,
   ]);
   const out = await runSessions(['--config-dir', p.configDir], env(p));
-  const dataLines = out.split('\n').filter((l) => /\$\d/.test(l) && !/TODAY/.test(l));
+  const dataLines = out.split('\n').filter((l) => /^\d{2}-\d{2} \d{2}:\d{2}/.test(l));
   const small = dataLines.find((l) => l.includes('sessSMAL'));
   const big = dataLines.find((l) => l.includes('sessBIG0'));
   // Short ids (first 8 chars) must start at the same column → columns aligned.
@@ -167,7 +167,7 @@ test('viewer: ended row has a blank marker where live row has ●', async () => 
   writeCostLog(p.stateDir, [`2026-06-05 ${now} sessENDED1 1.00`]);
   writeLive(p.stateDir, 'sessLIVE22', 2.00);
   const out = await runSessions(['--config-dir', p.configDir], env(p));
-  const dataLines = out.split('\n').filter((l) => /\$\d/.test(l) && !/TODAY/.test(l));
+  const dataLines = out.split('\n').filter((l) => /^\d{2}-\d{2} \d{2}:\d{2}/.test(l));
   const ended = dataLines.find((l) => l.includes('sessENDE'));
   const live = dataLines.find((l) => l.includes('sessLIVE'));
   // The ● sits exactly one column before the short id on the live line.
