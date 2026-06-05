@@ -153,6 +153,8 @@ session title and `/recap` summary, parsed from the transcript — no extra AI s
 `●` marks a still-running session. Flags: `--last N` (default 10),
 `--since YYYY-MM-DD`, `--config-dir <path>` (target another Claude Code profile).
 
+Output is colorized: costs are tiered green→yellow→orange→red by amount, live sessions show a green `●`, and period totals in the footer are colored against `STATUSLINE_MONTHLY_BUDGET`.
+
 ## Files
 
 - `hooks/statusline.js` - the renderer. Reads JSON from stdin, writes one ANSI line to stdout.
