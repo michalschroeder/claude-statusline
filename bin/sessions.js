@@ -4,6 +4,7 @@ const path = require('path');
 const os = require('os');
 const { resolveStateDir, readCostRows, readLiveCosts, bucketPeriods } = require('../lib/cost');
 const { findTranscript, readTitleRecap } = require('../lib/transcript');
+const { dim, bold, green, colorByTier } = require('../lib/color');
 
 function parseArgs(argv) {
   const opts = { last: null, since: null, configDir: undefined };
@@ -88,22 +89,51 @@ function main() {
     : (opts.since ? Infinity : 10);
   rows = rows.slice(0, cap);
 
-  const width = process.stdout.columns || 80;
-  const out = [];
-  out.push('WHEN         COST     SESSION   TITLE / RECAP');
-  for (const r of rows) {
+  const termWidth = process.stdout.columns || 80;
+
+  // Resolve title/recap up front so column widths can be sized from the data.
+  const view = rows.map((r) => {
     const tr = findTranscript(transcriptRoot, r.id);
     const { title, recap } = tr ? readTitleRecap(tr) : { title: null, recap: null };
-    const when = fmtWhen(r.ts);
-    const cost = `$${r.cost.toFixed(2)}${r.live ? ' ●' : '  '}`;
-    const shortId = r.id.slice(0, 8);
-    const titleText = title || '—';
-    out.push(truncate(`${when}  ${cost.padEnd(8)} ${shortId.padEnd(8)}  ${titleText}`, width));
-    if (recap) out.push(truncate(`${' '.repeat(32)}└ ${recap}`, width));
+    return { ...r, costStr: '$' + r.cost.toFixed(2), shortId: r.id.slice(0, 8), title, recap };
+  });
+
+  // Cost field width = widest rendered cost (min 5 = "$0.00"); right-aligned so
+  // decimals line up. titleCol = plain-text offset where the title starts:
+  // when(11) + '  '(2) + costW + ' '(1) + marker(1) + ' '(1) + shortId(8) + '  '(2).
+  const costW = Math.max(5, ...view.map((v) => v.costStr.length));
+  const titleCol = 11 + 2 + costW + 1 + 1 + 1 + 8 + 2;
+  const titleWidth = Math.max(0, termWidth - titleCol);
+
+  const out = [];
+  out.push(dim(`${'WHEN'.padEnd(11)}  ${'COST'.padStart(costW)}   ${'SESSION'.padEnd(8)}  TITLE / RECAP`));
+
+  for (const v of view) {
+    const when = dim(fmtWhen(v.ts));
+    const cost = colorByTier(v.cost, [1, 5, 10])(v.costStr.padStart(costW));
+    const marker = v.live ? green('●') : ' ';
+    const sid = dim(v.shortId.padEnd(8));
+    const titleText = truncate(v.title || '—', titleWidth); // plain (default color)
+    out.push(`${when}  ${cost} ${marker} ${sid}  ${titleText}`);
+    if (v.recap) {
+      const recapText = truncate(v.recap, Math.max(0, termWidth - titleCol - 2));
+      out.push(`${' '.repeat(titleCol)}${dim('└ ' + recapText)}`);
+    }
   }
-  const liveNote = anyLive ? '  (incl. live)' : '';
+
+  // Footer: budget-tiered amounts when STATUSLINE_MONTHLY_BUDGET > 0, else bold.
+  const rawBudget = process.env.STATUSLINE_MONTHLY_BUDGET;
+  const parsedBudget = rawBudget != null && rawBudget.trim() !== '' ? Number(rawBudget) : NaN;
+  const budget = parsedBudget > 0 ? parsedBudget : null;
+  const amt = (total, limit) => {
+    const s = '$' + total.toFixed(2);
+    return budget ? colorByTier(total / limit, [0.5, 0.75, 0.9])(s) : bold(s);
+  };
+  const liveNote = anyLive ? dim('  (incl. live)') : '';
   out.push(
-    `TODAY: $${totals.daily.toFixed(2)}   WEEK: $${totals.weekly.toFixed(2)}   MONTH: $${totals.monthly.toFixed(2)}${liveNote}`
+    `${dim('TODAY')} ${amt(totals.daily, budget ? budget / 30 : 0)}   ` +
+    `${dim('WEEK')} ${amt(totals.weekly, budget ? (budget * 7) / 30 : 0)}   ` +
+    `${dim('MONTH')} ${amt(totals.monthly, budget || 0)}${liveNote}`
   );
   process.stdout.write(out.join('\n') + '\n');
 }
