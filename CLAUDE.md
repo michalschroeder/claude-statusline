@@ -35,6 +35,16 @@ profile uses that source raw (unset → flat, matching the renderer), transcript
 `●` and folded into the TODAY/WEEK/MONTH footer. Titles/recaps are width-truncated only (no
 redaction). No `--all-profiles` (the profile mangling is lossy).
 
+### Cost reset (`bin/reset-cost.js`)
+
+Standalone maintenance CLI to seed/reset the period ledger to a known month-to-date total (e.g.
+backfilling spend that predates the tracker). `node bin/reset-cost.js <amount> [--config-dir <path>]
+[--month YYYY-MM]`: backs up `cost.log` → `cost.log.bak`, then replaces it with a single synthetic
+line dated at the 1st of the target month (`<date> <month-start-ts> reset-<YYYY-MM> <amount>`), so
+the monthly `m` chip shows `<amount>` while `d`/`w` restart from ~0 and accumulate going forward.
+`<amount>` 0 clears the ledger entirely; non-negative numbers only. State-dir resolution via
+`resolveStateDir` (same `--config-dir` ?? `CLAUDE_CONFIG_DIR` profile as the viewer).
+
 Data flow:
 
 1. Claude Code spawns `hooks/statusline.js` per render and pipes a JSON status payload on stdin.
