@@ -106,8 +106,7 @@ Keep `cyan`, `fg256`, `blink_red`, `dimCyan` local. Behavior identical (existing
 ## Conventions
 - Embed real glyph chars (`●`, `└`, `…`) literally.
 - No subprocess (viewer is pure Node anyway).
-- Conventional Commits; same feature branch (`feat/session-viewer`) or a follow-up — TBD by
-  user at plan time; default: continue on `feat/session-viewer` so PR #18 carries the polish.
+- Conventional Commits; **continue on `feat/session-viewer`** so PR #18 ships already-polished.
 
 ## Out of scope (YAGNI)
 - Card/grouped layout (rejected in brainstorm).
@@ -115,4 +114,4 @@ Keep `cyan`, `fg256`, `blink_red`, `dimCyan` local. Behavior identical (existing
 - Moving `fg256`/`cyan`/`blink_red`/`dimCyan` out of the renderer.
 
 ## Unresolved questions
-- Land on PR #18 (same branch) or a separate follow-up PR? (default: same branch)
+None.
