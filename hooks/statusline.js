@@ -4,6 +4,8 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { resolveStateDir, readCostRows, bucketPeriods, resolveBudget } = require('../lib/cost');
+const { dim, bold, green, yellow, orange, red, COST_TIERS, colorByTier, SESSION_TIERS, BUDGET_TIERS } = require('../lib/color');
 
 // Terminal width for the trailing rule. Sizes to the terminal when run
 // interactively; Claude Code pipes stdout so columns is undefined there and
@@ -12,14 +14,10 @@ function getTerminalWidth() {
   return process.stdout.columns || 80;
 }
 
-// ANSI helpers
-const dim = (s) => `\x1b[2m${s}\x1b[0m`;
-const bold = (s) => `\x1b[1m${s}\x1b[0m`;
-const yellow = (s) => `\x1b[33m${s}\x1b[0m`;
-const green = (s) => `\x1b[32m${s}\x1b[0m`;
-const red = (s) => `\x1b[31m${s}\x1b[0m`;
+// ANSI helpers — dim/bold/green/yellow/orange/red + COST_TIERS/colorByTier are
+// imported from lib/color.js (shared with the session viewer). These remaining
+// helpers are context-bar specific and stay local.
 const cyan = (s) => `\x1b[36m${s}\x1b[0m`;
-const orange = (s) => `\x1b[38;5;208m${s}\x1b[0m`;
 const blink_red = (s) => `\x1b[5;31m${s}\x1b[0m`;
 const dimCyan = (s) => `\x1b[2;36m${s}\x1b[0m`;
 
@@ -112,22 +110,12 @@ function getGitBranch(projectDir) {
   }
 }
 
-// Cost color ladder, low→high severity. `thresholds` are the upper bounds for
-// the first three tiers; anything at/above the last threshold is red.
-const COST_TIERS = [green, yellow, orange, red];
-function colorByTier(value, thresholds) {
-  for (let i = 0; i < thresholds.length; i++) {
-    if (value < thresholds[i]) return COST_TIERS[i];
-  }
-  return COST_TIERS[COST_TIERS.length - 1];
-}
-
 /**
  * Format session cost as [prefix]$X.XX with absolute-USD color thresholds.
  */
 function formatCost(totalCost, prefix = '') {
   if (totalCost == null || totalCost <= 0) return '';
-  return colorByTier(totalCost, [1, 5, 10])(prefix + '$' + totalCost.toFixed(2));
+  return colorByTier(totalCost, SESSION_TIERS)(prefix + '$' + totalCost.toFixed(2));
 }
 
 /**
@@ -136,7 +124,7 @@ function formatCost(totalCost, prefix = '') {
  */
 function formatPeriodCost(cost, limit, prefix) {
   if (!cost || cost <= 0) return '';
-  return colorByTier(cost / limit, [0.5, 0.75, 0.9])(prefix + '$' + cost.toFixed(2));
+  return colorByTier(cost / limit, BUDGET_TIERS)(prefix + '$' + cost.toFixed(2));
 }
 
 /**
@@ -153,45 +141,12 @@ function formatPeriodCost(cost, limit, prefix) {
  * session's unix ts is compared against those period-start timestamps.
  */
 function readPeriodCosts(stateDir, liveSession, liveCost) {
-  const logFile = path.join(stateDir, 'cost.log');
   const now = new Date();
-  const dayStart = Math.floor(new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() / 1000);
-  const daysSinceMonday = (now.getDay() + 6) % 7; // getDay(): 0=Sun..6=Sat → Mon=0
-  const weekStart = Math.floor(new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysSinceMonday).getTime() / 1000);
-  const monthStart = Math.floor(new Date(now.getFullYear(), now.getMonth(), 1).getTime() / 1000);
-
-  const byId = new Map(); // session_id → { ts, cost } (largest cost per session)
-  try {
-    const lines = fs.readFileSync(logFile, 'utf8').trim().split('\n').filter(Boolean);
-    for (const line of lines) {
-      const parts = line.split(' ');
-      if (parts.length < 4) continue;
-      const ts = parseInt(parts[1], 10);
-      const id = parts[2];
-      const c = parseFloat(parts[3]);
-      // Ignore malformed/corrupt rows; require a positive cost (mirrors the write
-      // side, which only persists totalCost > 0) so a hand-edited negative can't
-      // subtract from a period total.
-      if (isNaN(ts) || isNaN(c) || c <= 0 || !id) continue;
-      const prev = byId.get(id);
-      if (!prev || c > prev.cost) byId.set(id, { ts, cost: c });
-    }
-  } catch {}
-
-  // Current session: not normally in cost.log yet (appended at SessionEnd); on a
-  // resume it may be, but its live cumulative supersedes the logged line. Bucket
-  // at now so it always lands in all three windows.
+  const rows = readCostRows(stateDir);
   if (liveSession && liveCost > 0) {
-    byId.set(liveSession, { ts: Math.floor(now.getTime() / 1000), cost: liveCost });
+    rows.set(liveSession, { ts: Math.floor(now.getTime() / 1000), cost: liveCost });
   }
-
-  let daily = 0, weekly = 0, monthly = 0;
-  for (const { ts, cost } of byId.values()) {
-    if (ts >= dayStart) daily += cost;
-    if (ts >= weekStart) weekly += cost;
-    if (ts >= monthStart) monthly += cost;
-  }
-  return { daily, weekly, monthly };
+  return bucketPeriods(rows.values(), now);
 }
 
 /**
@@ -296,18 +251,13 @@ process.stdin.on('data', (chunk) => (input += chunk));
 process.stdin.on('end', () => {
   try {
     const data = JSON.parse(input);
-    const homeDir = os.homedir();
     // State dir resolution (must match the bash hooks). Data always lives in our
     // own XDG namespace (never inside CLAUDE_CONFIG_DIR — that's Claude Code's
     // managed dir and could collide with a future CC feature). CLAUDE_CONFIG_DIR
     // is used only as a per-subscription KEY: its sanitized path becomes a profile
     // subdir, so distinct subscriptions keep separate cost.log/skill logs. When
     // unset (single-profile users), profile is empty → flat layout, unchanged.
-    const xdgRoot = process.env.XDG_STATE_HOME || path.join(homeDir, '.local', 'state');
-    const profile = process.env.CLAUDE_CONFIG_DIR
-      ? process.env.CLAUDE_CONFIG_DIR.replace(/^\//, '').replace(/\//g, '_')
-      : '';
-    const stateDir = path.join(xdgRoot, 'claude-statusline', profile);
+    const stateDir = resolveStateDir(process.env.CLAUDE_CONFIG_DIR);
 
     // Extract data fields
     const model = data.model?.display_name || 'Claude';
@@ -412,21 +362,12 @@ process.stdin.on('end', () => {
     // Session uses absolute $ thresholds; the periods are budget-relative. Each
     // part keeps its own color; the `·` between them is the separator, so labels
     // are bare `s/d/w/m $X.XX`.
-    // Strict numeric parse (Number, not parseFloat): rejects trailing garbage so
-    // a typo like `0abc`/`5,000`/`$500` falls back to 500 rather than silently
-    // parsing to a wrong budget. Empty/whitespace is treated as unset (Number('')
-    // is 0, which we don't want to mean "hide").
-    const rawBudget = process.env.STATUSLINE_MONTHLY_BUDGET;
-    const parsedBudget = rawBudget != null && rawBudget.trim() !== '' ? Number(rawBudget) : NaN;
-    // Explicit 0 opts out of the d/w/m period chips (session `s` stays). A
-    // negative/non-numeric value falls back to 500 (guards color inversion).
-    const periodsHidden = parsedBudget === 0;
-    const monthlyBudget = parsedBudget > 0 ? parsedBudget : 500;
-    // With periods hidden there's only one cost, so drop the `s ` disambiguator.
-    const costParts = [formatCost(totalCost, periodsHidden ? '' : 's ')];
-    if (!periodsHidden) {
-      const dailyLimit = monthlyBudget / 30;
-      const weeklyLimit = monthlyBudget * 7 / 30;
+    // Budget parse + period-limit derivation is shared with the viewer (resolveBudget).
+    const { budgetOptedOut, monthly: monthlyBudget, daily: dailyLimit, weekly: weeklyLimit } =
+      resolveBudget(process.env.STATUSLINE_MONTHLY_BUDGET);
+    // Opted out → the renderer hides d/w/m, so session is the only cost: drop the `s `.
+    const costParts = [formatCost(totalCost, budgetOptedOut ? '' : 's ')];
+    if (!budgetOptedOut) {
       const { daily, weekly, monthly } = readPeriodCosts(stateDir, session, totalCost);
       costParts.push(
         formatPeriodCost(daily, dailyLimit, 'd '),

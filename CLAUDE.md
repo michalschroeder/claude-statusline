@@ -14,6 +14,37 @@ Single-process statusline renderer plus two bash logging hooks.
 
 **State dir** (`<STATE>` below): resolved identically by the renderer and all three hooks as `${XDG_STATE_HOME:-$HOME/.local/state}/claude-statusline/<profile>`. Data **always lives in our own XDG namespace — never inside `CLAUDE_CONFIG_DIR`**, which is Claude Code's own managed dir (full of generic-named subdirs it prunes via `.last-cleanup`); writing there risks colliding with a future CC feature. `CLAUDE_CONFIG_DIR` is used only as a **per-subscription key**: its path (leading `/` stripped, remaining `/`→`_`, e.g. `/home/u/.claude-x` → `home_u_.claude-x`) becomes the `<profile>` subdir, so distinct subscriptions/profiles keep separate cost.log + skill logs. When `CLAUDE_CONFIG_DIR` is unset (single-profile users), `<profile>` is empty → flat `…/claude-statusline/` layout, unchanged. The renderer (`hooks/statusline.js`, `replace(/^\//,'').replace(/\//g,'_')`) and the bash hooks (`${CLAUDE_CONFIG_DIR#/}` then `${profile//\//_}`) must produce the same profile string — covered by `tests/state-dir.test.js`.
 
+### Shared cost lib (`lib/cost.js`)
+
+`cost.log` parsing lives in `lib/cost.js` — `resolveStateDir(configDir)` (the `/`→`_`
+profile mangling), `readCostRows(stateDir)` (dedup-by-id keep-max), `readLiveCosts(stateDir)`
+(every `cost/<id>` temp), `bucketPeriods(rows, now)` (local-calendar day/week/month sums).
+Both the renderer (`hooks/statusline.js`, whose `readPeriodCosts` is now a thin wrapper folding
+the live session at `now`) and the viewer (`bin/sessions.js`) require it — single source of truth.
+
+### Session viewer (`bin/sessions.js`)
+
+Standalone CLI (NOT the renderer — may use whatever it needs, but is pure Node anyway). Lists
+recent sessions with cost + ts (from `cost.log` + live `cost/<id>` temps) joined to ai-title +
+recap parsed in-process from the CC transcript via `lib/transcript.js` (`findTranscript`,
+`readTitleRecap` — last `ai-title` / last `away_summary`, disclaimer stripped, subagent
+transcripts excluded). Config-dir resolution: `--config-dir` ?? `CLAUDE_CONFIG_DIR`; state-dir
+profile uses that source raw (unset → flat, matching the renderer), transcript root defaults to
+`~/.claude` only for `projects/` discovery. Flags: `--last N` (default 10), `--since YYYY-MM-DD`
+(lower ts bound; without `--last` shows all matches), `--config-dir <path>`. Live sessions marked
+`●` and folded into the TODAY/WEEK/MONTH footer. Titles/recaps are width-truncated only (no
+redaction). No `--all-profiles` (the profile mangling is lossy).
+
+### Cost reset (`bin/reset-cost.js`)
+
+Standalone maintenance CLI to seed/reset the period ledger to a known month-to-date total (e.g.
+backfilling spend that predates the tracker). `node bin/reset-cost.js <amount> [--config-dir <path>]
+[--month YYYY-MM]`: backs up `cost.log` → `cost.log.bak`, then replaces it with a single synthetic
+line dated at the 1st of the target month (`<date> <month-start-ts> reset-<YYYY-MM> <amount>`), so
+the monthly `m` chip shows `<amount>` while `d`/`w` restart from ~0 and accumulate going forward.
+`<amount>` 0 clears the ledger entirely; non-negative numbers only. State-dir resolution via
+`resolveStateDir` (same `--config-dir` ?? `CLAUDE_CONFIG_DIR` profile as the viewer).
+
 Data flow:
 
 1. Claude Code spawns `hooks/statusline.js` per render and pipes a JSON status payload on stdin.

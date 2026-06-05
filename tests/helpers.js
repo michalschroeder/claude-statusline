@@ -46,6 +46,25 @@ async function runRaw(inputObj, env) {
   return _invoke(inputObj, env);
 }
 
+const SESSIONS = path.resolve(__dirname, '../bin/sessions.js');
+
+// Spawn bin/sessions.js with CLI args + env, resolve stripped-ANSI stdout. Mirrors
+// _invoke's CLAUDE_CONFIG_DIR scrub so XDG_STATE_HOME isolation holds in tests.
+function runSessions(args = [], env) {
+  return new Promise((resolve, reject) => {
+    const childEnv = { ...process.env, STATUSLINE_ICONS: 'nerd', ...(env || {}) };
+    if (!(env && 'CLAUDE_CONFIG_DIR' in env)) delete childEnv.CLAUDE_CONFIG_DIR;
+    const proc = spawn(process.execPath, [SESSIONS, ...args], { env: childEnv });
+    let out = '', err = '';
+    proc.stdout.on('data', (d) => (out += d));
+    proc.stderr.on('data', (d) => (err += d));
+    proc.on('close', (code) => {
+      if (code !== 0 && err) reject(new Error(err));
+      else resolve(stripAnsi(out));
+    });
+  });
+}
+
 function mkTmpGit(headContent, prefix = 'csl-git-') {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   const gitDir = path.join(dir, '.git');
@@ -54,4 +73,4 @@ function mkTmpGit(headContent, prefix = 'csl-git-') {
   return dir;
 }
 
-module.exports = { stripAnsi, baseInput, run, runRaw, mkTmpGit };
+module.exports = { stripAnsi, baseInput, run, runRaw, mkTmpGit, runSessions };
