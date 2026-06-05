@@ -121,6 +121,10 @@ function main() {
     }
   }
 
+  // Dim rule separating the session list from the totals footer (matches the
+  // statusline's own ─ rules). Spans the terminal width.
+  out.push(dim('─'.repeat(termWidth)));
+
   // Footer: budget-tiered amounts when STATUSLINE_MONTHLY_BUDGET > 0, else bold.
   const rawBudget = process.env.STATUSLINE_MONTHLY_BUDGET;
   const parsedBudget = rawBudget != null && rawBudget.trim() !== '' ? Number(rawBudget) : NaN;

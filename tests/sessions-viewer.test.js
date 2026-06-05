@@ -87,6 +87,18 @@ test('viewer: prints a row with title + recap sub-line', async () => {
   assert.match(out, /\$0\.83/);
 });
 
+test('viewer: dim ─ rule separates the list from the totals footer', async () => {
+  const p = mkProfile();
+  const now = Math.floor(Date.now() / 1000);
+  writeCostLog(p.stateDir, [`2026-06-05 ${now} sessRULE1 0.50`]);
+  const out = await runSessions(['--config-dir', p.configDir], env(p));
+  const lines = out.split('\n');
+  const ruleIdx = lines.findIndex((l) => /^─+$/.test(l));
+  const footerIdx = lines.findIndex((l) => /^TODAY /.test(l));
+  assert.ok(ruleIdx !== -1, 'a ─ rule line is present');
+  assert.strictEqual(ruleIdx, footerIdx - 1, 'rule sits directly above the footer');
+});
+
 test('viewer: title absent → em dash, no recap line', async () => {
   const p = mkProfile();
   const now = Math.floor(Date.now() / 1000);
