@@ -76,11 +76,13 @@ function main() {
   fs.writeFileSync(logFile, content);
   process.stdout.write(amount > 0 ? `wrote: ${content}` : 'cleared cost.log (amount 0)\n');
 
-  // Echo resulting logged totals (live session is added separately by the renderer).
+  // Echo the resulting monthly total for the TARGET month. Bucket against a date
+  // inside it (`first`), not `now` — a past --month wouldn't count toward the
+  // current month, so `now` would misleadingly report $0.00 here. Daily/weekly
+  // intentionally restart from ~0 and accumulate going forward.
   const rows = [...readCostRows(stateDir).values()];
-  const { daily, weekly, monthly } = bucketPeriods(rows, now);
-  const f = (n) => `$${n.toFixed(2)}`;
-  process.stdout.write(`\nnow (logged): m ${f(monthly)}   w ${f(weekly)}   d ${f(daily)}   (+ your live session)\n`);
+  const { monthly } = bucketPeriods(rows, first);
+  process.stdout.write(`\n${ym} ledger: m $${monthly.toFixed(2)}  (d/w restart from $0; + your live session)\n`);
 }
 
 main();

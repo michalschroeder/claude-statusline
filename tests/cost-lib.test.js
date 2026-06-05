@@ -75,11 +75,18 @@ test('readCostRows: skips malformed / non-positive / short rows', () => {
     '2026-06-05 1000 sessD notanum\n' +    // NaN cost
     '2026-06-05 1000 sessE -5\n' +         // negative
     '2026-06-05 1000 sessF 0\n' +          // zero
-    '2026-06-05 1000  0.40\n' +            // empty id (double space → parts[2]='')
+    '2026-06-05 1000  0.40\n' +            // 3 fields after whitespace-collapse → too short
     '2026-06-05 1000 sessG 0.40\n'         // the only valid row
   );
   const rows = readCostRows(dir);
   assert.deepStrictEqual([...rows.keys()], ['sessG']);
+});
+
+test('readCostRows: tolerates stray repeated whitespace between fields', () => {
+  const dir = mkState('2026-06-05   1000\tsessH  0.55\n'); // double/tab gaps
+  const rows = readCostRows(dir);
+  assert.strictEqual(rows.get('sessH').cost, 0.55);
+  assert.strictEqual(rows.get('sessH').ts, 1000);
 });
 
 test('readCostRows: missing cost.log → empty map', () => {

@@ -4,8 +4,8 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { resolveStateDir, readCostRows, bucketPeriods } = require('../lib/cost');
-const { dim, bold, green, yellow, orange, red, COST_TIERS, colorByTier } = require('../lib/color');
+const { resolveStateDir, readCostRows, bucketPeriods, resolveBudget } = require('../lib/cost');
+const { dim, bold, green, yellow, orange, red, COST_TIERS, colorByTier, SESSION_TIERS, BUDGET_TIERS } = require('../lib/color');
 
 // Terminal width for the trailing rule. Sizes to the terminal when run
 // interactively; Claude Code pipes stdout so columns is undefined there and
@@ -115,7 +115,7 @@ function getGitBranch(projectDir) {
  */
 function formatCost(totalCost, prefix = '') {
   if (totalCost == null || totalCost <= 0) return '';
-  return colorByTier(totalCost, [1, 5, 10])(prefix + '$' + totalCost.toFixed(2));
+  return colorByTier(totalCost, SESSION_TIERS)(prefix + '$' + totalCost.toFixed(2));
 }
 
 /**
@@ -124,7 +124,7 @@ function formatCost(totalCost, prefix = '') {
  */
 function formatPeriodCost(cost, limit, prefix) {
   if (!cost || cost <= 0) return '';
-  return colorByTier(cost / limit, [0.5, 0.75, 0.9])(prefix + '$' + cost.toFixed(2));
+  return colorByTier(cost / limit, BUDGET_TIERS)(prefix + '$' + cost.toFixed(2));
 }
 
 /**
@@ -362,21 +362,12 @@ process.stdin.on('end', () => {
     // Session uses absolute $ thresholds; the periods are budget-relative. Each
     // part keeps its own color; the `·` between them is the separator, so labels
     // are bare `s/d/w/m $X.XX`.
-    // Strict numeric parse (Number, not parseFloat): rejects trailing garbage so
-    // a typo like `0abc`/`5,000`/`$500` falls back to 500 rather than silently
-    // parsing to a wrong budget. Empty/whitespace is treated as unset (Number('')
-    // is 0, which we don't want to mean "hide").
-    const rawBudget = process.env.STATUSLINE_MONTHLY_BUDGET;
-    const parsedBudget = rawBudget != null && rawBudget.trim() !== '' ? Number(rawBudget) : NaN;
-    // Explicit 0 opts out of the d/w/m period chips (session `s` stays). A
-    // negative/non-numeric value falls back to 500 (guards color inversion).
-    const periodsHidden = parsedBudget === 0;
-    const monthlyBudget = parsedBudget > 0 ? parsedBudget : 500;
-    // With periods hidden there's only one cost, so drop the `s ` disambiguator.
-    const costParts = [formatCost(totalCost, periodsHidden ? '' : 's ')];
-    if (!periodsHidden) {
-      const dailyLimit = monthlyBudget / 30;
-      const weeklyLimit = monthlyBudget * 7 / 30;
+    // Budget parse + period-limit derivation is shared with the viewer (resolveBudget).
+    const { budgetOptedOut, monthly: monthlyBudget, daily: dailyLimit, weekly: weeklyLimit } =
+      resolveBudget(process.env.STATUSLINE_MONTHLY_BUDGET);
+    // Opted out → the renderer hides d/w/m, so session is the only cost: drop the `s `.
+    const costParts = [formatCost(totalCost, budgetOptedOut ? '' : 's ')];
+    if (!budgetOptedOut) {
       const { daily, weekly, monthly } = readPeriodCosts(stateDir, session, totalCost);
       costParts.push(
         formatPeriodCost(daily, dailyLimit, 'd '),

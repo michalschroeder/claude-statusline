@@ -131,6 +131,29 @@ test('viewer: --last caps rows', async () => {
   assert.strictEqual(dataRows.length, 2);
 });
 
+test('viewer: negative --last is rejected (not slice-from-end)', async () => {
+  const p = mkProfile();
+  const now = Math.floor(Date.now() / 1000);
+  writeCostLog(p.stateDir, [`2026-06-05 ${now} sessNEG1 0.50`]);
+  await assert.rejects(
+    runSessions(['--config-dir', p.configDir, '--last', '-3'], env(p)),
+    /non-negative integer/
+  );
+});
+
+test('viewer: live temp does not shrink a larger logged cost (keep-max)', async () => {
+  const p = mkProfile();
+  const now = Math.floor(Date.now() / 1000);
+  // Session ended logging cumulative $5.00, then a (stale/reset) live temp reads $2.00.
+  writeCostLog(p.stateDir, [`2026-06-05 ${now} sessKEEP1 5.00`]);
+  writeLive(p.stateDir, 'sessKEEP1', 2.00);
+  const out = await runSessions(['--config-dir', p.configDir], env(p));
+  assert.match(out, /\$5\.00/);            // keeps the larger logged value
+  assert.doesNotMatch(out, /\$2\.00/);     // not overwritten by the smaller live temp
+  assert.match(out, /●/);                  // still marked live
+  assert.match(out, /TODAY\s+\$5\.00/);    // total uses the kept-max value
+});
+
 test('viewer: --since filters older rows out', async () => {
   const p = mkProfile();
   const nowD = new Date();

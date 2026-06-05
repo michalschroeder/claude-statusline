@@ -52,6 +52,17 @@ test('readTitleRecap: tolerates unparseable lines', () => {
   assert.deepStrictEqual(readTitleRecap(fp), { title: 'Survives', recap: null });
 });
 
+test('readTitleRecap: collapses newlines/whitespace so the table row stays single-line', () => {
+  const fp = mkJsonl([
+    { type: 'ai-title', aiTitle: 'Multi\nline\ttitle' },
+    { type: 'system', subtype: 'away_summary', content: 'First line\n\nSecond  line\t(disable recaps in /config)' },
+  ]);
+  assert.deepStrictEqual(readTitleRecap(fp), {
+    title: 'Multi line title',
+    recap: 'First line Second line',
+  });
+});
+
 test('readTitleRecap: recap without disclaimer left intact', () => {
   const fp = mkJsonl([{ type: 'system', subtype: 'away_summary', content: 'Bare recap' }]);
   assert.strictEqual(readTitleRecap(fp).recap, 'Bare recap');

@@ -58,6 +58,16 @@ test('amount 0 clears the ledger to an empty file', () => {
   assert.equal(read(flat(xdg)), '');
 });
 
+test('echo reports the TARGET month total, not $0.00, for a past --month', () => {
+  const xdg = mkXdg();
+  // A month other than the current one: the synthetic line is dated to it, so
+  // bucketing against `now` would wrongly echo $0.00. Echo must use the target month.
+  const r = run(['50', '--month', '2020-01'], { XDG_STATE_HOME: xdg });
+  assert.equal(r.status, 0);
+  assert.match(r.stdout, /2020-01 ledger: m \$50\.00/);
+  assert.doesNotMatch(r.stdout, /m \$0\.00/);
+});
+
 test('creates the state dir when no cost.log exists yet', () => {
   const xdg = mkXdg(); // nothing created
   const r = run(['7.25', '--month', '2026-06'], { XDG_STATE_HOME: xdg });
