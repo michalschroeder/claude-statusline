@@ -124,7 +124,9 @@ function main() {
   // Footer: budget-tiered amounts when STATUSLINE_MONTHLY_BUDGET > 0, else bold.
   const rawBudget = process.env.STATUSLINE_MONTHLY_BUDGET;
   const parsedBudget = rawBudget != null && rawBudget.trim() !== '' ? Number(rawBudget) : NaN;
-  const budget = parsedBudget > 0 ? parsedBudget : null;
+  // Footer color matches the renderer's default: explicit 0 opts out (bold); any
+  // other value — including unset/negative/NaN — colors against a 500 default.
+  const budget = parsedBudget === 0 ? null : (parsedBudget > 0 ? parsedBudget : 500);
   const amt = (total, limit) => {
     const s = '$' + total.toFixed(2);
     return budget ? colorByTier(total / limit, [0.5, 0.75, 0.9])(s) : bold(s);

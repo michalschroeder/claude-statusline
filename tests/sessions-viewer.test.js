@@ -4,7 +4,30 @@ const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { spawn } = require('child_process');
 const { runSessions } = require('./helpers');
+
+const SESSIONS = path.resolve(__dirname, '../bin/sessions.js');
+
+// Like runSessions but DOES NOT strip ANSI — used to inspect footer color codes.
+// Mirrors the CLAUDE_CONFIG_DIR scrub so XDG_STATE_HOME isolation holds.
+function runSessionsRaw(args = [], env) {
+  return new Promise((resolve, reject) => {
+    const childEnv = { ...process.env, STATUSLINE_ICONS: 'nerd', ...(env || {}) };
+    if (!(env && 'CLAUDE_CONFIG_DIR' in env)) delete childEnv.CLAUDE_CONFIG_DIR;
+    // Same for the budget: a budget inherited from the test harness would mask the
+    // "unset → 500 default" path, so drop it unless the test sets it on purpose.
+    if (!(env && 'STATUSLINE_MONTHLY_BUDGET' in env)) delete childEnv.STATUSLINE_MONTHLY_BUDGET;
+    const proc = spawn(process.execPath, [SESSIONS, ...args], { env: childEnv });
+    let out = '', err = '';
+    proc.stdout.on('data', (d) => (out += d));
+    proc.stderr.on('data', (d) => (err += d));
+    proc.on('close', (code) => {
+      if (code !== 0 && err) reject(new Error(err));
+      else resolve(out);
+    });
+  });
+}
 
 // Build an isolated profile: XDG_STATE_HOME → state dir; configDir → transcript root.
 // Returns { env, configDir } to pass to runSessions.
@@ -159,6 +182,33 @@ test('viewer: SESSION column stays aligned across cost magnitudes', async () => 
   assert.strictEqual(small.indexOf('sessSMAL'), big.indexOf('sessBIG0'));
   // Decimal points align too (right-aligned cost field).
   assert.strictEqual(small.indexOf('.'), big.indexOf('.'));
+});
+
+test('viewer: footer colors against 500 default when budget unset; 0 opts out (bold)', async () => {
+  const p = mkProfile();
+  const now = Math.floor(Date.now() / 1000);
+  // $600 today → daily total far exceeds the 500/30 limit → definite tier color.
+  writeCostLog(p.stateDir, [`2026-06-05 ${now} sessFTR01 600.00`]);
+
+  const tierRe = /\x1b\[(32|33|31|38;5;208)m/;
+  const todayLineOf = (raw) =>
+    raw.split('\n').find((l) => /TODAY/.test(l.replace(/\x1b\[[0-9;]*m/g, '')));
+
+  // Default (budget unset): TODAY amount carries a tier color, not merely bold.
+  const rawDefault = await runSessionsRaw(['--config-dir', p.configDir], env(p));
+  const todayDefault = todayLineOf(rawDefault);
+  assert.ok(todayDefault, 'TODAY line present (default)');
+  assert.ok(tierRe.test(todayDefault), 'TODAY amount tier-colored by default');
+
+  // Explicit 0: bold, no tier color.
+  const rawZero = await runSessionsRaw(
+    ['--config-dir', p.configDir],
+    { ...env(p), STATUSLINE_MONTHLY_BUDGET: '0' }
+  );
+  const todayZero = todayLineOf(rawZero);
+  assert.ok(todayZero, 'TODAY line present (budget=0)');
+  assert.ok(/\x1b\[1m/.test(todayZero), 'TODAY amount bold when budget=0');
+  assert.ok(!tierRe.test(todayZero), 'TODAY amount not tier-colored when budget=0');
 });
 
 test('viewer: ended row has a blank marker where live row has ●', async () => {
