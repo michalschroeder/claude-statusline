@@ -16,7 +16,13 @@ function parseArgs(argv) {
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === '--last') { opts.last = parseInt(needValue('--last', i), 10); i++; }
+    if (a === '--last') {
+      opts.last = parseInt(needValue('--last', i), 10); i++;
+      if (isNaN(opts.last)) {
+        process.stderr.write('bin/sessions.js: --last requires an integer\n');
+        process.exit(1);
+      }
+    }
     else if (a === '--since') { opts.since = needValue('--since', i); i++; }
     else if (a === '--config-dir') { opts.configDir = needValue('--config-dir', i); i++; }
   }
@@ -44,6 +50,10 @@ function truncate(s, width) {
 
 function main() {
   const opts = parseArgs(process.argv.slice(2));
+  if (opts.since && sinceToTs(opts.since) === null) {
+    process.stderr.write('bin/sessions.js: --since requires a YYYY-MM-DD date\n');
+    process.exit(1);
+  }
   const source = opts.configDir !== undefined ? opts.configDir : process.env.CLAUDE_CONFIG_DIR;
   const stateDir = resolveStateDir(source);                       // unset → flat (matches renderer)
   const transcriptRoot = source || path.join(os.homedir(), '.claude'); // default only for projects/
@@ -89,7 +99,7 @@ function main() {
     const shortId = r.id.slice(0, 8);
     const titleText = title || '—';
     out.push(truncate(`${when}  ${cost.padEnd(8)} ${shortId.padEnd(8)}  ${titleText}`, width));
-    if (recap) out.push(truncate(`${' '.repeat(33)}└ ${recap}`, width));
+    if (recap) out.push(truncate(`${' '.repeat(32)}└ ${recap}`, width));
   }
   const liveNote = anyLive ? '  (incl. live)' : '';
   out.push(

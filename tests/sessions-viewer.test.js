@@ -124,6 +124,14 @@ test('viewer: --since without --last does not cap at 10', async () => {
   assert.ok(dataRows.length >= 11, `expected >= 11 data rows, got ${dataRows.length}`);
 });
 
+test('viewer: invalid --since rejects with exit 1', async () => {
+  const p = mkProfile();
+  await assert.rejects(
+    runSessions(['--config-dir', p.configDir, '--since', 'notadate'], env(p)),
+    /--since requires/
+  );
+});
+
 test('viewer: live cost supersedes logged cost for same id', async () => {
   const p = mkProfile();
   const now = Math.floor(Date.now() / 1000);
