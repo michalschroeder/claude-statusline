@@ -4,8 +4,8 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { resolveStateDir, readCostRows, bucketPeriods, resolveBudget } = require('../lib/cost');
-const { dim, bold, green, yellow, orange, red, COST_TIERS, colorByTier, SESSION_TIERS, BUDGET_TIERS } = require('../lib/color');
+const { resolveStateDir } = require('../lib/state');
+const { dim, bold, green, yellow, orange, red, COST_TIERS, colorByTier, SESSION_TIERS } = require('../lib/color');
 
 // Terminal width for the trailing rule. Sizes to the terminal when run
 // interactively; Claude Code pipes stdout so columns is undefined there and
@@ -111,42 +111,11 @@ function getGitBranch(projectDir) {
 }
 
 /**
- * Format session cost as [prefix]$X.XX with absolute-USD color thresholds.
+ * Format session cost as $X.XX with absolute-USD color thresholds.
  */
-function formatCost(totalCost, prefix = '') {
+function formatCost(totalCost) {
   if (totalCost == null || totalCost <= 0) return '';
-  return colorByTier(totalCost, SESSION_TIERS)(prefix + '$' + totalCost.toFixed(2));
-}
-
-/**
- * Format a period cost with budget-relative color thresholds.
- * Goes red at 90% of limit (warns before hitting it).
- */
-function formatPeriodCost(cost, limit, prefix) {
-  if (!cost || cost <= 0) return '';
-  return colorByTier(cost / limit, BUDGET_TIERS)(prefix + '$' + cost.toFixed(2));
-}
-
-/**
- * Sum cost.log entries by calendar period. Returns {daily, weekly, monthly}.
- *
- * Entries are deduped by session_id, keeping the largest (latest cumulative)
- * cost per session — `total_cost_usd` is cumulative, so a session that ends,
- * resumes, and ends again logs a second, larger line for the same id; without
- * dedup it would be double-counted. The current live session is folded in at
- * "now" using its payload cost (fresher than, and superseding, any logged line).
- *
- * Periods are local-calendar windows, not rolling age: daily = since today's
- * midnight, weekly = since this week's Monday, monthly = since the 1st. Each
- * session's unix ts is compared against those period-start timestamps.
- */
-function readPeriodCosts(stateDir, liveSession, liveCost) {
-  const now = new Date();
-  const rows = readCostRows(stateDir);
-  if (liveSession && liveCost > 0) {
-    rows.set(liveSession, { ts: Math.floor(now.getTime() / 1000), cost: liveCost });
-  }
-  return bucketPeriods(rows.values(), now);
+  return colorByTier(totalCost, SESSION_TIERS)('$' + totalCost.toFixed(2));
 }
 
 /**
@@ -255,7 +224,7 @@ process.stdin.on('end', () => {
     // own XDG namespace (never inside CLAUDE_CONFIG_DIR — that's Claude Code's
     // managed dir and could collide with a future CC feature). CLAUDE_CONFIG_DIR
     // is used only as a per-subscription KEY: its sanitized path becomes a profile
-    // subdir, so distinct subscriptions keep separate cost.log/skill logs. When
+    // subdir, so distinct subscriptions keep separate skill logs. When
     // unset (single-profile users), profile is empty → flat layout, unchanged.
     const stateDir = resolveStateDir(process.env.CLAUDE_CONFIG_DIR);
 
@@ -348,35 +317,9 @@ process.stdin.on('end', () => {
     // Added dirs
     if (addedDirs?.length) add('addeddirs', dim(`+${addedDirs.length}dir`));
 
-    // Persist current session cost for the SessionEnd hook to fold into cost.log.
-    if (session && totalCost != null && totalCost > 0) {
-      try {
-        const costDir = path.join(stateDir, 'cost');
-        fs.mkdirSync(costDir, { recursive: true });
-        fs.writeFileSync(path.join(costDir, session), String(totalCost));
-      } catch {}
-    }
-
-    // Cost group: live session (s) + daily/weekly/monthly cumulative, rendered as
-    // one segment with parts joined by the dim dot separator (like rate limits).
-    // Session uses absolute $ thresholds; the periods are budget-relative. Each
-    // part keeps its own color; the `·` between them is the separator, so labels
-    // are bare `s/d/w/m $X.XX`.
-    // Budget parse + period-limit derivation is shared with the viewer (resolveBudget).
-    const { budgetOptedOut, monthly: monthlyBudget, daily: dailyLimit, weekly: weeklyLimit } =
-      resolveBudget(process.env.STATUSLINE_MONTHLY_BUDGET);
-    // Opted out → the renderer hides d/w/m, so session is the only cost: drop the `s `.
-    const costParts = [formatCost(totalCost, budgetOptedOut ? '' : 's ')];
-    if (!budgetOptedOut) {
-      const { daily, weekly, monthly } = readPeriodCosts(stateDir, session, totalCost);
-      costParts.push(
-        formatPeriodCost(daily, dailyLimit, 'd '),
-        formatPeriodCost(weekly, weeklyLimit, 'w '),
-        formatPeriodCost(monthly, monthlyBudget, 'm '),
-      );
-    }
-    const costShown = costParts.filter(Boolean);
-    if (costShown.length) add('cost', costShown.join(` ${dim(icons.rsep)} `));
+    // Cost: this session's own spend as a single $X.XX chip (absolute $ thresholds).
+    const costStr = formatCost(totalCost);
+    if (costStr) add('cost', costStr);
 
     // Duration
     const durStr = formatDuration(totalDurationMs, icons.duration);

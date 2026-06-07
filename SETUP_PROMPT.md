@@ -58,15 +58,15 @@ If a `statusLine` already exists pointing at a different command, ask me before 
 
 Set `env.STATUSLINE_ICONS` to `<ICONS>`. Leave other `env` keys alone.
 
-### 3c. Hooks (optional — power the "loaded skills" chip and cross-session cost tracking)
+### 3c. Hooks (optional — required only for the "loaded skills" chip)
 
-Ask me whether to install the hooks. If yes, append (don't replace) these three entries. Each lives under `hooks.<event>` as an array — append a new array element rather than overwriting existing matchers.
+Ask me whether to install the skill-logging hooks. If yes, append (don't replace) these three entries. Each lives under `hooks.<event>` as an array — append a new array element rather than overwriting existing matchers.
 
 - `hooks.PreToolUse` — entry with `"matcher": "Skill"`, command `<REPO>/hooks/log-skill.sh`
 - `hooks.UserPromptSubmit` — entry with no matcher, command `<REPO>/hooks/log-slash-skill.sh`
 - `hooks.SessionEnd` — entry with no matcher, command `<REPO>/hooks/cleanup-skills-log.sh`
 
-The `PreToolUse`/`UserPromptSubmit` hooks drive only the skills chip. The `SessionEnd` hook does double duty: it folds each session's cost into `cost.log` (powering the daily/weekly/monthly `d/w/m` cost chips) and prunes stale skill logs + orphaned cost temp files. Without it the cost segment still shows the live session's own spend, but never accumulates across sessions, and the per-render `cost/<session>` temp files (written by the renderer regardless of hooks) are never cleaned up. So installing at least `SessionEnd` is recommended if you care about the period cost chips.
+The `PreToolUse`/`UserPromptSubmit` hooks write the skills log; the `SessionEnd` hook removes the session's skill log and prunes stale ones. They only power the skills chip — the statusline (including the session cost chip) works without them.
 
 Shape of each entry:
 ```json
@@ -99,4 +99,4 @@ chmod +x <REPO>/hooks/*.sh
 - Path to settings file edited
 - "Next step: restart Claude Code"
 
-That's it. Don't add anything I didn't ask for — no `STATUSLINE_SEGMENTS` (let it default to "render all"), no `STATUSLINE_MONTHLY_BUDGET` (it's optional, defaults to $500, tunes the `d/w/m` cost-chip colors, and accepts `0` to hide the `d/w/m` chips entirely — mention it exists but don't set it unless I ask), no symlinks into `<CONFIG_DIR>/hooks/`.
+That's it. Don't add anything I didn't ask for — no `STATUSLINE_SEGMENTS` (let it default to "render all"), no symlinks into `<CONFIG_DIR>/hooks/`.

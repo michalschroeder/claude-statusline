@@ -6,8 +6,8 @@ const os = require('os');
 const path = require('path');
 const { baseInput, runRaw, stripAnsi } = require('./helpers.js');
 
-// Isolate state so no real cost.log injects the daily/weekly/monthly parts of
-// the merged cost group — these tests assert only the live session ($) part.
+// Isolate state for parity with the other suites; the cost chip is the live
+// session's own spend ($X.XX) with absolute-USD color thresholds.
 const EMPTY_STATE = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-cost-only-'));
 after(() => fs.rmSync(EMPTY_STATE, { recursive: true, force: true }));
 
