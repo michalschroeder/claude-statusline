@@ -4,7 +4,7 @@ const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { readTitleRecap, findTranscript } = require('../lib/transcript');
+const { readTitleRecap, findTranscript, listSessions } = require('../lib/transcript');
 
 const tmpDirs = [];
 after(() => { for (const d of tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });
@@ -111,4 +111,52 @@ test('findTranscript: not found → null', () => {
 test('findTranscript: missing projects/ → null', () => {
   const root = mkRoot();
   assert.strictEqual(findTranscript(root, 'x'), null);
+});
+
+// Write projects/<enc>/<id>.jsonl under a root and set its mtime (unix seconds).
+function seedTranscript(root, enc, id, ts) {
+  const proj = path.join(root, 'projects', enc);
+  fs.mkdirSync(proj, { recursive: true });
+  const fp = path.join(proj, `${id}.jsonl`);
+  fs.writeFileSync(fp, '{}\n');
+  if (ts != null) fs.utimesSync(fp, new Date(ts * 1000), new Date(ts * 1000));
+  return fp;
+}
+
+test('listSessions: enumerates transcripts newest-first by mtime, returns id/ts/file', () => {
+  const root = mkRoot();
+  const now = Math.floor(Date.now() / 1000);
+  const older = seedTranscript(root, '-a', 'sessOld', now - 3600);
+  const newer = seedTranscript(root, '-a', 'sessNew', now - 60);
+  const out = listSessions(root);
+  assert.deepStrictEqual(out.map((s) => s.id), ['sessNew', 'sessOld']);
+  assert.strictEqual(out[0].file, newer);
+  assert.strictEqual(out[1].file, older);
+  assert.strictEqual(out[0].ts, now - 60);
+});
+
+test('listSessions: dedupes a session id across project dirs, keeping the newest file', () => {
+  const root = mkRoot();
+  const now = Math.floor(Date.now() / 1000);
+  seedTranscript(root, '-dir-a', 'dup', now - 7200);
+  const newer = seedTranscript(root, '-dir-b', 'dup', now - 30);
+  const out = listSessions(root);
+  assert.strictEqual(out.length, 1, 'one row per session id');
+  assert.strictEqual(out[0].file, newer, 'keeps the newest of the two');
+  assert.strictEqual(out[0].ts, now - 30);
+});
+
+test('listSessions: skips a file literally named .jsonl (empty id)', () => {
+  const root = mkRoot();
+  seedTranscript(root, '-a', '', Math.floor(Date.now() / 1000)); // → ".jsonl"
+  assert.deepStrictEqual(listSessions(root), []);
+});
+
+test('listSessions: excludes subagent transcripts and missing projects/', () => {
+  const root = mkRoot();
+  const sub = path.join(root, 'projects', '-a', 'sessX', 'subagents');
+  fs.mkdirSync(sub, { recursive: true });
+  fs.writeFileSync(path.join(sub, 'sub123.jsonl'), '{}\n'); // nested → excluded
+  assert.deepStrictEqual(listSessions(root).map((s) => s.id), []);
+  assert.deepStrictEqual(listSessions(mkRoot()), []); // no projects/ → empty
 });
