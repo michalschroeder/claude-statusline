@@ -2,7 +2,7 @@
 'use strict';
 const path = require('path');
 const os = require('os');
-const { findTranscript, readTitleRecap, projectDirs, listSessions } = require('../lib/transcript');
+const { readTitleRecap, projectDirs, listSessions } = require('../lib/transcript');
 const { dim } = require('../lib/color');
 
 function parseArgs(argv) {
@@ -83,9 +83,10 @@ function main() {
   const termWidth = process.stdout.columns || 80;
 
   // Resolve title/recap up front so column widths can be sized from the data.
+  // listSessions already gave us each transcript path — readTitleRecap returns
+  // nulls if the file is unreadable, so no existence guard is needed.
   const view = rows.map((r) => {
-    const tr = findTranscript(transcriptRoot, r.id, dirs);
-    const { title, recap } = tr ? readTitleRecap(tr) : { title: null, recap: null };
+    const { title, recap } = readTitleRecap(r.file);
     return { ...r, shortId: r.id.slice(0, ID_W), title, recap };
   });
 

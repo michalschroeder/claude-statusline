@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { resolveStateDir } = require('../lib/state');
-const { dim, bold, green, yellow, orange, red, COST_TIERS, colorByTier, SESSION_TIERS } = require('../lib/color');
+const { dim, bold, green, yellow, red, colorByTier, SESSION_TIERS } = require('../lib/color');
 
 // Terminal width for the trailing rule. Sizes to the terminal when run
 // interactively; Claude Code pipes stdout so columns is undefined there and
@@ -14,9 +14,8 @@ function getTerminalWidth() {
   return process.stdout.columns || 80;
 }
 
-// ANSI helpers — dim/bold/green/yellow/orange/red + COST_TIERS/colorByTier are
-// imported from lib/color.js (shared with the session viewer). These remaining
-// helpers are context-bar specific and stay local.
+// ANSI helpers — dim/bold/green/yellow/red + colorByTier are imported from
+// lib/color.js. These remaining helpers are context-bar specific and stay local.
 const cyan = (s) => `\x1b[36m${s}\x1b[0m`;
 const blink_red = (s) => `\x1b[5;31m${s}\x1b[0m`;
 const dimCyan = (s) => `\x1b[2;36m${s}\x1b[0m`;
