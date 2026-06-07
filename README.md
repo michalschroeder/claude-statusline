@@ -140,20 +140,18 @@ Unknown names get dropped. Segments with no data don't render anyway.
 
 ## Session viewer
 
-List recent sessions with cost + what each was about (reusing Claude Code's own
-session title and `/recap` summary, parsed from the transcript — no extra AI spend):
+List recent sessions and what each was about (reusing Claude Code's own session
+title and `/recap` summary, parsed from the transcript — no extra AI spend):
 
     $ node bin/sessions.js --last 10
-    WHEN         COST     SESSION   TITLE / RECAP
-    06-05 14:02  $1.20 ●  e7ddfb1f  Refactor cost parser
-    06-05 00:25  $0.83    a3f1c0d2  Address timezone comment
-                                    └ Applied 4 reviewer changes…
-    TODAY: $5.41   WEEK: $48.20   MONTH: $210.00  (incl. live)
+    WHEN         SESSION   TITLE / RECAP
+    06-05 14:02  e7ddfb1f  Refactor cost parser
+    06-05 00:25  a3f1c0d2  Address timezone comment
+                           └ Applied 4 reviewer changes…
 
-`●` marks a still-running session. Flags: `--last N` (default 10),
-`--since YYYY-MM-DD`, `--config-dir <path>` (target another Claude Code profile).
-
-Output is colorized: costs are tiered green→yellow→orange→red by amount, live sessions show a green `●`, and period totals in the footer are colored against `STATUSLINE_MONTHLY_BUDGET`.
+Sessions are discovered from the transcripts under `<config-dir>/projects/`,
+newest-first by file mtime. Flags: `--last N` (default 10), `--since YYYY-MM-DD`,
+`--config-dir <path>` (target another Claude Code profile).
 
 ## Files
 
@@ -212,7 +210,7 @@ The `N%` label is the raw `used_percentage` from the payload — i.e. the model'
 
 **Skills chip:** reads `<STATE>/skills/<session>.log`, where each line is `<timestamp> <skill-name>`. The two bash hooks write it. `plugin:` prefixes get stripped. Skill-existence checks use `${CLAUDE_CONFIG_DIR:-$HOME/.claude}`.
 
-**State dir (`<STATE>`):** `${XDG_STATE_HOME:-$HOME/.local/state}/claude-statusline/<profile>`, resolved the same way by the renderer and all hooks. Logs always live in this XDG namespace — never inside `CLAUDE_CONFIG_DIR` (Claude Code's own managed dir). `CLAUDE_CONFIG_DIR` is used only as a per-subscription key: its path (leading `/` stripped, remaining `/`→`_`, e.g. `/home/u/.claude-x` → `home_u_.claude-x`) becomes `<profile>`, so different Claude Code subscriptions/profiles keep separate cost and skill logs. Unset → empty profile → flat `…/claude-statusline/` layout.
+**State dir (`<STATE>`):** `${XDG_STATE_HOME:-$HOME/.local/state}/claude-statusline/<profile>`, resolved the same way by the renderer and all hooks. Logs always live in this XDG namespace — never inside `CLAUDE_CONFIG_DIR` (Claude Code's own managed dir). `CLAUDE_CONFIG_DIR` is used only as a per-subscription key: its path (leading `/` stripped, remaining `/`→`_`, e.g. `/home/u/.claude-x` → `home_u_.claude-x`) becomes `<profile>`, so different Claude Code subscriptions/profiles keep separate skill logs. Unset → empty profile → flat `…/claude-statusline/` layout.
 
 ## License
 
