@@ -103,6 +103,15 @@ test('viewer: --last caps rows', async () => {
   assert.strictEqual(dataRows(out).length, 2);
 });
 
+test('viewer: sessions exist but --since excludes all → distinct message', async () => {
+  const p = mkProfile();
+  writeTranscript(p.configDir, 'sessONLY1', [{ type: 'ai-title', aiTitle: 'x' }],
+    Math.floor(new Date(2020, 0, 1).getTime() / 1000));
+  const out = await runSessions(['--config-dir', p.configDir, '--since', '2030-01-01'], wide());
+  assert.match(out, /no sessions match/);
+  assert.doesNotMatch(out, /no sessions found/); // that message is for a truly empty store
+});
+
 test('viewer: negative --last is rejected', async () => {
   const p = mkProfile();
   writeTranscript(p.configDir, 'sessNEG1', [{ type: 'ai-title', aiTitle: 'x' }]);

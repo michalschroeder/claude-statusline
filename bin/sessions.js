@@ -127,11 +127,16 @@ function main() {
   const cap = opts.last != null ? opts.last : (opts.since ? Infinity : 10);
   rows = rows.slice(0, cap);
 
+  if (rows.length === 0) { // sessions exist, but --since/--last excluded them all
+    process.stdout.write('no sessions match\n');
+    return;
+  }
+
   const width = termWidth();
   const nowSec = Math.floor(Date.now() / 1000);
 
   // Column geometry (plain-text widths; ANSI applied after).
-  const CLOCK_W = 5, REL_W = 8, COST_W = 8, ID_W = 36, MIN_TITLE = 20;
+  const CLOCK_W = 5, REL_W = 8, COST_W = 10, ID_W = 36, MIN_TITLE = 20; // COST_W fits '$99999.99' without column drift
   const ID_LABEL = 'id '; // precedes the session id so its purpose is obvious
   const INDENT = '  ', GAP = '  ';
   const leftWidth = INDENT.length + CLOCK_W + GAP.length + REL_W + GAP.length + COST_W + GAP.length;
@@ -200,4 +205,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { relativeTime, dayKey, dayLabel, clock, barFill, termWidth, truncate };
+module.exports = { relativeTime, dayKey, dayLabel, clock, barFill, truncate };
