@@ -29,9 +29,14 @@ disclaimer stripped, subagent transcripts excluded; `listSessions` enumerates
 `projects/*/<id>.jsonl`, newest-first by file **mtime** — the session's `ts`). Config-dir
 resolution: `--config-dir` ?? `CLAUDE_CONFIG_DIR`, the transcript root for `projects/` discovery
 (default `~/.claude`). Flags: `--last N` (default 10), `--since YYYY-MM-DD` (lower ts bound;
-without `--last` shows all matches), `--config-dir <path>`. Renders WHEN / SESSION / TITLE-RECAP;
-titles/recaps are width-truncated only (no redaction). No `--all-profiles`. Also renders a per-session
-COST column and a today/week/month footer (same recomputed costs as the renderer). Subagent
+without `--last` shows all matches), `--config-dir <path>`. Renders day-grouped rows (a dim
+`── Ddd Mmm DD ──` rule per local day) of
+`HH:MM · relative-age · cost · title · full-session-id`; titles/recaps are width-truncated only (no
+redaction). The **full** session id (copy-paste-resumable via `claude --resume <id>`) is right-aligned
+and dropped on terminals too narrow to leave a usable title (< 20 cols). Recaps render as a dim `└` sub-line. No
+`--all-profiles`. The footer shows today/week/month budget bars (`▓`/`░`, budget-relative coloring) when
+`STATUSLINE_MONTHLY_BUDGET` is set, else a plain `today $X · week $Y · month $Z` line. Terminal width =
+TTY columns, else `COLUMNS`, else 80. Same recomputed costs as the renderer. Subagent
 transcripts are excluded from the **session listing** (they're not user sessions) but their cost IS
 folded into the parent session's COST (via `lib/cost-aggregate.js`).
 
@@ -130,4 +135,6 @@ daily = monthly/30, weekly = monthly×7/30. Resolved by `lib/budget.js` (`resolv
 
 `tests/helpers.js` exposes `run(input)` (spawns `statusline.js`, strips ANSI) and `baseInput()` (minimal valid payload). One test file per segment. When changing a segment, update its `tests/*.test.js`; when adding one, add a new file rather than expanding an existing one.
 
-The cost pipeline is covered by `tests/cost-compute.test.js`, `tests/pricing.test.js`, `tests/budget.test.js`, `tests/periods.test.js`, `tests/cost-aggregate.test.js`, `tests/refresh-cost-cache.test.js`, and `tests/period-cost.test.js` (renderer d/w/m chips). The `cost` segment is covered by `tests/cost.test.js` (session absolute thresholds). `tests/cleanup-hook.test.js` is an **integration** test that spawns the bash `SessionEnd` hook to verify skill-log removal/pruning; it `skip`s gracefully when `jq` is absent. The session viewer has `tests/sessions-viewer.test.js` (transcript-sourced listing, title/recap, `--last`/`--since`); `lib/transcript.js` has `tests/transcript.test.js`.
+The cost pipeline is covered by `tests/cost-compute.test.js`, `tests/pricing.test.js`, `tests/budget.test.js`, `tests/periods.test.js`, `tests/cost-aggregate.test.js`, `tests/refresh-cost-cache.test.js`, and `tests/period-cost.test.js` (renderer d/w/m chips). The `cost` segment is covered by `tests/cost.test.js` (session absolute thresholds). `tests/cleanup-hook.test.js` is an **integration** test that spawns the bash `SessionEnd` hook to verify skill-log removal/pruning; it `skip`s gracefully when `jq` is absent. The session viewer has `tests/sessions-viewer.test.js` (transcript-sourced listing, day grouping, full id,
+budget-bar footer, `--last`/`--since`) and `tests/sessions-format.test.js` (pure formatting helpers:
+relative time, day labels, bar fill, truncate); `lib/transcript.js` has `tests/transcript.test.js`.
