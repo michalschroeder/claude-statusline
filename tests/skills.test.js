@@ -3,12 +3,12 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
-const { baseInput, run } = require('./helpers.js');
+const { baseInput, run, ISOLATED_STATE } = require('./helpers.js');
 
 const SESSION = `test-${process.pid}`;
-const STATE_DIR = process.env.XDG_STATE_HOME || path.join(os.homedir(), '.local', 'state');
-const LOG_DIR = path.join(STATE_DIR, 'claude-statusline', 'skills');
+// The helper runs the renderer with XDG_STATE_HOME=ISOLATED_STATE, so write the
+// skill log where the child will actually read it.
+const LOG_DIR = path.join(ISOLATED_STATE, 'claude-statusline', 'skills');
 const LOG = path.join(LOG_DIR, `${SESSION}.log`);
 fs.mkdirSync(LOG_DIR, { recursive: true });
 

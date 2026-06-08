@@ -47,12 +47,17 @@ existing color ladder. No behavior change to which rows/totals are shown.
 | footer amounts | budget-tiered: `colorByTier(total/limit, [0.5,0.75,0.9])`; limits = `budget/30` (daily), `budget·7/30` (weekly), `budget` (monthly) |
 | footer labels (`TODAY`/`WEEK`/`MONTH`) | dim |
 
-`STATUSLINE_MONTHLY_BUDGET` parsed exactly like the renderer: strict `Number`; `>0` → that
-value; `0`, negative, non-numeric, or unset → fall back to `500` **for limit derivation**.
-Distinction from the renderer: the renderer hides the d/w/m chips when budget is exactly `0`;
-the **viewer always shows the footer** (it's the point) — when the parsed budget is not `>0`
-(i.e. would fall back), the footer **amounts render bold and uncolored** instead of
-budget-tiered. When budget `>0`, amounts are budget-tiered.
+`STATUSLINE_MONTHLY_BUDGET` parsed exactly like the renderer (strict `Number`), and the footer
+color matches the renderer's default behavior so the viewer and statusline agree:
+- `>0` → budget-tiered against that value.
+- **unset / negative / non-numeric → default `500`, budget-tiered** (mirrors the renderer, which
+  colors period costs against `500` by default when the var is unset).
+- **explicit `0` → opt-out**: amounts render **bold and uncolored**. (The renderer *hides* the
+  d/w/m chips at `0`; the viewer always shows the footer since it's the point, so the natural
+  "opted-out" rendering is bold/uncolored rather than hidden.)
+
+So the only case that renders bold is an explicit `STATUSLINE_MONTHLY_BUDGET=0`; every other
+value (including unset) colors the footer.
 
 ### DRY — shared color module
 Extract the shared basics into **`lib/color.js`**:
@@ -85,9 +90,11 @@ Keep `cyan`, `fg256`, `blink_red`, `dimCyan` local. Behavior identical (existing
   min 6). Right-pad/left-pad accordingly so the decimal points align.
 - Render the `●`/space marker in its own column.
 - Color each element per the table above.
-- Footer: parse `STATUSLINE_MONTHLY_BUDGET` (strict `Number`; `>0` else fall back 500 for
-  limits). Derive daily/weekly/monthly limits. If budget `>0`, color each amount via
-  `colorByTier(total/limit, [0.5,0.75,0.9])`; else render amounts bold/uncolored. Labels dim.
+- Footer: parse `STATUSLINE_MONTHLY_BUDGET` (strict `Number`). Resolve budget: explicit `0` →
+  `null` (bold opt-out); `>0` → that value; otherwise (unset/negative/NaN) → `500`. Derive
+  daily/weekly/monthly limits (`budget/30`, `·7/30`, `budget`). If budget is non-null, color
+  each amount via `colorByTier(total/limit, [0.5,0.75,0.9])`; if null, render amounts bold.
+  Labels dim.
 - Recap indent = the computed title-column offset.
 
 ## Testing

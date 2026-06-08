@@ -6,6 +6,14 @@ const path = require('path');
 
 const STATUSLINE = path.resolve(__dirname, '../hooks/statusline.js');
 
+// Isolated state root for the whole test run: keeps the renderer/viewer from
+// reading the user's real ~/.local/state cache, and stops lib/pricing's
+// background fetch from writing into it. Tests that need their own state pass
+// XDG_STATE_HOME in `env` (it overrides this default). STATUSLINE_PRICING_NO_FETCH
+// keeps loadPricing offline (bundled snapshot only) so runs are deterministic.
+const ISOLATED_STATE = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-test-state-'));
+const ENV_DEFAULTS = { XDG_STATE_HOME: ISOLATED_STATE, STATUSLINE_PRICING_NO_FETCH: '1', STATUSLINE_ICONS: 'nerd' };
+
 function stripAnsi(str) {
   return str.replace(/\x1b\[[0-9;]*m/g, '');
 }
@@ -19,7 +27,7 @@ function baseInput() {
 
 function _invoke(inputObj, env) {
   return new Promise((resolve, reject) => {
-    const childEnv = { ...process.env, STATUSLINE_ICONS: 'nerd', ...(env || {}) };
+    const childEnv = { ...process.env, ...ENV_DEFAULTS, ...(env || {}) };
     // The renderer now prefers CLAUDE_CONFIG_DIR over XDG_STATE_HOME for its state
     // root; tests isolate via XDG_STATE_HOME, so drop any inherited CLAUDE_CONFIG_DIR
     // unless a test sets it on purpose — else it would override the temp state dir.
@@ -52,7 +60,7 @@ const SESSIONS = path.resolve(__dirname, '../bin/sessions.js');
 // _invoke's CLAUDE_CONFIG_DIR scrub so XDG_STATE_HOME isolation holds in tests.
 function runSessions(args = [], env) {
   return new Promise((resolve, reject) => {
-    const childEnv = { ...process.env, STATUSLINE_ICONS: 'nerd', ...(env || {}) };
+    const childEnv = { ...process.env, ...ENV_DEFAULTS, ...(env || {}) };
     if (!(env && 'CLAUDE_CONFIG_DIR' in env)) delete childEnv.CLAUDE_CONFIG_DIR;
     const proc = spawn(process.execPath, [SESSIONS, ...args], { env: childEnv });
     let out = '', err = '';
@@ -73,4 +81,4 @@ function mkTmpGit(headContent, prefix = 'csl-git-') {
   return dir;
 }
 
-module.exports = { stripAnsi, baseInput, run, runRaw, mkTmpGit, runSessions };
+module.exports = { stripAnsi, baseInput, run, runRaw, mkTmpGit, runSessions, ISOLATED_STATE };
