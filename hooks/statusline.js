@@ -5,7 +5,10 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { resolveStateDir } = require('../lib/state');
-const { dim, bold, green, yellow, red, colorByTier, SESSION_TIERS } = require('../lib/color');
+const { dim, bold, green, yellow, orange, red, colorByTier, SESSION_TIERS, BUDGET_TIERS } = require('../lib/color');
+const { readSummary } = require('../lib/cost-aggregate');
+const { sumPeriods } = require('../lib/periods');
+const { resolveBudget } = require('../lib/budget');
 
 // Terminal width for the trailing rule. Sizes to the terminal when run
 // interactively; Claude Code pipes stdout so columns is undefined there and
@@ -110,11 +113,19 @@ function getGitBranch(projectDir) {
 }
 
 /**
- * Format session cost as $X.XX with absolute-USD color thresholds.
+ * Format session cost as [prefix]$X.XX with absolute-USD color thresholds.
  */
-function formatCost(totalCost) {
+function formatCost(totalCost, prefix = '') {
   if (totalCost == null || totalCost <= 0) return '';
-  return colorByTier(totalCost, SESSION_TIERS)('$' + totalCost.toFixed(2));
+  return colorByTier(totalCost, SESSION_TIERS)(prefix + '$' + totalCost.toFixed(2));
+}
+
+/**
+ * Format a period cost with budget-relative color thresholds (red at ≥90% limit).
+ */
+function formatPeriodCost(cost, limit, prefix) {
+  if (!cost || cost <= 0) return '';
+  return colorByTier(cost / limit, BUDGET_TIERS)(prefix + '$' + cost.toFixed(2));
 }
 
 /**
@@ -316,9 +327,41 @@ process.stdin.on('end', () => {
     // Added dirs
     if (addedDirs?.length) add('addeddirs', dim(`+${addedDirs.length}dir`));
 
-    // Cost: this session's own spend as a single $X.XX chip (absolute $ thresholds).
-    const costStr = formatCost(totalCost);
-    if (costStr) add('cost', costStr);
+    // Cost group: session (s) + daily/weekly/monthly, joined by the dim `·`
+    // separator (like rate limits). Session uses absolute $ thresholds; d/w/m are
+    // budget-relative. Skipped entirely when 'cost' is filtered out of
+    // STATUSLINE_SEGMENTS, so the cache read stays off the hot path for users who
+    // hide the chip. Budget opt-out (0) keeps `s` but hides d/w/m.
+    //
+    // The cache (refresh hook) holds every session's recomputed, day-bucketed
+    // spend — including THIS session up to the last refresh. Claude's live payload
+    // cost is fresher but undated, so we fold only the DELTA since the cache into
+    // the current windows (it is recent ⇒ counts toward today/week/month). This
+    // keeps a session resumed across days from dumping its whole lifetime into
+    // "today" and bases the `s` chip on recomputed cost, not the reported total.
+    const costFilter = process.env.STATUSLINE_SEGMENTS;
+    const costEnabled = !costFilter || !costFilter.trim()
+      || costFilter.split(',').map((s) => s.trim()).includes('cost');
+    if (costEnabled) {
+      const { budgetOptedOut, monthly: monthlyBudget, daily: dailyLimit, weekly: weeklyLimit } =
+        resolveBudget(process.env.STATUSLINE_MONTHLY_BUDGET);
+      const summary = readSummary(stateDir);
+      const perSession = (summary && summary.perSession) || {};
+      const cachedSession = (session && perSession[session] && perSession[session].total) || 0;
+      const liveDelta = Math.max(0, (totalCost > 0 ? totalCost : 0) - cachedSession);
+      const sessionTotal = cachedSession + liveDelta;
+      const costParts = [formatCost(sessionTotal, budgetOptedOut ? '' : 's ')];
+      if (!budgetOptedOut) {
+        const { daily, weekly, monthly } = sumPeriods(perSession, new Date());
+        costParts.push(
+          formatPeriodCost(daily + liveDelta, dailyLimit, 'd '),
+          formatPeriodCost(weekly + liveDelta, weeklyLimit, 'w '),
+          formatPeriodCost(monthly + liveDelta, monthlyBudget, 'm '),
+        );
+      }
+      const costShown = costParts.filter(Boolean);
+      if (costShown.length) add('cost', costShown.join(` ${dim(icons.rsep)} `));
+    }
 
     // Duration
     const durStr = formatDuration(totalDurationMs, icons.duration);

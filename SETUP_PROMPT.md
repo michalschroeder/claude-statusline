@@ -63,16 +63,23 @@ Set `env.STATUSLINE_ICONS` to `<ICONS>`. Leave other `env` keys alone.
 Ask me whether to install the skill-logging hooks. If yes, append (don't replace) these three entries. Each lives under `hooks.<event>` as an array — append a new array element rather than overwriting existing matchers.
 
 - `hooks.PreToolUse` — entry with `"matcher": "Skill"`, command `<REPO>/hooks/log-skill.sh`
-- `hooks.UserPromptSubmit` — entry with no matcher, command `<REPO>/hooks/log-slash-skill.sh`
+- `hooks.UserPromptSubmit` — entry with no matcher and **two** commands: `<REPO>/hooks/log-slash-skill.sh` AND `node <REPO>/hooks/refresh-cost-cache.js`
 - `hooks.SessionEnd` — entry with no matcher, command `<REPO>/hooks/cleanup-skills-log.sh`
 
-The `PreToolUse`/`UserPromptSubmit` hooks write the skills log; the `SessionEnd` hook removes the session's skill log and prunes stale ones. They only power the skills chip — the statusline (including the session cost chip) works without them.
+The `PreToolUse`/`UserPromptSubmit` slash-logger hooks plus the `SessionEnd` hook write/clean the skills log — they only power the skills chip. The second `UserPromptSubmit` command, `refresh-cost-cache.js`, rebuilds the daily/weekly/monthly cost cache once per prompt; without it the d/w/m cost chips won't update (the session cost chip still works). The statusline works without any of these.
 
 Shape of each entry:
 ```json
 { "matcher": "Skill", "hooks": [{ "type": "command", "command": "<REPO>/hooks/log-skill.sh" }] }
 ```
-(omit `matcher` for the latter two)
+The `UserPromptSubmit` entry has no matcher and lists both commands:
+```json
+{ "hooks": [
+  { "type": "command", "command": "<REPO>/hooks/log-slash-skill.sh" },
+  { "type": "command", "command": "node <REPO>/hooks/refresh-cost-cache.js" }
+]}
+```
+(`SessionEnd` is the same single-command shape as `PreToolUse` but with no matcher.)
 
 Before appending, scan the existing array — if an identical command is already registered, skip it (idempotent).
 

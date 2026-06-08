@@ -30,7 +30,30 @@ disclaimer stripped, subagent transcripts excluded; `listSessions` enumerates
 resolution: `--config-dir` ?? `CLAUDE_CONFIG_DIR`, the transcript root for `projects/` discovery
 (default `~/.claude`). Flags: `--last N` (default 10), `--since YYYY-MM-DD` (lower ts bound;
 without `--last` shows all matches), `--config-dir <path>`. Renders WHEN / SESSION / TITLE-RECAP;
-titles/recaps are width-truncated only (no redaction). No cost (removed). No `--all-profiles`.
+titles/recaps are width-truncated only (no redaction). No `--all-profiles`. Also renders a per-session
+COST column and a today/week/month footer (same recomputed costs as the renderer). Subagent
+transcripts are excluded from the **session listing** (they're not user sessions) but their cost IS
+folded into the parent session's COST (via `lib/cost-aggregate.js`).
+
+### Cost pipeline
+
+Costs are **recomputed from raw token counts × LiteLLM per-token prices** — never Claude's reported
+`cost.total_cost_usd`. Libs:
+
+- `lib/cost-compute.js` — pure per-call math (tokens × prices). 5m cache write = 1.25× input, 1h cache write = 2× input (computed as `cacheWrite × 1.6`), cache read = 0.1× input. Supports a generic long-context (>200K input) `above200k` premium tier per call **when a price entry defines one** — but per Anthropic's current pricing **no Claude model has a >200K premium** (Opus 4.6+/Sonnet 4.6 serve the full 1M at standard rates), so the bundled snapshot defines none and the tier stays dormant.
+- `lib/pricing.js` — LiteLLM price table; bundled snapshot `data/model_prices.json` + background fetch at most every 24h. **Never fetched from the renderer.** Still extracts `*_above_200k_tokens` premium rates if an upstream entry carries them (dormant for current Claude models).
+- `lib/cost-aggregate.js` — parses transcripts (main session files **and** nested `<session>/subagents/agent-*.jsonl`, whose token usage Anthropic bills — attributed to the parent session; only `agent-*.jsonl` are billed, other sidecar files under `subagents/` are ignored), dedups streaming message ids (within-file + globally across files), buckets each call into local-day keys, maintains an incremental `<STATE>/cost-cache.json` keyed by file mtime/size; cache invalidated on a pricing-hash change. `writeCache` also emits a slim `<STATE>/cost-summary.json` (`{pricingHash, perSession}`, no bulky `files`/`calls` blob) for the renderer; `readSummary` reads it (falling back to the full cache for back-compat).
+- `lib/periods.js` — local-calendar day/week/month window sums over the buckets.
+- `lib/budget.js` — `resolveBudget` (reads `STATUSLINE_MONTHLY_BUDGET`; daily = monthly/30, weekly = monthly×7/30).
+
+The `UserPromptSubmit` hook `hooks/refresh-cost-cache.js` rebuilds `cost-cache.json` (and the slim
+`cost-summary.json`) over the last 40 days, off the render hot path. The renderer reads the slim
+summary (`readSummary`, only when the `cost` segment is enabled — keeps the read off the hot path
+when hidden) and sums today/week/month across **all** sessions including the current one (whose
+day-buckets carry correct per-day attribution). Claude's live payload cost is fresher but undated,
+so the renderer folds only the **delta** (`max(0, live − cachedSessionTotal)`) into the current
+windows — this keeps a session resumed across days from dumping its whole lifetime into "today" and
+makes the `s` chip recomputed-based rather than the reported `total_cost_usd`.
 
 Data flow:
 
@@ -59,7 +82,7 @@ Each segment is emitted only when its source field is present/non-empty. Separat
 | agent | `agent.name` | bold; `󰚩` |
 | dir | `workspace.current_dir` basename | `󰉋`; when inside `.../.claude/worktrees/<name>/`, shows parent project name |
 | added dirs | `workspace.added_dirs.length` | `+Ndir` |
-| cost | `cost.total_cost_usd` | this session's own spend as a single `$X.XX` chip, absolute USD thresholds (green <$1, yellow <$5, orange <$10, red ≥$10). Omitted when ≤0 |
+| cost | `cost.total_cost_usd` + `cost-summary.json` | s/d/w/m chip group joined by dim `·`. `s` = this session's recomputed spend (cached recomputed total + live delta), absolute USD thresholds (green <$1, yellow <$5, orange <$10, red ≥$10), omitted when ≤0. `d`/`w`/`m` = today / this week / this month = **all sessions' recomputed, day-bucketed spend (from `cost-summary.json`) + the current session's live delta (`max(0, live − cached total)`) folded into the current windows**, budget-relative coloring via `STATUSLINE_MONTHLY_BUDGET`. d/w/m hidden when `STATUSLINE_MONTHLY_BUDGET=0` |
 | duration | `cost.total_duration_ms` | `󰔛`; `Ns` / `Nm` / `Nh Nm` |
 | lines | `cost.total_lines_added` / `total_lines_removed` | `󰷈 +A -R` (green/red) |
 | rate limits | `rate_limits.five_hour.used_percentage`, `rate_limits.seven_day.used_percentage` | `󰔚 5h N%`, `󰃭 7d N%`, joined with `·` |
@@ -90,6 +113,10 @@ So a 200k model fills cell N at `20k · N` tokens; a 1M model fills cell N at `5
 
 `STATUSLINE_SEGMENTS` env var (set via `"env"` in `~/.claude/settings.json`) is an optional comma-separated allowlist that also controls render order. Unset/empty = render all. Names match the segment column above. Unknown names ignored. Each segment is tagged via `add(name, value)`; filter applied just before joining.
 
+`STATUSLINE_MONTHLY_BUDGET` env var sets the budget for the cost segment's d/w/m budget-relative
+coloring. Unset → $500/mo default; `0` → hide d/w/m chips; a number → that monthly budget. Derived:
+daily = monthly/30, weekly = monthly×7/30. Resolved by `lib/budget.js` (`resolveBudget`).
+
 `STATUSLINE_ICONS=nerd|unicode|ascii` picks the icon set. `nerd` requires a Nerd Font; `unicode` is BMP symbols (no emoji); `ascii` is pure ASCII. Resolved by `resolveIconMode()`: env var wins; else read cached choice from `~/.cache/claude-statusline/icons`; else first-run writes `ascii` to the cache and appends a one-line install hint to the statusline. Per-mode glyphs live in `ICON_SETS` (`effort branch worktree dir duration lines r5h r7d rsep skull style vim agent barFill barEmpty sep skills hr`). Tests force `nerd` via `tests/helpers.js`; `tests/icons.test.js` exercises the other modes.
 
 ## Conventions
@@ -103,4 +130,4 @@ So a 200k model fills cell N at `20k · N` tokens; a 1M model fills cell N at `5
 
 `tests/helpers.js` exposes `run(input)` (spawns `statusline.js`, strips ANSI) and `baseInput()` (minimal valid payload). One test file per segment. When changing a segment, update its `tests/*.test.js`; when adding one, add a new file rather than expanding an existing one.
 
-The `cost` segment is covered by `tests/cost.test.js` (session absolute thresholds). `tests/cleanup-hook.test.js` is an **integration** test that spawns the bash `SessionEnd` hook to verify skill-log removal/pruning; it `skip`s gracefully when `jq` is absent. The session viewer has `tests/sessions-viewer.test.js` (transcript-sourced listing, title/recap, `--last`/`--since`); `lib/transcript.js` has `tests/transcript.test.js`.
+The cost pipeline is covered by `tests/cost-compute.test.js`, `tests/pricing.test.js`, `tests/budget.test.js`, `tests/periods.test.js`, `tests/cost-aggregate.test.js`, `tests/refresh-cost-cache.test.js`, and `tests/period-cost.test.js` (renderer d/w/m chips). The `cost` segment is covered by `tests/cost.test.js` (session absolute thresholds). `tests/cleanup-hook.test.js` is an **integration** test that spawns the bash `SessionEnd` hook to verify skill-log removal/pruning; it `skip`s gracefully when `jq` is absent. The session viewer has `tests/sessions-viewer.test.js` (transcript-sourced listing, title/recap, `--last`/`--since`); `lib/transcript.js` has `tests/transcript.test.js`.

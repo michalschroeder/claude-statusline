@@ -46,11 +46,14 @@ Then add to `~/.claude/settings.json` (swap `<repo>` for your clone path):
 }
 ```
 
-**Slash-command logger** (also for the skills chip):
+**Slash-command logger + cost-cache refresh** (the slash logger feeds the skills chip; `refresh-cost-cache.js` rebuilds the daily/weekly/monthly cost cache once per prompt):
 ```json
 "hooks": {
   "UserPromptSubmit": [
-    { "hooks": [{ "type": "command", "command": "<repo>/hooks/log-slash-skill.sh" }] }
+    { "hooks": [
+      { "type": "command", "command": "<repo>/hooks/log-slash-skill.sh" },
+      { "type": "command", "command": "node <repo>/hooks/refresh-cost-cache.js" }
+    ]}
   ]
 }
 ```
@@ -130,13 +133,35 @@ Segment names:
 | `agent` | agent name |
 | `dir` | directory label |
 | `addeddirs` | +N added dirs |
-| `cost` | $ cost |
+| `cost` | session + daily/weekly/monthly cost |
 | `duration` | session duration |
 | `lines` | +added -removed |
 | `ratelimits` | 5h / 7d usage % |
 | `context` | context bar + input token count |
 
 Unknown names get dropped. Segments with no data don't render anyway.
+
+## Cost tracking
+
+The cost segment shows a session chip (`s $X.XX`) plus daily, weekly, and monthly chips (`d`/`w`/`m`) covering spend across all sessions. Costs are **recomputed from raw token counts × LiteLLM per-token prices** — never trusting Claude Code's reported `cost.total_cost_usd`. The price table ships as a bundled snapshot (`data/model_prices.json`) and is refreshed in the background at most once every 24h.
+
+The d/w/m totals are rebuilt once per prompt by the `UserPromptSubmit` hook (`hooks/refresh-cost-cache.js`), off the render hot path; the renderer just reads the cache and folds in the current session's live cost.
+
+`STATUSLINE_MONTHLY_BUDGET` controls the budget-relative coloring of the d/w/m chips (daily = monthly/30, weekly = monthly×7/30):
+
+- **unset** → $500/mo default
+- **`0`** → hide the d/w/m chips (session chip stays)
+- **a number** → your monthly budget
+
+```json
+"env": {
+  "STATUSLINE_MONTHLY_BUDGET": "300"
+}
+```
+
+The session chip keeps absolute USD tiers (green <$1, yellow <$5, orange <$10, red ≥$10).
+
+The [session viewer](#session-viewer) (`bin/sessions.js`) also shows a per-session COST column and a today/week/month footer, using the same recomputed costs.
 
 ## Session viewer
 
@@ -173,7 +198,7 @@ Segments, left to right:
 - **worktree** - worktree name, when you're in one
 - **agent** - agent name, when set
 - **dir** - basename of the current directory. Inside `.claude/worktrees/<name>/` it shows the parent project's name instead
-- **cost** - session cost. Green under $1, yellow $1 to $4.99, orange $5 to $9.99, red at $10+
+- **cost** - a chip group: `s` (this session) plus `d`/`w`/`m` (today / this week / this month, across all sessions). See [Cost tracking](#cost-tracking)
 - **duration** - total session time (s / m / h m)
 - **lines** - lines added and removed
 - **rate limits** - 5h and 7d usage percentages, when the payload includes them
