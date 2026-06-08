@@ -3,7 +3,12 @@
 const path = require('path');
 const os = require('os');
 const { readTitleRecap, projectDirs, listSessions } = require('../lib/transcript');
-const { dim } = require('../lib/color');
+const { dim, colorByTier, SESSION_TIERS, BUDGET_TIERS } = require('../lib/color');
+const { loadPricing } = require('../lib/pricing');
+const { aggregate } = require('../lib/cost-aggregate');
+const { sumPeriods } = require('../lib/periods');
+const { resolveBudget } = require('../lib/budget');
+const { resolveStateDir } = require('../lib/state');
 
 function parseArgs(argv) {
   const opts = { last: null, since: null, configDir: undefined };
@@ -52,6 +57,7 @@ function truncate(s, width) {
 // built from these so spacing stays in sync.
 const WHEN_W = 11;   // fmtWhen output: 'MM-DD HH:MM'
 const ID_W = 8;      // shortId slice length
+const COST_W = 10;   // '$99999.99' (10 chars; avoids column drift on large totals)
 const GAP = '  ';    // 2-space column separator
 
 function main() {
@@ -67,6 +73,16 @@ function main() {
   // list projects/ once and reuse it for both enumeration and title/recap lookup.
   const dirs = projectDirs(transcriptRoot);
   let rows = listSessions(transcriptRoot, dirs);
+
+  // Recompute spend from raw tokens × LiteLLM prices (never trust Claude's cost).
+  // Full history (no mtime cap) — the viewer can afford the parse.
+  const stateDir = resolveStateDir(source);
+  // Offline like the renderer: a "list sessions" command shouldn't trigger a
+  // network fetch or write pricing.json. The background refresh hook keeps prices
+  // fresh; the viewer uses the cached/bundled snapshot.
+  const pricing = loadPricing(stateDir, { allowFetch: false });
+  const agg = aggregate(transcriptRoot, pricing);
+  const costOf = (id) => { const ps = agg.perSession[id]; return ps ? ps.total : 0; };
 
   if (rows.length === 0) {
     process.stdout.write('no sessions found\n');
@@ -90,23 +106,40 @@ function main() {
     return { ...r, shortId: r.id.slice(0, ID_W), title, recap };
   });
 
-  // The title column starts after when + the short id.
-  const titleCol = WHEN_W + GAP.length + ID_W + GAP.length;
+  // The title column starts after when + the short id + the cost column.
+  const titleCol = WHEN_W + GAP.length + ID_W + GAP.length + COST_W + GAP.length;
   const titleWidth = Math.max(0, termWidth - titleCol);
 
   const out = [];
-  out.push(dim(`${'WHEN'.padEnd(WHEN_W)}${GAP}${'SESSION'.padEnd(ID_W)}${GAP}TITLE / RECAP`));
+  out.push(dim(`${'WHEN'.padEnd(WHEN_W)}${GAP}${'SESSION'.padEnd(ID_W)}${GAP}${'COST'.padEnd(COST_W)}${GAP}TITLE / RECAP`));
 
   for (const v of view) {
     const when = dim(fmtWhen(v.ts));
     const sid = dim(v.shortId.padEnd(ID_W));
+    const cost = costOf(v.id);
+    // ANSI codes inflate string length, so pad the PLAIN text first, then color.
+    const plainCost = (cost > 0 ? '$' + cost.toFixed(2) : '—').padEnd(COST_W);
+    const costCell = cost > 0 ? colorByTier(cost, SESSION_TIERS)(plainCost) : dim(plainCost);
     const titleText = truncate(v.title || '—', titleWidth); // plain (default color)
-    out.push(`${when}${GAP}${sid}${GAP}${titleText}`);
+    out.push(`${when}${GAP}${sid}${GAP}${costCell}${GAP}${titleText}`);
     if (v.recap) {
       const recapText = truncate(v.recap, Math.max(0, termWidth - titleCol - 2));
       out.push(`${' '.repeat(titleCol)}${dim('└ ' + recapText)}`);
     }
   }
+
+  // d/w/m footer: full-history period sums (local-calendar windows), budget-colored.
+  const { budgetOptedOut, monthly: mBudget, daily: dLimit, weekly: wLimit } =
+    resolveBudget(process.env.STATUSLINE_MONTHLY_BUDGET);
+  const per = sumPeriods(agg.perSession, new Date());
+  const tier = (c, limit) => budgetOptedOut ? ((s) => s) : colorByTier(c / limit, BUDGET_TIERS);
+  const money = (c) => '$' + c.toFixed(2);
+  out.push('');
+  out.push(
+    dim('today ') + tier(per.daily, dLimit)(money(per.daily)) + dim('   week ') +
+    tier(per.weekly, wLimit)(money(per.weekly)) + dim('   month ') +
+    tier(per.monthly, mBudget)(money(per.monthly))
+  );
 
   process.stdout.write(out.join('\n') + '\n');
 }
