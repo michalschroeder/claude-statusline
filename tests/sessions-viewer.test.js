@@ -138,3 +138,19 @@ test('viewer: SESSION column stays aligned across rows', async () => {
   // Short ids (first 8 chars) must start at the same column → columns aligned.
   assert.strictEqual(small.indexOf('sessSMAL'), big.indexOf('sessBIG0'));
 });
+
+test('viewer: shows per-session COST column + d/w/m footer', async () => {
+  const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-vc-'));
+  const proj = path.join(configDir, 'projects', 'p');
+  fs.mkdirSync(proj, { recursive: true });
+  const now = new Date().toISOString();
+  fs.writeFileSync(path.join(proj, 'sess1.jsonl'),
+    JSON.stringify({ type: 'assistant', timestamp: now, message: { id: 'm1', model: 'claude-opus-4-8', usage: { input_tokens: 1000000 } } }) + '\n');
+  const xdg = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-vx-'));
+  const out = await runSessions(['--config-dir', configDir], { XDG_STATE_HOME: xdg });
+  fs.rmSync(configDir, { recursive: true, force: true });
+  fs.rmSync(xdg, { recursive: true, force: true });
+  assert.match(out, /COST/);            // header
+  assert.match(out, /\$\d+\.\d{2}/);    // a dollar amount on the row
+  assert.match(out, /today|day|week|month/i); // footer line
+});
