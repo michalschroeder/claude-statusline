@@ -93,7 +93,8 @@ function termWidth() {
 
 function main() {
   const opts = parseArgs(process.argv.slice(2));
-  if (opts.since && sinceToTs(opts.since) === null) {
+  const sinceTs = sinceToTs(opts.since); // null when --since absent or unparseable
+  if (opts.since && sinceTs === null) {
     process.stderr.write('bin/sessions.js: --since requires a YYYY-MM-DD date\n');
     process.exit(1);
   }
@@ -122,7 +123,6 @@ function main() {
 
   // Rows: filter --since, then cap --last (default 10; skipped when --since given
   // without --last). listSessions already returns newest-first.
-  const sinceTs = sinceToTs(opts.since);
   if (sinceTs != null) rows = rows.filter((r) => r.ts >= sinceTs);
   const cap = opts.last != null ? opts.last : (opts.since ? Infinity : 10);
   rows = rows.slice(0, cap);
@@ -133,12 +133,12 @@ function main() {
   // Column geometry (plain-text widths; ANSI applied after).
   const CLOCK_W = 5, REL_W = 8, COST_W = 8, ID_W = 36, MIN_TITLE = 20;
   const ID_LABEL = 'id '; // precedes the session id so its purpose is obvious
-  const GAP = '  ';
-  const leftWidth = 2 + CLOCK_W + GAP.length + REL_W + GAP.length + COST_W + GAP.length; // 29
-  const idBlock = GAP.length + ID_LABEL.length + ID_W; // 41
-  let titleWidth = width - leftWidth - idBlock;
-  const showId = titleWidth >= MIN_TITLE;
-  if (!showId) titleWidth = width - leftWidth;
+  const INDENT = '  ', GAP = '  ';
+  const leftWidth = INDENT.length + CLOCK_W + GAP.length + REL_W + GAP.length + COST_W + GAP.length;
+  const idBlock = GAP.length + ID_LABEL.length + ID_W;
+  const showId = width - leftWidth - idBlock >= MIN_TITLE;
+  const titleWidth = showId ? width - leftWidth - idBlock : width - leftWidth;
+  const recapIndent = ' '.repeat(leftWidth);
 
   const out = [];
   let curDay = null;
@@ -158,13 +158,13 @@ function main() {
     const plainCost = (cost > 0 ? '$' + cost.toFixed(2) : '—').padStart(COST_W);
     const costCell = cost > 0 ? colorByTier(cost, SESSION_TIERS)(plainCost) : dim(plainCost);
     const titleText = truncate(title || '—', titleWidth);
-    let line = `  ${clockCell}${GAP}${relCell}${GAP}${costCell}${GAP}`;
+    let line = `${INDENT}${clockCell}${GAP}${relCell}${GAP}${costCell}${GAP}`;
     if (showId) line += titleText.padEnd(titleWidth) + GAP + dim(ID_LABEL) + cyan(r.id.padStart(ID_W));
     else line += titleText;
     out.push(line);
     if (recap) {
       const recapText = truncate(recap, Math.max(0, width - leftWidth - 2));
-      out.push(`${' '.repeat(leftWidth)}${dim('└ ' + recapText)}`);
+      out.push(`${recapIndent}${dim('└ ' + recapText)}`);
     }
   }
 
