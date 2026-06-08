@@ -32,8 +32,10 @@ resolution: `--config-dir` ?? `CLAUDE_CONFIG_DIR`, the transcript root for `proj
 without `--last` shows all matches), `--config-dir <path>`. Renders day-grouped rows (a dim
 `── Ddd Mmm DD ──` rule per local day) of
 `HH:MM · relative-age · cost · title · full-session-id`; titles/recaps are width-truncated only (no
-redaction). The **full** session id (copy-paste-resumable via `claude --resume <id>`) is right-aligned
-and dropped on terminals too narrow to leave a usable title (< 20 cols). Recaps render as a dim `└` sub-line. No
+redaction). The **full** session id (copy-paste-resumable via `claude --resume <id>`) is right-aligned,
+prefixed with a dim `id ` label and rendered in steel-blue (`cyan` in `lib/color.js`), and dropped on
+terminals too narrow to leave a usable title (< 20 cols). Sessions are separated by a blank line within a
+day group. Recaps render as a dim `└` sub-line. No
 `--all-profiles`. The footer shows today/week/month budget bars (`▓`/`░`, budget-relative coloring) when
 `STATUSLINE_MONTHLY_BUDGET` is set, else a plain `today $X · week $Y · month $Z` line. Terminal width =
 TTY columns, else `COLUMNS`, else 80. Same recomputed costs as the renderer. Subagent

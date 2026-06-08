@@ -54,7 +54,7 @@ test('viewer: row shows clock + relative time + title + recap', async () => {
   assert.match(out, /Address timezone comment/);
   assert.match(out, /Applied 4 reviewer changes/);
   assert.doesNotMatch(out, /disable recaps/);   // disclaimer stripped
-  assert.match(out, /sessAAA1/);                // full id shown on wide terminal
+  assert.match(out, /id +sessAAA1/);            // full id, labeled, shown on wide terminal
 });
 
 test('viewer: title absent → em dash', async () => {

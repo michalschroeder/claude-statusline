@@ -3,7 +3,7 @@
 const path = require('path');
 const os = require('os');
 const { readTitleRecap, projectDirs, listSessions } = require('../lib/transcript');
-const { dim, colorByTier, SESSION_TIERS, BUDGET_TIERS } = require('../lib/color');
+const { dim, cyan, colorByTier, SESSION_TIERS, BUDGET_TIERS } = require('../lib/color');
 const { loadPricing } = require('../lib/pricing');
 const { aggregate } = require('../lib/cost-aggregate');
 const { sumPeriods } = require('../lib/periods');
@@ -132,9 +132,10 @@ function main() {
 
   // Column geometry (plain-text widths; ANSI applied after).
   const CLOCK_W = 5, REL_W = 8, COST_W = 8, ID_W = 36, MIN_TITLE = 20;
+  const ID_LABEL = 'id '; // precedes the session id so its purpose is obvious
   const GAP = '  ';
   const leftWidth = 2 + CLOCK_W + GAP.length + REL_W + GAP.length + COST_W + GAP.length; // 29
-  const idBlock = GAP.length + ID_W; // 38
+  const idBlock = GAP.length + ID_LABEL.length + ID_W; // 41
   let titleWidth = width - leftWidth - idBlock;
   const showId = titleWidth >= MIN_TITLE;
   if (!showId) titleWidth = width - leftWidth;
@@ -148,6 +149,8 @@ function main() {
       curDay = key;
       const label = `── ${dayLabel(r.ts)} `;
       out.push(dim(label + '─'.repeat(Math.max(0, width - label.length))));
+    } else {
+      out.push(''); // blank line between sessions within a day
     }
     const clockCell = dim(clock(r.ts));
     const relCell = dim(relativeTime(nowSec, r.ts).padStart(REL_W));
@@ -156,7 +159,7 @@ function main() {
     const costCell = cost > 0 ? colorByTier(cost, SESSION_TIERS)(plainCost) : dim(plainCost);
     const titleText = truncate(title || '—', titleWidth);
     let line = `  ${clockCell}${GAP}${relCell}${GAP}${costCell}${GAP}`;
-    if (showId) line += titleText.padEnd(titleWidth) + GAP + dim(r.id.padStart(ID_W));
+    if (showId) line += titleText.padEnd(titleWidth) + GAP + dim(ID_LABEL) + cyan(r.id.padStart(ID_W));
     else line += titleText;
     out.push(line);
     if (recap) {
