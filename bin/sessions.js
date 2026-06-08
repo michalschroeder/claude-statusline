@@ -49,8 +49,51 @@ function fmtWhen(ts) {
 }
 
 function truncate(s, width) {
+  if (width <= 0) return '';
   if (s.length <= width) return s;
   return s.slice(0, Math.max(0, width - 1)) + '…';
+}
+
+// '2h ago' style age. nowSec/ts both unix seconds; future clamps to 'just now'.
+function relativeTime(nowSec, ts) {
+  const d = Math.max(0, nowSec - ts);
+  if (d < 60) return 'just now';
+  if (d < 3600) return `${Math.floor(d / 60)}m ago`;
+  if (d < 86400) return `${Math.floor(d / 3600)}h ago`;
+  return `${Math.floor(d / 86400)}d ago`;
+}
+
+const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const pad2 = (n) => String(n).padStart(2, '0');
+
+// Local calendar-day key for grouping rows.
+function dayKey(ts) {
+  const d = new Date(ts * 1000);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+// 'Mon Jun 09' for a day header.
+function dayLabel(ts) {
+  const d = new Date(ts * 1000);
+  return `${DOW[d.getDay()]} ${MON[d.getMonth()]} ${pad2(d.getDate())}`;
+}
+
+// Local HH:MM.
+function clock(ts) {
+  const d = new Date(ts * 1000);
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
+// Filled-cell count for a budget bar of `width` cells (clamped).
+function barFill(spent, limit, width) {
+  if (!(limit > 0)) return 0;
+  return Math.max(0, Math.min(width, Math.round((spent / limit) * width)));
+}
+
+// Terminal width: real TTY wins, else COLUMNS env (piped output / tests), else 80.
+function termWidth() {
+  return process.stdout.columns || parseInt(process.env.COLUMNS, 10) || 80;
 }
 
 // Table layout widths — header, data row, and the title-column offset are all
@@ -144,4 +187,6 @@ function main() {
   process.stdout.write(out.join('\n') + '\n');
 }
 
-main();
+if (require.main === module) main();
+
+module.exports = { relativeTime, dayKey, dayLabel, clock, barFill, termWidth, truncate };
