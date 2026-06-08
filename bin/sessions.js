@@ -42,12 +42,6 @@ function sinceToTs(s) {
   return Math.floor(new Date(+m[1], +m[2] - 1, +m[3]).getTime() / 1000);
 }
 
-function fmtWhen(ts) {
-  const d = new Date(ts * 1000);
-  const p = (n) => String(n).padStart(2, '0');
-  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
-}
-
 function truncate(s, width) {
   if (width <= 0) return '';
   if (s.length <= width) return s;
@@ -96,12 +90,6 @@ function termWidth() {
   return process.stdout.columns || parseInt(process.env.COLUMNS, 10) || 80;
 }
 
-// Table layout widths — header, data row, and the title-column offset are all
-// built from these so spacing stays in sync.
-const WHEN_W = 11;   // fmtWhen output: 'MM-DD HH:MM'
-const ID_W = 8;      // shortId slice length
-const COST_W = 10;   // '$99999.99' (10 chars; avoids column drift on large totals)
-const GAP = '  ';    // 2-space column separator
 
 function main() {
   const opts = parseArgs(process.argv.slice(2));
@@ -139,50 +127,70 @@ function main() {
   const cap = opts.last != null ? opts.last : (opts.since ? Infinity : 10);
   rows = rows.slice(0, cap);
 
-  const termWidth = process.stdout.columns || 80;
+  const width = termWidth();
+  const nowSec = Math.floor(Date.now() / 1000);
 
-  // Resolve title/recap up front so column widths can be sized from the data.
-  // listSessions already gave us each transcript path — readTitleRecap returns
-  // nulls if the file is unreadable, so no existence guard is needed.
-  const view = rows.map((r) => {
-    const { title, recap } = readTitleRecap(r.file);
-    return { ...r, shortId: r.id.slice(0, ID_W), title, recap };
-  });
-
-  // The title column starts after when + the short id + the cost column.
-  const titleCol = WHEN_W + GAP.length + ID_W + GAP.length + COST_W + GAP.length;
-  const titleWidth = Math.max(0, termWidth - titleCol);
+  // Column geometry (plain-text widths; ANSI applied after).
+  const CLOCK_W = 5, REL_W = 8, COST_W = 8, ID_W = 36, MIN_TITLE = 20;
+  const GAP = '  ';
+  const leftWidth = 2 + CLOCK_W + GAP.length + REL_W + GAP.length + COST_W + GAP.length; // 29
+  const idBlock = GAP.length + ID_W; // 38
+  let titleWidth = width - leftWidth - idBlock;
+  const showId = titleWidth >= MIN_TITLE;
+  if (!showId) titleWidth = width - leftWidth;
 
   const out = [];
-  out.push(dim(`${'WHEN'.padEnd(WHEN_W)}${GAP}${'SESSION'.padEnd(ID_W)}${GAP}${'COST'.padEnd(COST_W)}${GAP}TITLE / RECAP`));
-
-  for (const v of view) {
-    const when = dim(fmtWhen(v.ts));
-    const sid = dim(v.shortId.padEnd(ID_W));
-    const cost = costOf(v.id);
-    // ANSI codes inflate string length, so pad the PLAIN text first, then color.
-    const plainCost = (cost > 0 ? '$' + cost.toFixed(2) : '—').padEnd(COST_W);
+  let curDay = null;
+  for (const r of rows) {
+    const { title, recap } = readTitleRecap(r.file);
+    const key = dayKey(r.ts);
+    if (key !== curDay) {
+      curDay = key;
+      const label = `── ${dayLabel(r.ts)} `;
+      out.push(dim(label + '─'.repeat(Math.max(0, width - label.length))));
+    }
+    const clockCell = dim(clock(r.ts));
+    const relCell = dim(relativeTime(nowSec, r.ts).padStart(REL_W));
+    const cost = costOf(r.id);
+    const plainCost = (cost > 0 ? '$' + cost.toFixed(2) : '—').padStart(COST_W);
     const costCell = cost > 0 ? colorByTier(cost, SESSION_TIERS)(plainCost) : dim(plainCost);
-    const titleText = truncate(v.title || '—', titleWidth); // plain (default color)
-    out.push(`${when}${GAP}${sid}${GAP}${costCell}${GAP}${titleText}`);
-    if (v.recap) {
-      const recapText = truncate(v.recap, Math.max(0, termWidth - titleCol - 2));
-      out.push(`${' '.repeat(titleCol)}${dim('└ ' + recapText)}`);
+    const titleText = truncate(title || '—', titleWidth);
+    let line = `  ${clockCell}${GAP}${relCell}${GAP}${costCell}${GAP}`;
+    if (showId) line += titleText.padEnd(titleWidth) + GAP + dim(r.id.padStart(ID_W));
+    else line += titleText;
+    out.push(line);
+    if (recap) {
+      const recapText = truncate(recap, Math.max(0, width - leftWidth - 2));
+      out.push(`${' '.repeat(leftWidth)}${dim('└ ' + recapText)}`);
     }
   }
 
-  // d/w/m footer: full-history period sums (local-calendar windows), budget-colored.
+  // Footer: budget bars when a budget is set, else a plain d/w/m line.
   const { budgetOptedOut, monthly: mBudget, daily: dLimit, weekly: wLimit } =
     resolveBudget(process.env.STATUSLINE_MONTHLY_BUDGET);
   const per = sumPeriods(agg.perSession, new Date());
-  const tier = (c, limit) => budgetOptedOut ? ((s) => s) : colorByTier(c / limit, BUDGET_TIERS);
   const money = (c) => '$' + c.toFixed(2);
   out.push('');
-  out.push(
-    dim('today ') + tier(per.daily, dLimit)(money(per.daily)) + dim('   week ') +
-    tier(per.weekly, wLimit)(money(per.weekly)) + dim('   month ') +
-    tier(per.monthly, mBudget)(money(per.monthly))
-  );
+  if (budgetOptedOut) {
+    out.push(
+      dim('today ') + money(per.daily) + dim(' · week ') + money(per.weekly) +
+      dim(' · month ') + money(per.monthly)
+    );
+  } else {
+    const BAR_W = 8;
+    const periods = [
+      ['today', per.daily, dLimit],
+      ['week', per.weekly, wLimit],
+      ['month', per.monthly, mBudget],
+    ];
+    const amtW = Math.max(...periods.map(([, s]) => money(s).length));
+    for (const [label, spent, limit] of periods) {
+      const ratio = limit > 0 ? spent / limit : 0;
+      const fill = barFill(spent, limit, BAR_W);
+      const bar = colorByTier(ratio, BUDGET_TIERS)('▓'.repeat(fill)) + dim('░'.repeat(BAR_W - fill));
+      out.push(`${dim(label.padEnd(5))}  ${bar}  ${money(spent).padStart(amtW)}${dim(' / ' + money(limit))}`);
+    }
+  }
 
   process.stdout.write(out.join('\n') + '\n');
 }
