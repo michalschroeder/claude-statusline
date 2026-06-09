@@ -208,15 +208,11 @@ function main() {
   const dirs = projectDirs(transcriptRoot);
   let rows = listSessions(transcriptRoot, dirs);
 
-  // Recompute spend from raw tokens × LiteLLM prices (never trust Claude's cost).
-  // Full history (no mtime cap) — the viewer can afford the parse.
   const stateDir = resolveStateDir(source);
   // Offline like the renderer: a "list sessions" command shouldn't trigger a
   // network fetch or write pricing.json. The background refresh hook keeps prices
   // fresh; the viewer uses the cached/bundled snapshot.
   const pricing = loadPricing(stateDir, { allowFetch: false });
-  const agg = aggregate(transcriptRoot, pricing);
-  const costOf = (id) => { const ps = agg.perSession[id]; return ps ? ps.total : 0; };
 
   if (opts.detail !== undefined) {
     const matches = rows.filter((r) => r.id.startsWith(opts.detail));
@@ -242,6 +238,11 @@ function main() {
     process.stdout.write(renderDetail(detail, row.id, row.ts, title, recap, termWidth()));
     return;
   }
+
+  // Recompute spend from raw tokens × LiteLLM prices (never trust Claude's cost);
+  // only the list+footer path below needs it, so it runs after the detail return.
+  const agg = aggregate(transcriptRoot, pricing);
+  const costOf = (id) => { const ps = agg.perSession[id]; return ps ? ps.total : 0; };
 
   // Period totals + budget (footer).
   const budget = resolveBudget(process.env.STATUSLINE_MONTHLY_BUDGET);
