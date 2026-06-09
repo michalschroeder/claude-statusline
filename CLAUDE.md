@@ -40,21 +40,8 @@ incl. each tool-use round; the four token columns are the per-turn sums of fresh
 / cache-write / output, where **cache-rd** dominates the cost, which is why a short late prompt over
 a large context can cost more than a long early one; tools = the turn's top-3 `tool_use` tally —
 plus a `+ $X across N subagents` line), and `BY AGENT` (only when subagents exist; each agent is
-labelled by its task — the subagent's first prompt, falling back to the `agent-<hash>` stem). A
-`sessions.js <prefix> --analyze` flag swaps the rendered table for a full-fidelity **JSON** payload meant
-for an LLM/agent to reason about *why* a session was costly: raw integer tokens (no compaction),
-untruncated prompts, full tool tallies, a `legend` stating the cost model, plus `turns` (main-session
-prompts in **execution** order, each with `kind`/`avgContext`/`peakContext`), `calls` (every billed
-assistant call, chronological, each call's `tokens.cacheRead` = the context size at that step), and a
-derived `summary` — `durationMs`, `contextGrowth` (per-step cacheRead: firstCall + 4 quartile averages +
-peak, the honest growth curve since a turn's `tokens.cacheRead` is a per-step **sum**, not context size),
-`byTurnKind` (cost/token totals grouped by `turnKind` — `skill` / `subagent-orchestration` /
-`user` / `session-start` — so "how much did all the review passes cost" is one lookup), `toolTally`
-(canonical main-session tool counts — consumers that re-aggregate `calls[].tools` tend to inflate it),
-`highContextCost` (calls + cost spent above 200k context — the spend a `/compact` would have cut), and
-`contextResets` (how many times context was cleared, a step-to-step cacheRead drop > 100k). Backed by the
-pure `lib/session-detail.js` (`buildDetail`, which now also returns `turns`/`perCall`/`summary`), which
-reuses the same dedup as
+labelled by its task — the subagent's first prompt, falling back to the `agent-<hash>` stem). Backed by the
+pure `lib/session-detail.js` (`buildDetail`), which reuses the same dedup as
 `lib/cost-aggregate.js` so the detail total equals the list COST, and by `calculateCostBreakdown` in
 `lib/cost-compute.js` (the itemized form of `calculateCost`). Renders day-grouped rows (a dim
 `── Ddd Mmm DD ──` rule per local day) of
@@ -63,10 +50,7 @@ redaction). The **full** session id (copy-paste-resumable via `claude --resume <
 prefixed with a dim `id ` label and rendered in steel-blue (`cyan` in `lib/color.js`), and dropped on
 terminals too narrow to leave a usable title (< 20 cols). Sessions are separated by a blank line within a
 day group. Recaps render as a dim `└` sub-line. No
-`--all-profiles`. In **list** mode (no prefix) `--analyze` swaps the rendered list for a JSON payload for
-agents: `{ sessions: [{ session, title, recap, startedAt (ISO), cost }], periods: {today,week,month},
-monthlyBudget }` — sessions in the same newest-first order, honoring `--last`/`--since`, valid JSON even on
-an empty store. (With a prefix `--analyze` is the detail payload above.) The footer shows today/week/month budget bars (`▓`/`░`, budget-relative coloring) when
+`--all-profiles`. The footer shows today/week/month budget bars (`▓`/`░`, budget-relative coloring) when
 `STATUSLINE_MONTHLY_BUDGET` is set, else a plain `today $X · week $Y · month $Z` line. Terminal width =
 TTY columns, else `COLUMNS`, else 80. Same recomputed costs as the renderer. Subagent
 transcripts are excluded from the **session listing** (they're not user sessions) but their cost IS

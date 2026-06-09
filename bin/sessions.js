@@ -13,7 +13,7 @@ const { resolveBudget } = require('../lib/budget');
 const { resolveStateDir } = require('../lib/state');
 
 function parseArgs(argv) {
-  const opts = { last: null, since: null, configDir: undefined, detail: undefined, analyze: false };
+  const opts = { last: null, since: null, configDir: undefined, detail: undefined };
   const needValue = (flag, i) => {
     if (i + 1 >= argv.length || argv[i + 1].startsWith('--')) {
       process.stderr.write(`bin/sessions.js: ${flag} requires a value\n`);
@@ -32,7 +32,6 @@ function parseArgs(argv) {
     }
     else if (a === '--since') { opts.since = needValue('--since', i); i++; }
     else if (a === '--config-dir') { opts.configDir = needValue('--config-dir', i); i++; }
-    else if (a === '--analyze') { opts.analyze = true; } // emit JSON: full-fidelity detail (with a session prefix) or the session list (without)
     else if (a.startsWith('--')) { /* unknown flag: ignored, as before */ }
     else if (opts.detail === undefined) { opts.detail = a; } // first bare token = session prefix
     else {
@@ -194,55 +193,6 @@ function renderDetail(detail, sessionId, when, title, recap, width) {
   return out.join('\n') + '\n';
 }
 
-// Full-fidelity JSON for an LLM/agent to reason about *why* a session was costly.
-// Raw integer tokens, untruncated prompts, full tool tallies, execution-ordered
-// turns + per-call records. The `legend` states the cost model so the consumer can
-// interpret the numbers without re-deriving it.
-function analysisPayload(detail, id, ts, title, recap) {
-  return {
-    session: id,
-    title: title || null,
-    recap: recap || null,
-    startedAt: new Date(ts * 1000).toISOString(),
-    totalCost: detail.total,
-    steps: detail.calls,
-    legend:
-      'Cost ≈ context-size × steps, recomputed from raw tokens × LiteLLM prices (not Claude\'s reported cost). ' +
-      'tokens.cacheRead = re-reading accumulated context and is the dominant driver; tokens.input (fresh) is usually negligible. ' +
-      'turns and calls are in EXECUTION order. NOTE: a turn\'s tokens.cacheRead is a SUM across its steps, NOT the context size — use turn.avgContext / turn.peakContext and summary.contextGrowth (per-step cacheRead) for the real growth curve. ' +
-      'A cacheWrite spike usually means the parent re-cached its whole context (e.g. on a subagent return). ' +
-      'Use summary.byTurnKind for cost per kind of work, summary.toolTally for the canonical tool counts (do NOT re-aggregate calls[].tools — that over-counts), ' +
-      'summary.highContextCost for the spend above 200k context (what a /compact would have cut), and summary.contextResets for how many times context was cleared.',
-    components: detail.components,
-    summary: detail.summary,
-    byModel: detail.byModel,
-    byAgent: detail.byAgent,
-    subagents: { total: detail.subagentTotal, count: detail.subagentCount },
-    turns: detail.turns,
-    calls: detail.perCall,
-  };
-}
-
-// Session list as JSON for an LLM/agent: one record per session (post --since/--last
-// filtering, newest-first like the rendered list), plus the same today/week/month
-// period totals the footer shows. Costs are the recomputed spend (not Claude's).
-function listPayload(rows, costOf, readTR, per, budget) {
-  return {
-    sessions: rows.map((r) => {
-      const { title, recap } = readTR(r.file);
-      return {
-        session: r.id,
-        title: title || null,
-        recap: recap || null,
-        startedAt: new Date(r.ts * 1000).toISOString(),
-        cost: costOf(r.id),
-      };
-    }),
-    periods: { today: per.daily, week: per.weekly, month: per.monthly },
-    monthlyBudget: budget.budgetOptedOut ? null : budget.monthly,
-  };
-}
-
 function main() {
   const opts = parseArgs(process.argv.slice(2));
   const sinceTs = sinceToTs(opts.since); // null when --since absent or unparseable
@@ -289,22 +239,15 @@ function main() {
     } catch {}
     const detail = buildDetail(row.file, subFiles, pricing);
     const { title, recap } = readTitleRecap(row.file);
-    if (opts.analyze) {
-      process.stdout.write(JSON.stringify(analysisPayload(detail, row.id, row.ts, title, recap), null, 2) + '\n');
-    } else {
-      process.stdout.write(renderDetail(detail, row.id, row.ts, title, recap, termWidth()));
-    }
+    process.stdout.write(renderDetail(detail, row.id, row.ts, title, recap, termWidth()));
     return;
   }
 
-  // Period totals + budget (footer in text mode, top-level fields in JSON mode).
+  // Period totals + budget (footer).
   const budget = resolveBudget(process.env.STATUSLINE_MONTHLY_BUDGET);
   const per = sumPeriods(agg.perSession, new Date());
-  const emitJson = (rs) => process.stdout.write(
-    JSON.stringify(listPayload(rs, costOf, readTitleRecap, per, budget), null, 2) + '\n');
 
   if (rows.length === 0) { // truly-empty store (no transcripts at all)
-    if (opts.analyze) { emitJson(rows); return; }
     process.stdout.write('no sessions found\n');
     return;
   }
@@ -314,8 +257,6 @@ function main() {
   if (sinceTs != null) rows = rows.filter((r) => r.ts >= sinceTs);
   const cap = opts.last != null ? opts.last : (opts.since ? Infinity : 10);
   rows = rows.slice(0, cap);
-
-  if (opts.analyze) { emitJson(rows); return; } // JSON list for agents (valid even when empty)
 
   if (rows.length === 0) { // sessions exist, but --since/--last excluded them all
     process.stdout.write('no sessions match\n');
