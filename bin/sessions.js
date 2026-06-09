@@ -32,7 +32,7 @@ function parseArgs(argv) {
     }
     else if (a === '--since') { opts.since = needValue('--since', i); i++; }
     else if (a === '--config-dir') { opts.configDir = needValue('--config-dir', i); i++; }
-    else if (a === '--analyze') { opts.analyze = true; } // emit full-fidelity JSON for deep cost analysis (with a session prefix)
+    else if (a === '--analyze') { opts.analyze = true; } // emit JSON: full-fidelity detail (with a session prefix) or the session list (without)
     else if (a.startsWith('--')) { /* unknown flag: ignored, as before */ }
     else if (opts.detail === undefined) { opts.detail = a; } // first bare token = session prefix
     else {
@@ -223,6 +223,26 @@ function analysisPayload(detail, id, ts, title, recap) {
   };
 }
 
+// Session list as JSON for an LLM/agent: one record per session (post --since/--last
+// filtering, newest-first like the rendered list), plus the same today/week/month
+// period totals the footer shows. Costs are the recomputed spend (not Claude's).
+function listPayload(rows, costOf, readTR, per, budget) {
+  return {
+    sessions: rows.map((r) => {
+      const { title, recap } = readTR(r.file);
+      return {
+        session: r.id,
+        title: title || null,
+        recap: recap || null,
+        startedAt: new Date(r.ts * 1000).toISOString(),
+        cost: costOf(r.id),
+      };
+    }),
+    periods: { today: per.daily, week: per.weekly, month: per.monthly },
+    monthlyBudget: budget.budgetOptedOut ? null : budget.monthly,
+  };
+}
+
 function main() {
   const opts = parseArgs(process.argv.slice(2));
   const sinceTs = sinceToTs(opts.since); // null when --since absent or unparseable
@@ -277,7 +297,14 @@ function main() {
     return;
   }
 
-  if (rows.length === 0) {
+  // Period totals + budget (footer in text mode, top-level fields in JSON mode).
+  const budget = resolveBudget(process.env.STATUSLINE_MONTHLY_BUDGET);
+  const per = sumPeriods(agg.perSession, new Date());
+  const emitJson = (rs) => process.stdout.write(
+    JSON.stringify(listPayload(rs, costOf, readTitleRecap, per, budget), null, 2) + '\n');
+
+  if (rows.length === 0) { // truly-empty store (no transcripts at all)
+    if (opts.analyze) { emitJson(rows); return; }
     process.stdout.write('no sessions found\n');
     return;
   }
@@ -287,6 +314,8 @@ function main() {
   if (sinceTs != null) rows = rows.filter((r) => r.ts >= sinceTs);
   const cap = opts.last != null ? opts.last : (opts.since ? Infinity : 10);
   rows = rows.slice(0, cap);
+
+  if (opts.analyze) { emitJson(rows); return; } // JSON list for agents (valid even when empty)
 
   if (rows.length === 0) { // sessions exist, but --since/--last excluded them all
     process.stdout.write('no sessions match\n');
@@ -335,9 +364,7 @@ function main() {
   }
 
   // Footer: budget bars when a budget is set, else a plain d/w/m line.
-  const { budgetOptedOut, monthly: mBudget, daily: dLimit, weekly: wLimit } =
-    resolveBudget(process.env.STATUSLINE_MONTHLY_BUDGET);
-  const per = sumPeriods(agg.perSession, new Date());
+  const { budgetOptedOut, monthly: mBudget, daily: dLimit, weekly: wLimit } = budget;
   out.push('');
   if (budgetOptedOut) {
     out.push(

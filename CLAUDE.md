@@ -63,7 +63,10 @@ redaction). The **full** session id (copy-paste-resumable via `claude --resume <
 prefixed with a dim `id ` label and rendered in steel-blue (`cyan` in `lib/color.js`), and dropped on
 terminals too narrow to leave a usable title (< 20 cols). Sessions are separated by a blank line within a
 day group. Recaps render as a dim `└` sub-line. No
-`--all-profiles`. The footer shows today/week/month budget bars (`▓`/`░`, budget-relative coloring) when
+`--all-profiles`. In **list** mode (no prefix) `--analyze` swaps the rendered list for a JSON payload for
+agents: `{ sessions: [{ session, title, recap, startedAt (ISO), cost }], periods: {today,week,month},
+monthlyBudget }` — sessions in the same newest-first order, honoring `--last`/`--since`, valid JSON even on
+an empty store. (With a prefix `--analyze` is the detail payload above.) The footer shows today/week/month budget bars (`▓`/`░`, budget-relative coloring) when
 `STATUSLINE_MONTHLY_BUDGET` is set, else a plain `today $X · week $Y · month $Z` line. Terminal width =
 TTY columns, else `COLUMNS`, else 80. Same recomputed costs as the renderer. Subagent
 transcripts are excluded from the **session listing** (they're not user sessions) but their cost IS
