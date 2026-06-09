@@ -113,6 +113,28 @@ test('buildDetail: topPrompts carry ctx/out tokens and a tool tally', () => {
   assert.deepEqual(p.tools, [['Bash', 3], ['Read', 1], ['Edit', 1]]); // desc by count
 });
 
+test('buildDetail: turns + perCall keep execution order and raw token fidelity', () => {
+  const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-sdo-'));
+  tmp.push(cfg);
+  const main = path.join(cfg, 'projects', 'p', 'sessORD1.jsonl');
+  writeJsonl(main, [
+    userPrompt('first'),
+    asst('m1', { input_tokens: 1000, output_tokens: 200, cache_read_input_tokens: 40000 }),
+    userPrompt('second'),
+    asst('m2', { input_tokens: 1000, output_tokens: 300, cache_read_input_tokens: 900000 }), // context ballooned
+  ]);
+  const detail = buildDetail(main, [], pricing());
+  // turns in EXECUTION order (not cost) — second is costlier but stays second
+  assert.deepEqual(detail.turns.map((t) => t.prompt), ['first', 'second']);
+  assert.equal(detail.turns[1].tokens.cacheRead, 900000); // raw integer, not compacted
+  // perCall is one record per billed call, chronological, with raw per-call ctx
+  assert.equal(detail.perCall.length, 2);
+  assert.equal(detail.perCall[0].tokens.cacheRead, 40000);
+  assert.equal(detail.perCall[1].tokens.cacheRead, 900000);
+  assert.equal(detail.perCall[0].prompt, 'first');
+  assert.ok(detail.perCall[1].cost > detail.perCall[0].cost);
+});
+
 test('buildDetail: subagent cost split out', () => {
   const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-sd4-'));
   tmp.push(cfg);

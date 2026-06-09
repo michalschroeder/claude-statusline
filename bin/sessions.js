@@ -13,7 +13,7 @@ const { resolveBudget } = require('../lib/budget');
 const { resolveStateDir } = require('../lib/state');
 
 function parseArgs(argv) {
-  const opts = { last: null, since: null, configDir: undefined, detail: undefined };
+  const opts = { last: null, since: null, configDir: undefined, detail: undefined, analyze: false };
   const needValue = (flag, i) => {
     if (i + 1 >= argv.length || argv[i + 1].startsWith('--')) {
       process.stderr.write(`bin/sessions.js: ${flag} requires a value\n`);
@@ -32,6 +32,7 @@ function parseArgs(argv) {
     }
     else if (a === '--since') { opts.since = needValue('--since', i); i++; }
     else if (a === '--config-dir') { opts.configDir = needValue('--config-dir', i); i++; }
+    else if (a === '--analyze') { opts.analyze = true; } // emit full-fidelity JSON for deep cost analysis (with a session prefix)
     else if (a.startsWith('--')) { /* unknown flag: ignored, as before */ }
     else if (opts.detail === undefined) { opts.detail = a; } // first bare token = session prefix
     else {
@@ -193,6 +194,32 @@ function renderDetail(detail, sessionId, when, title, recap, width) {
   return out.join('\n') + '\n';
 }
 
+// Full-fidelity JSON for an LLM/agent to reason about *why* a session was costly.
+// Raw integer tokens, untruncated prompts, full tool tallies, execution-ordered
+// turns + per-call records. The `legend` states the cost model so the consumer can
+// interpret the numbers without re-deriving it.
+function analysisPayload(detail, id, ts, title, recap) {
+  return {
+    session: id,
+    title: title || null,
+    recap: recap || null,
+    startedAt: new Date(ts * 1000).toISOString(),
+    totalCost: detail.total,
+    steps: detail.calls,
+    legend:
+      'Cost ≈ context-size × steps, recomputed from raw tokens × LiteLLM prices (not Claude\'s reported cost). ' +
+      'tokens.cacheRead = re-reading accumulated context and is the dominant driver; tokens.input (fresh) is usually negligible. ' +
+      'turns and calls are in EXECUTION order — watch tokens.cacheRead climb to find where a /compact or session split would have paid off. ' +
+      'Each call\'s cacheRead is the context size at that step.',
+    components: detail.components,
+    byModel: detail.byModel,
+    byAgent: detail.byAgent,
+    subagents: { total: detail.subagentTotal, count: detail.subagentCount },
+    turns: detail.turns,
+    calls: detail.perCall,
+  };
+}
+
 function main() {
   const opts = parseArgs(process.argv.slice(2));
   const sinceTs = sinceToTs(opts.since); // null when --since absent or unparseable
@@ -239,7 +266,11 @@ function main() {
     } catch {}
     const detail = buildDetail(row.file, subFiles, pricing);
     const { title, recap } = readTitleRecap(row.file);
-    process.stdout.write(renderDetail(detail, row.id, row.ts, title, recap, termWidth()));
+    if (opts.analyze) {
+      process.stdout.write(JSON.stringify(analysisPayload(detail, row.id, row.ts, title, recap), null, 2) + '\n');
+    } else {
+      process.stdout.write(renderDetail(detail, row.id, row.ts, title, recap, termWidth()));
+    }
     return;
   }
 

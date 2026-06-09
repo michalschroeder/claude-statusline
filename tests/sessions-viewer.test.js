@@ -196,6 +196,29 @@ test('viewer detail: <prefix> renders the section headers + total', async () => 
   assert.match(out, /\$\d+\.\d{2} total/);
 });
 
+test('viewer detail: --analyze emits full-fidelity JSON', async () => {
+  const p = mkProfile();
+  const now = new Date().toISOString();
+  writeTranscript(p.configDir, 'sessANL01', [
+    { type: 'ai-title', aiTitle: 'Analyze me' },
+    { type: 'user', message: { role: 'user', content: 'do the thing' } },
+    { type: 'assistant', timestamp: now, message: { id: 'a1', model: 'claude-opus-4-8', usage: { input_tokens: 1000000, output_tokens: 1000 } } },
+  ]);
+  const xdg = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-anl-'));
+  tmpDirs.push(xdg);
+  const out = await runSessions(['--config-dir', p.configDir, 'sessANL', '--analyze'], wide({ XDG_STATE_HOME: xdg }));
+  const j = JSON.parse(out); // must be valid JSON, not the rendered table
+  assert.strictEqual(j.session, 'sessANL01');
+  assert.strictEqual(j.title, 'Analyze me');
+  assert.ok(j.totalCost > 0);
+  assert.strictEqual(j.steps, 1);
+  assert.match(j.legend, /cacheRead/);
+  assert.ok(Array.isArray(j.turns) && j.turns.length === 1);
+  assert.strictEqual(j.turns[0].prompt, 'do the thing');
+  assert.ok(Array.isArray(j.calls) && j.calls.length === 1);
+  assert.strictEqual(j.calls[0].tokens.input, 1000000); // raw integer preserved
+});
+
 test('viewer detail: unknown prefix → exit 1', async () => {
   const p = mkProfile();
   writeTranscript(p.configDir, 'sessXYZ01', [{ type: 'ai-title', aiTitle: 'x' }]);
