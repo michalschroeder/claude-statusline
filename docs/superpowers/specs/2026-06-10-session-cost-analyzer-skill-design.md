@@ -31,7 +31,8 @@ outside itself** — every script, lib, data file and asset it needs is bundled.
 
 ```
 .agents/skills/session-cost-analyzer/
-  SKILL.md                     # frontmatter (name/description) + agent workflow
+  SKILL.md                     # frontmatter (name/description) + workflow, < 100 lines
+  REFERENCE.md                 # cost-interpretation model (split out to keep SKILL.md lean)
   scripts/
     analyze.js                 # JSON-only entry; require('./lib/...')
     lib/                       # vendored from ../../../../lib (8 files)
@@ -69,7 +70,22 @@ The vendored libs are copied as-is except for `pricing.js`'s one-line `BUNDLED` 
 (`__dirname/../data` → `__dirname/../../data`), since `data/` lives at the skill root while `lib/`
 lives under `scripts/`. The only new code is `analyze.js` (a trim of `bin/sessions.js`).
 
-## SKILL.md workflow
+## SKILL.md — frontmatter
+
+```yaml
+name: session-cost-analyzer
+description: >-
+  Analyze why a Claude Code session was expensive — break down its cost by token type,
+  model, turn, and subagent, and produce an HTML report. Use when the user asks where a
+  session's cost/tokens went, why a session was costly, to analyze/audit token or dollar
+  spend, to list recent sessions by cost, or mentions session cost, /compact savings, or
+  context growth.
+```
+
+Third person, < 1024 chars, first sentence = capability, second = "Use when…" triggers. Per the
+write-a-skill checklist.
+
+## SKILL.md — workflow (kept under 100 lines; cost model lives in `REFERENCE.md`)
 
 1. **Select.** If the skill arg is a session id/prefix → go straight to detail. Otherwise run
    `list`, narrate recent sessions inline (`title · $cost · age`), ask the user to pick.
@@ -78,7 +94,7 @@ lives under `scripts/`. The only new code is `analyze.js` (a trim of `bin/sessio
    `legend`. **Never re-aggregate `calls[]`** — the documented traps: hand-tallying tools
    over-counts ~3×, cherry-picking one early call invents false "10× growth". The script already
    precomputes the honest numbers; use them.
-3. **Interpret** using the cost model + the baked-in learning (below).
+3. **Interpret** using the cost model in [`REFERENCE.md`](#referencemd--cost-interpretation).
 4. **Output.**
    - Narrate the cost story inline.
    - Generate an HTML report by filling `assets/report-template.html` from the JSON: where-it-went
@@ -86,7 +102,10 @@ lives under `scripts/`. The only new code is `analyze.js` (a trim of `bin/sessio
      "what a /compact would have saved" figure. Write to `./session-cost-<shortid>.html` by default;
      honor a user-supplied path.
 
-## Baked-in interpretation guidance (goes in SKILL.md verbatim)
+## REFERENCE.md — cost interpretation
+
+Split out of SKILL.md (it is reference material, not workflow) to keep SKILL.md lean and under 100
+lines per the write-a-skill rule. SKILL.md links to it one level deep. Content:
 
 > **Cost ≈ context-size × steps. Subagents are cheap; bloated MAIN-session context is the real cost.**
 >
