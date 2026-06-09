@@ -211,6 +211,44 @@ test('buildDetail: subagent label falls back to the agent stem when it has no pr
   assert.equal(detail.byAgent.find((a) => a.name === 'agent-z9').label, 'agent-z9');
 });
 
+test('buildDetail: repeated identical prompt text stays two distinct turns', () => {
+  const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-sddup-'));
+  tmp.push(cfg);
+  const main = path.join(cfg, 'projects', 'p', 'sessDUP1.jsonl');
+  writeJsonl(main, [
+    userPrompt('continue'),
+    asst('m1', { input_tokens: 1000, output_tokens: 200, cache_read_input_tokens: 40000 }),
+    userPrompt('continue'),   // same text, separate submission
+    asst('m2', { input_tokens: 1000, output_tokens: 300, cache_read_input_tokens: 900000 }),
+  ]);
+  const detail = buildDetail(main, [], pricing());
+  // Two turns, not one merged row — each with its own cost and step count.
+  assert.equal(detail.turns.length, 2);
+  assert.deepEqual(detail.turns.map((t) => t.prompt), ['continue', 'continue']);
+  assert.equal(detail.turns[0].steps, 1);
+  assert.equal(detail.turns[1].steps, 1);
+  assert.equal(detail.topPrompts.length, 2);
+  // The second turn (ballooned context) is the costlier of the two.
+  assert.ok(detail.turns[1].cost > detail.turns[0].cost);
+});
+
+test('buildDetail: undated billable call is dropped (parity with list COST)', () => {
+  const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-sdnots-'));
+  tmp.push(cfg);
+  const id = 'sessNOTS1';
+  const main = path.join(cfg, 'projects', 'p', `${id}.jsonl`);
+  writeJsonl(main, [
+    userPrompt('work'),
+    asst('m1', { input_tokens: 1000, output_tokens: 200, cache_read_input_tokens: 40000 }), // dated
+    { type: 'assistant', message: { id: 'm2', model: MODEL, usage: { input_tokens: 9999, output_tokens: 9999 } } }, // no timestamp
+  ], '2026-06-09T01:00:00Z');
+  const detail = buildDetail(main, [], pricing());
+  // Only the dated call is counted; the undated one is excluded, just like aggregate.
+  assert.equal(detail.calls, 1);
+  const agg = aggregate(cfg, pricing());
+  assert.equal(detail.total.toFixed(8), agg.perSession[id].total.toFixed(8));
+});
+
 test('buildDetail: empty/unbilled session → zeros, no crash', () => {
   const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-sd5-'));
   tmp.push(cfg);
