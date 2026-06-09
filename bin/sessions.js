@@ -3,7 +3,7 @@
 const path = require('path');
 const os = require('os');
 const { readTitleRecap, projectDirs, listSessions } = require('../lib/transcript');
-const { dim, colorByTier, SESSION_TIERS, BUDGET_TIERS } = require('../lib/color');
+const { dim, cyan, colorByTier, SESSION_TIERS, BUDGET_TIERS } = require('../lib/color');
 const { loadPricing } = require('../lib/pricing');
 const { aggregate } = require('../lib/cost-aggregate');
 const { sumPeriods } = require('../lib/periods');
@@ -42,27 +42,59 @@ function sinceToTs(s) {
   return Math.floor(new Date(+m[1], +m[2] - 1, +m[3]).getTime() / 1000);
 }
 
-function fmtWhen(ts) {
-  const d = new Date(ts * 1000);
-  const p = (n) => String(n).padStart(2, '0');
-  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
-}
-
 function truncate(s, width) {
+  if (width <= 0) return '';
   if (s.length <= width) return s;
   return s.slice(0, Math.max(0, width - 1)) + '…';
 }
 
-// Table layout widths — header, data row, and the title-column offset are all
-// built from these so spacing stays in sync.
-const WHEN_W = 11;   // fmtWhen output: 'MM-DD HH:MM'
-const ID_W = 8;      // shortId slice length
-const COST_W = 10;   // '$99999.99' (10 chars; avoids column drift on large totals)
-const GAP = '  ';    // 2-space column separator
+// '2h ago' style age. nowSec/ts both unix seconds; future clamps to 'just now'.
+function relativeTime(nowSec, ts) {
+  const d = Math.max(0, nowSec - ts);
+  if (d < 60) return 'just now';
+  if (d < 3600) return `${Math.floor(d / 60)}m ago`;
+  if (d < 86400) return `${Math.floor(d / 3600)}h ago`;
+  return `${Math.floor(d / 86400)}d ago`;
+}
+
+const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const pad2 = (n) => String(n).padStart(2, '0');
+
+// Local calendar-day key for grouping rows.
+function dayKey(ts) {
+  const d = new Date(ts * 1000);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+// 'Mon Jun 09' for a day header.
+function dayLabel(ts) {
+  const d = new Date(ts * 1000);
+  return `${DOW[d.getDay()]} ${MON[d.getMonth()]} ${pad2(d.getDate())}`;
+}
+
+// Local HH:MM.
+function clock(ts) {
+  const d = new Date(ts * 1000);
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
+// Filled-cell count for a budget bar of `width` cells (clamped).
+function barFill(spent, limit, width) {
+  if (!(limit > 0)) return 0;
+  return Math.max(0, Math.min(width, Math.round((spent / limit) * width)));
+}
+
+// Terminal width: real TTY wins, else COLUMNS env (piped output / tests), else 80.
+function termWidth() {
+  return process.stdout.columns || parseInt(process.env.COLUMNS, 10) || 80;
+}
+
 
 function main() {
   const opts = parseArgs(process.argv.slice(2));
-  if (opts.since && sinceToTs(opts.since) === null) {
+  const sinceTs = sinceToTs(opts.since); // null when --since absent or unparseable
+  if (opts.since && sinceTs === null) {
     process.stderr.write('bin/sessions.js: --since requires a YYYY-MM-DD date\n');
     process.exit(1);
   }
@@ -91,57 +123,86 @@ function main() {
 
   // Rows: filter --since, then cap --last (default 10; skipped when --since given
   // without --last). listSessions already returns newest-first.
-  const sinceTs = sinceToTs(opts.since);
   if (sinceTs != null) rows = rows.filter((r) => r.ts >= sinceTs);
   const cap = opts.last != null ? opts.last : (opts.since ? Infinity : 10);
   rows = rows.slice(0, cap);
 
-  const termWidth = process.stdout.columns || 80;
+  if (rows.length === 0) { // sessions exist, but --since/--last excluded them all
+    process.stdout.write('no sessions match\n');
+    return;
+  }
 
-  // Resolve title/recap up front so column widths can be sized from the data.
-  // listSessions already gave us each transcript path — readTitleRecap returns
-  // nulls if the file is unreadable, so no existence guard is needed.
-  const view = rows.map((r) => {
-    const { title, recap } = readTitleRecap(r.file);
-    return { ...r, shortId: r.id.slice(0, ID_W), title, recap };
-  });
+  const width = termWidth();
+  const nowSec = Math.floor(Date.now() / 1000);
 
-  // The title column starts after when + the short id + the cost column.
-  const titleCol = WHEN_W + GAP.length + ID_W + GAP.length + COST_W + GAP.length;
-  const titleWidth = Math.max(0, termWidth - titleCol);
+  // Column geometry (plain-text widths; ANSI applied after).
+  const CLOCK_W = 5, REL_W = 8, COST_W = 10, ID_W = 36, MIN_TITLE = 20; // COST_W fits '$99999.99' without column drift
+  const ID_LABEL = 'id '; // precedes the session id so its purpose is obvious
+  const INDENT = '  ', GAP = '  ';
+  const leftWidth = INDENT.length + CLOCK_W + GAP.length + REL_W + GAP.length + COST_W + GAP.length;
+  const idBlock = GAP.length + ID_LABEL.length + ID_W;
+  const showId = width - leftWidth - idBlock >= MIN_TITLE;
+  const titleWidth = showId ? width - leftWidth - idBlock : width - leftWidth;
+  const recapIndent = ' '.repeat(leftWidth);
 
   const out = [];
-  out.push(dim(`${'WHEN'.padEnd(WHEN_W)}${GAP}${'SESSION'.padEnd(ID_W)}${GAP}${'COST'.padEnd(COST_W)}${GAP}TITLE / RECAP`));
-
-  for (const v of view) {
-    const when = dim(fmtWhen(v.ts));
-    const sid = dim(v.shortId.padEnd(ID_W));
-    const cost = costOf(v.id);
-    // ANSI codes inflate string length, so pad the PLAIN text first, then color.
-    const plainCost = (cost > 0 ? '$' + cost.toFixed(2) : '—').padEnd(COST_W);
+  let curDay = null;
+  for (const r of rows) {
+    const { title, recap } = readTitleRecap(r.file);
+    const key = dayKey(r.ts);
+    if (key !== curDay) {
+      curDay = key;
+      const label = `── ${dayLabel(r.ts)} `;
+      out.push(dim(label + '─'.repeat(Math.max(0, width - label.length))));
+    } else {
+      out.push(''); // blank line between sessions within a day
+    }
+    const clockCell = dim(clock(r.ts));
+    const relCell = dim(relativeTime(nowSec, r.ts).padStart(REL_W));
+    const cost = costOf(r.id);
+    const plainCost = (cost > 0 ? '$' + cost.toFixed(2) : '—').padStart(COST_W);
     const costCell = cost > 0 ? colorByTier(cost, SESSION_TIERS)(plainCost) : dim(plainCost);
-    const titleText = truncate(v.title || '—', titleWidth); // plain (default color)
-    out.push(`${when}${GAP}${sid}${GAP}${costCell}${GAP}${titleText}`);
-    if (v.recap) {
-      const recapText = truncate(v.recap, Math.max(0, termWidth - titleCol - 2));
-      out.push(`${' '.repeat(titleCol)}${dim('└ ' + recapText)}`);
+    const titleText = truncate(title || '—', titleWidth);
+    let line = `${INDENT}${clockCell}${GAP}${relCell}${GAP}${costCell}${GAP}`;
+    if (showId) line += titleText.padEnd(titleWidth) + GAP + dim(ID_LABEL) + cyan(r.id.padStart(ID_W));
+    else line += titleText;
+    out.push(line);
+    if (recap) {
+      const recapText = truncate(recap, Math.max(0, width - leftWidth - 2));
+      out.push(`${recapIndent}${dim('└ ' + recapText)}`);
     }
   }
 
-  // d/w/m footer: full-history period sums (local-calendar windows), budget-colored.
+  // Footer: budget bars when a budget is set, else a plain d/w/m line.
   const { budgetOptedOut, monthly: mBudget, daily: dLimit, weekly: wLimit } =
     resolveBudget(process.env.STATUSLINE_MONTHLY_BUDGET);
   const per = sumPeriods(agg.perSession, new Date());
-  const tier = (c, limit) => budgetOptedOut ? ((s) => s) : colorByTier(c / limit, BUDGET_TIERS);
   const money = (c) => '$' + c.toFixed(2);
   out.push('');
-  out.push(
-    dim('today ') + tier(per.daily, dLimit)(money(per.daily)) + dim('   week ') +
-    tier(per.weekly, wLimit)(money(per.weekly)) + dim('   month ') +
-    tier(per.monthly, mBudget)(money(per.monthly))
-  );
+  if (budgetOptedOut) {
+    out.push(
+      dim('today ') + money(per.daily) + dim(' · week ') + money(per.weekly) +
+      dim(' · month ') + money(per.monthly)
+    );
+  } else {
+    const BAR_W = 8;
+    const periods = [
+      ['today', per.daily, dLimit],
+      ['week', per.weekly, wLimit],
+      ['month', per.monthly, mBudget],
+    ];
+    const amtW = Math.max(...periods.map(([, s]) => money(s).length));
+    for (const [label, spent, limit] of periods) {
+      const ratio = limit > 0 ? spent / limit : 0;
+      const fill = barFill(spent, limit, BAR_W);
+      const bar = colorByTier(ratio, BUDGET_TIERS)('▓'.repeat(fill)) + dim('░'.repeat(BAR_W - fill));
+      out.push(`${dim(label.padEnd(5))}  ${bar}  ${money(spent).padStart(amtW)}${dim(' / ' + money(limit))}`);
+    }
+  }
 
   process.stdout.write(out.join('\n') + '\n');
 }
 
-main();
+if (require.main === module) main();
+
+module.exports = { relativeTime, dayKey, dayLabel, clock, barFill, truncate };
