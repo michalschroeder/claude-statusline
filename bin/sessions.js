@@ -2,16 +2,18 @@
 'use strict';
 const path = require('path');
 const os = require('os');
+const fs = require('fs');
 const { readTitleRecap, projectDirs, listSessions } = require('../lib/transcript');
 const { dim, cyan, colorByTier, SESSION_TIERS, BUDGET_TIERS } = require('../lib/color');
 const { loadPricing } = require('../lib/pricing');
 const { aggregate } = require('../lib/cost-aggregate');
+const { buildDetail } = require('../lib/session-detail');
 const { sumPeriods } = require('../lib/periods');
 const { resolveBudget } = require('../lib/budget');
 const { resolveStateDir } = require('../lib/state');
 
 function parseArgs(argv) {
-  const opts = { last: null, since: null, configDir: undefined };
+  const opts = { last: null, since: null, configDir: undefined, detail: undefined };
   const needValue = (flag, i) => {
     if (i + 1 >= argv.length || argv[i + 1].startsWith('--')) {
       process.stderr.write(`bin/sessions.js: ${flag} requires a value\n`);
@@ -30,6 +32,12 @@ function parseArgs(argv) {
     }
     else if (a === '--since') { opts.since = needValue('--since', i); i++; }
     else if (a === '--config-dir') { opts.configDir = needValue('--config-dir', i); i++; }
+    else if (a.startsWith('--')) { /* unknown flag: ignored, as before */ }
+    else if (opts.detail === undefined) { opts.detail = a; } // first bare token = session prefix
+    else {
+      process.stderr.write(`bin/sessions.js: unexpected argument '${a}'\n`);
+      process.exit(1);
+    }
   }
   return opts;
 }
@@ -47,6 +55,8 @@ function truncate(s, width) {
   if (s.length <= width) return s;
   return s.slice(0, Math.max(0, width - 1)) + '…';
 }
+
+const money = (c) => '$' + c.toFixed(2);
 
 // '2h ago' style age. nowSec/ts both unix seconds; future clamps to 'just now'.
 function relativeTime(nowSec, ts) {
@@ -91,6 +101,68 @@ function termWidth() {
 }
 
 
+// Render the per-session detail view (see lib/session-detail.buildDetail).
+function renderDetail(detail, sessionId, when, title, recap, width) {
+  const out = [];
+  out.push(`SESSION ${sessionId}`);
+  out.push(title || '—');
+  if (recap) out.push(dim('└ ' + truncate(recap, Math.max(0, width - 2))));
+  out.push(dim(`${dayLabel(when)} ${clock(when)} · ${detail.calls} calls · ${money(detail.total)} total`));
+
+  const t = detail.total || 1; // avoid divide-by-zero on an unbilled session
+  const comp = [
+    ['cache-read', detail.components.cacheRead],
+    ['input', detail.components.input],
+    ['output', detail.components.output],
+    ['cache-write', detail.components.cacheWrite],
+    ['web search', detail.components.web],
+  ].filter(([, c]) => c > 0).sort((a, b) => b[1] - a[1]);
+  if (comp.length) {
+    out.push('');
+    out.push(dim('WHERE IT WENT'));
+    const lw = Math.max(...comp.map(([l]) => l.length));
+    const BAR = 10;
+    for (const [label, c] of comp) {
+      const frac = c / t;
+      const fill = Math.max(0, Math.min(BAR, Math.round(frac * BAR)));
+      const bar = '▓'.repeat(fill) + dim('░'.repeat(BAR - fill));
+      out.push(`  ${label.padEnd(lw)}  ${bar}  ${dim(String(Math.round(frac * 100)).padStart(3) + '%')}  ${money(c)}`);
+    }
+  }
+
+  if (detail.byModel.length) {
+    out.push('');
+    out.push(dim('BY MODEL'));
+    const mw = Math.max(...detail.byModel.map((m) => m.model.length));
+    for (const m of detail.byModel) {
+      out.push(`  ${m.model.padEnd(mw)}  ${money(m.cost)}  ${dim(m.calls + ' call' + (m.calls === 1 ? '' : 's'))}`);
+    }
+  }
+
+  if (detail.topPrompts.length) {
+    out.push('');
+    out.push(dim('TOP PROMPTS'));
+    const top = detail.topPrompts.slice(0, 10);
+    const cw = Math.max(...top.map((p) => money(p.cost).length));
+    for (const p of top) {
+      const meta = `${money(p.cost).padStart(cw)}  ${String(p.calls).padStart(2)} call${p.calls === 1 ? ' ' : 's'}  `;
+      out.push('  ' + meta + truncate(p.text, Math.max(0, width - 2 - meta.length)));
+    }
+    if (detail.subagentCount > 0) {
+      out.push(dim(`  + ${money(detail.subagentTotal)} across ${detail.subagentCount} subagent${detail.subagentCount === 1 ? '' : 's'}`));
+    }
+  }
+
+  if (detail.subagentCount > 0) {
+    out.push('');
+    out.push(dim('BY AGENT'));
+    const aw = Math.max(...detail.byAgent.map((a) => a.name.length));
+    for (const a of detail.byAgent) out.push(`  ${a.name.padEnd(aw)}  ${money(a.cost)}`);
+  }
+
+  return out.join('\n') + '\n';
+}
+
 function main() {
   const opts = parseArgs(process.argv.slice(2));
   const sinceTs = sinceToTs(opts.since); // null when --since absent or unparseable
@@ -115,6 +187,31 @@ function main() {
   const pricing = loadPricing(stateDir, { allowFetch: false });
   const agg = aggregate(transcriptRoot, pricing);
   const costOf = (id) => { const ps = agg.perSession[id]; return ps ? ps.total : 0; };
+
+  if (opts.detail !== undefined) {
+    const matches = rows.filter((r) => r.id.startsWith(opts.detail));
+    if (matches.length === 0) {
+      process.stderr.write(`bin/sessions.js: no session matching '${opts.detail}'\n`);
+      process.exit(1);
+    }
+    if (matches.length > 1) {
+      process.stderr.write(`bin/sessions.js: '${opts.detail}' is ambiguous:\n` +
+        matches.map((m) => '  ' + m.id).join('\n') + '\n');
+      process.exit(1);
+    }
+    const row = matches[0];
+    const subDir = path.join(path.dirname(row.file), row.id, 'subagents');
+    let subFiles = [];
+    try {
+      subFiles = fs.readdirSync(subDir)
+        .filter((n) => n.startsWith('agent-') && n.endsWith('.jsonl'))
+        .map((n) => path.join(subDir, n));
+    } catch {}
+    const detail = buildDetail(row.file, subFiles, pricing);
+    const { title, recap } = readTitleRecap(row.file);
+    process.stdout.write(renderDetail(detail, row.id, row.ts, title, recap, termWidth()));
+    return;
+  }
 
   if (rows.length === 0) {
     process.stdout.write('no sessions found\n');
@@ -177,7 +274,6 @@ function main() {
   const { budgetOptedOut, monthly: mBudget, daily: dLimit, weekly: wLimit } =
     resolveBudget(process.env.STATUSLINE_MONTHLY_BUDGET);
   const per = sumPeriods(agg.perSession, new Date());
-  const money = (c) => '$' + c.toFixed(2);
   out.push('');
   if (budgetOptedOut) {
     out.push(

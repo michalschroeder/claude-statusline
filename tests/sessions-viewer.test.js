@@ -177,3 +177,40 @@ test('viewer: budget opted out → plain footer, no bars', async () => {
   assert.doesNotMatch(out, /[▓░]/);
   assert.match(out, /today \$\d+\.\d{2} · week /);
 });
+
+test('viewer detail: <prefix> renders the section headers + total', async () => {
+  const p = mkProfile();
+  const now = new Date().toISOString();
+  writeTranscript(p.configDir, 'sessDET01', [
+    { type: 'ai-title', aiTitle: 'Detail me' },
+    { type: 'user', message: { role: 'user', content: 'do the thing' } },
+    { type: 'assistant', timestamp: now, message: { id: 'd1', model: 'claude-opus-4-8', usage: { input_tokens: 1000000, output_tokens: 1000 } } },
+  ]);
+  const xdg = require('fs').mkdtempSync(require('path').join(require('os').tmpdir(), 'csl-det-'));
+  const out = await runSessions(['--config-dir', p.configDir, 'sessDET'], wide({ XDG_STATE_HOME: xdg }));
+  require('fs').rmSync(xdg, { recursive: true, force: true });
+  assert.match(out, /SESSION sessDET01/);
+  assert.match(out, /WHERE IT WENT/);
+  assert.match(out, /BY MODEL/);
+  assert.match(out, /TOP PROMPTS/);
+  assert.match(out, /\$\d+\.\d{2} total/);
+});
+
+test('viewer detail: unknown prefix → exit 1', async () => {
+  const p = mkProfile();
+  writeTranscript(p.configDir, 'sessXYZ01', [{ type: 'ai-title', aiTitle: 'x' }]);
+  await assert.rejects(
+    runSessions(['--config-dir', p.configDir, 'nope'], wide()),
+    /no session matching/
+  );
+});
+
+test('viewer detail: ambiguous prefix → exit 1 listing matches', async () => {
+  const p = mkProfile();
+  writeTranscript(p.configDir, 'sessAMB01', [{ type: 'ai-title', aiTitle: 'a' }]);
+  writeTranscript(p.configDir, 'sessAMB02', [{ type: 'ai-title', aiTitle: 'b' }]);
+  await assert.rejects(
+    runSessions(['--config-dir', p.configDir, 'sessAMB'], wide()),
+    /ambiguous/
+  );
+});
