@@ -58,6 +58,19 @@ function truncate(s, width) {
 
 const money = (c) => '$' + c.toFixed(2);
 
+// Compact token count: 950, 12k, 4.1M.
+function tok(n) {
+  if (n < 1000) return String(n);
+  if (n < 1e6) return Math.round(n / 1000) + 'k';
+  return (n / 1e6).toFixed(1) + 'M';
+}
+
+// Top-3 tools of a turn as 'NN×Tool …', e.g. '40×Bash 26×Edit 13×Read'. '—' if none.
+function toolStr(tools, n = 3) {
+  if (!tools || !tools.length) return '—';
+  return tools.slice(0, n).map(([name, count]) => `${count}×${name}`).join(' ');
+}
+
 // '2h ago' style age. nowSec/ts both unix seconds; future clamps to 'just now'.
 function relativeTime(nowSec, ts) {
   const d = Math.max(0, nowSec - ts);
@@ -141,12 +154,18 @@ function renderDetail(detail, sessionId, when, title, recap, width) {
 
   if (detail.topPrompts.length) {
     out.push('');
-    out.push(dim('TOP PROMPTS') + dim('  · ranked by cost; steps = model responses, incl. each tool-use round'));
+    out.push(dim('TOP PROMPTS') + dim('  · cost · steps · context re-read · output · tools · prompt'));
     const top = detail.topPrompts.slice(0, 10);
     const cw = Math.max(...top.map((p) => money(p.cost).length));
+    const sw = Math.max(...top.map((p) => String(p.calls).length));
+    const xw = Math.max(...top.map((p) => tok(p.ctx).length));
+    const ow = Math.max(...top.map((p) => tok(p.out).length));
+    const tw = Math.max(...top.map((p) => toolStr(p.tools).length));
     for (const p of top) {
-      const meta = `${money(p.cost).padStart(cw)}  ${String(p.calls).padStart(2)} step${p.calls === 1 ? ' ' : 's'}  `;
-      out.push('  ' + meta + truncate(p.text, Math.max(0, width - 2 - meta.length)));
+      const head = `${money(p.cost).padStart(cw)}  ${String(p.calls).padStart(sw)}st  `;
+      const stats = `${tok(p.ctx).padStart(xw)} ctx  ${tok(p.out).padStart(ow)} out  ${toolStr(p.tools).padEnd(tw)}  `;
+      const text = truncate(p.text, Math.max(0, width - 2 - head.length - stats.length));
+      out.push('  ' + head + dim(stats) + text);
     }
     if (detail.subagentCount > 0) {
       out.push(dim(`  + ${money(detail.subagentTotal)} across ${detail.subagentCount} subagent${detail.subagentCount === 1 ? '' : 's'}`));

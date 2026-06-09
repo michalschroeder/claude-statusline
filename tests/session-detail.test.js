@@ -91,6 +91,26 @@ test('buildDetail: turn attribution — calls bucket under active prompt, tool r
   assert.equal(big.calls, 2); // m1 + m2 (tool result did not split the turn)
 });
 
+test('buildDetail: topPrompts carry ctx/out tokens and a tool tally', () => {
+  const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-sdt-'));
+  tmp.push(cfg);
+  const main = path.join(cfg, 'projects', 'p', 'sessTLS1.jsonl');
+  const withTools = (id, usage, names) => ({
+    type: 'assistant', timestamp: '2026-06-09T01:00:00Z',
+    message: { id, model: MODEL, usage, content: names.map((n) => ({ type: 'tool_use', name: n })) },
+  });
+  writeJsonl(main, [
+    userPrompt('do work'),
+    withTools('m1', { input_tokens: 1000, output_tokens: 200, cache_read_input_tokens: 50000 }, ['Read', 'Bash', 'Bash']),
+    withTools('m2', { input_tokens: 1000, output_tokens: 300, cache_read_input_tokens: 70000 }, ['Bash', 'Edit']),
+  ]);
+  const detail = buildDetail(main, [], pricing());
+  const p = detail.topPrompts.find((x) => x.text === 'do work');
+  assert.equal(p.ctx, 120000);            // 50k + 70k cache-read re-read across the turn
+  assert.equal(p.out, 500);               // 200 + 300 output
+  assert.deepEqual(p.tools, [['Bash', 3], ['Read', 1], ['Edit', 1]]); // desc by count
+});
+
 test('buildDetail: subagent cost split out', () => {
   const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-sd4-'));
   tmp.push(cfg);

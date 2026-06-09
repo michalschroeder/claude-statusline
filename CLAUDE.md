@@ -34,7 +34,10 @@ without `--last` shows all matches), `--config-dir <path>`. A bare positional ar
 session ids (zero matches or ambiguous → exit 1). It renders a header (title/recap/total),
 `WHERE IT WENT` (cost split by token type — cache-read/input/output/cache-write/web, with
 proportion bars), `BY MODEL`, `TOP PROMPTS` (main-session user prompts ranked by the cost of the
-turns they drove — the "steps" count = model responses incl. each tool-use round — plus a
+turns they drove, each row showing `cost · steps · context-re-read · output · tools · prompt` —
+steps = model responses incl. each tool-use round; **context-re-read** (cache-read tokens summed
+over the turn) is the dominant cost driver, which is why a short late prompt over a large context
+can cost more than a long early one; tools = the turn's top-3 `tool_use` tally — plus a
 `+ $X across N subagents` line), and `BY AGENT` (only when subagents exist; each agent is
 labelled by its task — the subagent's first prompt, falling back to the `agent-<hash>` stem). Backed by the pure `lib/session-detail.js` (`buildDetail`), which reuses the same dedup as
 `lib/cost-aggregate.js` so the detail total equals the list COST, and by `calculateCostBreakdown` in
