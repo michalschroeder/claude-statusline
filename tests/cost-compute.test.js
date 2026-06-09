@@ -1,7 +1,7 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { extractCacheCreation, calculateCost } = require('../lib/cost-compute');
+const { extractCacheCreation, calculateCost, calculateCostBreakdown } = require('../lib/cost-compute');
 
 const COSTS = { input: 10, output: 20, cacheWrite: 4, cacheRead: 1, fastMultiplier: 0.5, webSearch: 0.01 };
 
@@ -72,4 +72,45 @@ test('calculateCost: null costs → 0', () => {
 
 test('calculateCost: clamps negative/NaN tokens to 0', () => {
   assert.equal(calculateCost({ input_tokens: -5, output_tokens: NaN }, COSTS), 0);
+});
+
+test('calculateCostBreakdown: components priced and sum to total', () => {
+  // COSTS = { input:10, output:20, cacheWrite:4, cacheRead:1, fastMultiplier:0.5, webSearch:0.01 }
+  const usage = {
+    input_tokens: 1000,
+    output_tokens: 500,
+    cache_read_input_tokens: 2000,
+    cache_creation: { ephemeral_5m_input_tokens: 100, ephemeral_1h_input_tokens: 50 },
+    server_tool_use: { web_search_requests: 3 },
+  };
+  const b = calculateCostBreakdown(usage, COSTS);
+  assert.equal(b.input, 1000 * 10);                       // 10000
+  assert.equal(b.output, 500 * 20);                       // 10000
+  assert.equal(b.cacheRead, 2000 * 1);                    // 2000
+  assert.equal(b.cacheWrite, 100 * 4 + 50 * 4 * 1.6);     // 400 + 320 = 720
+  assert.equal(b.web, 3 * 0.01);                          // 0.03
+  assert.equal(b.total, b.input + b.output + b.cacheRead + b.cacheWrite + b.web);
+  assert.equal(b.total, calculateCost(usage, COSTS));     // single source of truth
+});
+
+test('calculateCostBreakdown: fast multiplier scales every component', () => {
+  const usage = { input_tokens: 100, output_tokens: 100, speed: 'fast' };
+  const b = calculateCostBreakdown(usage, COSTS); // fastMultiplier 0.5
+  assert.equal(b.input, 100 * 10 * 0.5);
+  assert.equal(b.output, 100 * 20 * 0.5);
+  assert.equal(b.total, calculateCost(usage, COSTS));
+});
+
+test('calculateCostBreakdown: above-200K tier applies per component', () => {
+  const usage = { input_tokens: 150000, cache_read_input_tokens: 100000, output_tokens: 1 };
+  const b = calculateCostBreakdown(usage, BIG); // premium: input20 output40 cacheRead2
+  assert.equal(b.input, 150000 * 20);
+  assert.equal(b.cacheRead, 100000 * 2);
+  assert.equal(b.output, 1 * 40);
+  assert.equal(b.total, calculateCost(usage, BIG)); // 3200040
+});
+
+test('calculateCostBreakdown: null costs/usage → all zeros', () => {
+  const z = calculateCostBreakdown(null, null);
+  assert.deepEqual(z, { input: 0, output: 0, cacheWrite: 0, cacheRead: 0, web: 0, total: 0 });
 });
