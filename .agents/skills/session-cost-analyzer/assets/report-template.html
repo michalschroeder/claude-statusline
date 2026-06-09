@@ -1,0 +1,78 @@
+<!doctype html>
+<!--
+  Session cost report template. Fill these slots from `analyze.js <prefix>` JSON:
+    {{SESSION_ID}}      session
+    {{TITLE}}           title (or "—")
+    {{STARTED_AT}}      startedAt
+    {{TOTAL_COST}}      totalCost, formatted "$0.00"
+    {{STEP_COUNT}}      steps
+    {{DURATION}}        summary.durationMs → "Xh Ym"
+    {{HIGH_CTX_COST}}   summary.highContextCost.cost → "$0.00" (what /compact would save)
+    {{HIGH_CTX_CALLS}}  summary.highContextCost.calls
+    {{CONTEXT_RESETS}}  summary.contextResets
+    {{PEAK_CONTEXT}}    summary.contextGrowth.peakContext → "Nk"
+    {{WHERE_IT_WENT_ROWS}}  one <tr> per components entry: <td>label</td><td>$cost</td><td><bar></td>
+    {{BY_MODEL_ROWS}}       one <tr> per byModel entry
+    {{TOP_TURNS_ROWS}}      one <tr> per top turn (cost, kind, peakContext, prompt)
+    {{SUBAGENT_ROWS}}       one <tr> per byAgent entry (task, cost) — omit table if none
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session cost · {{SESSION_ID}}</title>
+<style>
+  :root { --bg:#0f1115; --fg:#e6e6e6; --dim:#8a8f98; --accent:#7aa2f7; --warn:#e0af68; --bar:#3b4261; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--bg); color:var(--fg); }
+  .wrap { max-width:900px; margin:0 auto; padding:32px 20px; }
+  h1 { font-size:18px; margin:0 0 4px; }
+  .sub { color:var(--dim); margin:0 0 24px; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:28px; }
+  .card { background:#161922; border:1px solid #232838; border-radius:8px; padding:14px; }
+  .card .k { color:var(--dim); font-size:12px; }
+  .card .v { font-size:20px; margin-top:4px; }
+  .card .v.warn { color:var(--warn); }
+  h2 { font-size:14px; color:var(--accent); border-bottom:1px solid #232838; padding-bottom:6px; margin:28px 0 10px; }
+  table { width:100%; border-collapse:collapse; }
+  td, th { text-align:left; padding:6px 8px; border-bottom:1px solid #1c2030; vertical-align:top; }
+  th { color:var(--dim); font-weight:normal; font-size:12px; }
+  td.num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .bar { height:8px; background:var(--bar); border-radius:4px; }
+  .prompt { color:var(--dim); }
+  footer { color:var(--dim); font-size:12px; margin-top:32px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>{{TITLE}}</h1>
+  <p class="sub">{{SESSION_ID}} · started {{STARTED_AT}}</p>
+
+  <div class="cards">
+    <div class="card"><div class="k">total cost</div><div class="v">{{TOTAL_COST}}</div></div>
+    <div class="card"><div class="k">steps</div><div class="v">{{STEP_COUNT}}</div></div>
+    <div class="card"><div class="k">duration</div><div class="v">{{DURATION}}</div></div>
+    <div class="card"><div class="k">peak context</div><div class="v">{{PEAK_CONTEXT}}</div></div>
+    <div class="card"><div class="k">above-200k cost (/compact would cut)</div><div class="v warn">{{HIGH_CTX_COST}}</div><div class="k">{{HIGH_CTX_CALLS}} calls · {{CONTEXT_RESETS}} resets</div></div>
+  </div>
+
+  <h2>Where it went</h2>
+  <table><thead><tr><th>component</th><th class="num">cost</th><th>share</th></tr></thead>
+  <tbody>{{WHERE_IT_WENT_ROWS}}</tbody></table>
+
+  <h2>By model</h2>
+  <table><thead><tr><th>model</th><th class="num">cost</th></tr></thead>
+  <tbody>{{BY_MODEL_ROWS}}</tbody></table>
+
+  <h2>Top turns</h2>
+  <table><thead><tr><th class="num">cost</th><th>kind</th><th class="num">peak ctx</th><th>prompt</th></tr></thead>
+  <tbody>{{TOP_TURNS_ROWS}}</tbody></table>
+
+  <h2>Subagents</h2>
+  <table><thead><tr><th>task</th><th class="num">cost</th></tr></thead>
+  <tbody>{{SUBAGENT_ROWS}}</tbody></table>
+
+  <footer>Costs recomputed from raw tokens × LiteLLM prices (not Claude's reported cost).</footer>
+</div>
+</body>
+</html>
