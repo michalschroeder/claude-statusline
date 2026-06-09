@@ -45,10 +45,16 @@ Both print JSON to stdout. `--config-dir <path>` points at a non-default `~/.cla
 
 5. **Report.**
    - Narrate the cost story inline (where the money went, the biggest lever).
-   - Generate an HTML report: read `assets/report-template.html`, fill its
-     `{{PLACEHOLDER}}` slots from the JSON (see the comment block at the top of the
-     template for the slot list), and write it to `./session-cost-<shortid>.html`
-     unless the user gives another path. Tell the user the file path.
+   - Generate the HTML report deterministically — pipe the detail JSON into the bundled
+     renderer rather than hand-building rows (it formats money/duration/tokens, draws the
+     proportion bars, ranks the top turns, and HTML-escapes every prompt/title/label):
+
+     ```bash
+     node scripts/analyze.js <prefix> | node scripts/render-report.js --out ./session-cost-<shortid>.html
+     ```
+
+     It prints the path it wrote. Pass a different `--out` if the user names one. Tell the
+     user the file path. (`assets/report-template.html` holds the styling if you need to tweak it.)
 
 ## Notes
 
