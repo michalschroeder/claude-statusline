@@ -29,7 +29,15 @@ disclaimer stripped, subagent transcripts excluded; `listSessions` enumerates
 `projects/*/<id>.jsonl`, newest-first by file **mtime** — the session's `ts`). Config-dir
 resolution: `--config-dir` ?? `CLAUDE_CONFIG_DIR`, the transcript root for `projects/` discovery
 (default `~/.claude`). Flags: `--last N` (default 10), `--since YYYY-MM-DD` (lower ts bound;
-without `--last` shows all matches), `--config-dir <path>`. Renders day-grouped rows (a dim
+without `--last` shows all matches), `--config-dir <path>`. A bare positional arg
+(`sessions.js <id-prefix>`) switches to a per-session **detail view**: prefix-matched against
+session ids (zero matches or ambiguous → exit 1). It renders a header (title/recap/total),
+`WHERE IT WENT` (cost split by token type — cache-read/input/output/cache-write/web, with
+proportion bars), `BY MODEL`, `TOP PROMPTS` (main-session user prompts ranked by the cost of the
+turns they drove, plus a `+ $X across N subagents` line), and `BY AGENT` (only when subagents
+exist). Backed by the pure `lib/session-detail.js` (`buildDetail`), which reuses the same dedup as
+`lib/cost-aggregate.js` so the detail total equals the list COST, and by `calculateCostBreakdown` in
+`lib/cost-compute.js` (the itemized form of `calculateCost`). Renders day-grouped rows (a dim
 `── Ddd Mmm DD ──` rule per local day) of
 `HH:MM · relative-age · cost · title · full-session-id`; titles/recaps are width-truncated only (no
 redaction). The **full** session id (copy-paste-resumable via `claude --resume <id>`) is right-aligned,
@@ -47,7 +55,7 @@ folded into the parent session's COST (via `lib/cost-aggregate.js`).
 Costs are **recomputed from raw token counts × LiteLLM per-token prices** — never Claude's reported
 `cost.total_cost_usd`. Libs:
 
-- `lib/cost-compute.js` — pure per-call math (tokens × prices). 5m cache write = 1.25× input, 1h cache write = 2× input (computed as `cacheWrite × 1.6`), cache read = 0.1× input. Supports a generic long-context (>200K input) `above200k` premium tier per call **when a price entry defines one** — but per Anthropic's current pricing **no Claude model has a >200K premium** (Opus 4.6+/Sonnet 4.6 serve the full 1M at standard rates), so the bundled snapshot defines none and the tier stays dormant.
+- `lib/cost-compute.js` — pure per-call math (tokens × prices). 5m cache write = 1.25× input, 1h cache write = 2× input (computed as `cacheWrite × 1.6`), cache read = 0.1× input. Supports a generic long-context (>200K input) `above200k` premium tier per call **when a price entry defines one** — but per Anthropic's current pricing **no Claude model has a >200K premium** (Opus 4.6+/Sonnet 4.6 serve the full 1M at standard rates), so the bundled snapshot defines none and the tier stays dormant. Also exports `calculateCostBreakdown` (itemized per-component cost — `{input, output, cacheWrite, cacheRead, web, total}`; `calculateCost` is its `.total`).
 - `lib/pricing.js` — LiteLLM price table; bundled snapshot `data/model_prices.json` + background fetch at most every 24h. **Never fetched from the renderer.** Still extracts `*_above_200k_tokens` premium rates if an upstream entry carries them (dormant for current Claude models).
 - `lib/cost-aggregate.js` — parses transcripts (main session files **and** nested `<session>/subagents/agent-*.jsonl`, whose token usage Anthropic bills — attributed to the parent session; only `agent-*.jsonl` are billed, other sidecar files under `subagents/` are ignored), dedups streaming message ids (within-file + globally across files), buckets each call into local-day keys, maintains an incremental `<STATE>/cost-cache.json` keyed by file mtime/size; cache invalidated on a pricing-hash change. `writeCache` also emits a slim `<STATE>/cost-summary.json` (`{pricingHash, perSession}`, no bulky `files`/`calls` blob) for the renderer; `readSummary` reads it (falling back to the full cache for back-compat).
 - `lib/periods.js` — local-calendar day/week/month window sums over the buckets.
@@ -140,3 +148,6 @@ daily = monthly/30, weekly = monthly×7/30. Resolved by `lib/budget.js` (`resolv
 The cost pipeline is covered by `tests/cost-compute.test.js`, `tests/pricing.test.js`, `tests/budget.test.js`, `tests/periods.test.js`, `tests/cost-aggregate.test.js`, `tests/refresh-cost-cache.test.js`, and `tests/period-cost.test.js` (renderer d/w/m chips). The `cost` segment is covered by `tests/cost.test.js` (session absolute thresholds). `tests/cleanup-hook.test.js` is an **integration** test that spawns the bash `SessionEnd` hook to verify skill-log removal/pruning; it `skip`s gracefully when `jq` is absent. The session viewer has `tests/sessions-viewer.test.js` (transcript-sourced listing, day grouping, full id,
 budget-bar footer, `--last`/`--since`) and `tests/sessions-format.test.js` (pure formatting helpers:
 relative time, day labels, bar fill, truncate); `lib/transcript.js` has `tests/transcript.test.js`.
+The session detail view has `tests/session-detail.test.js` (`buildDetail`: dedup parity with
+aggregate, token-type split, turn attribution, subagent split) plus detail-mode integration tests in
+`tests/sessions-viewer.test.js`.
