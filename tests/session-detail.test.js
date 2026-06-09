@@ -135,6 +135,40 @@ test('buildDetail: turns + perCall keep execution order and raw token fidelity',
   assert.ok(detail.perCall[1].cost > detail.perCall[0].cost);
 });
 
+test('buildDetail: summary + per-turn context fix the growth-misread', () => {
+  const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-sum-'));
+  tmp.push(cfg);
+  const main = path.join(cfg, 'projects', 'p', 'sessSUM1.jsonl');
+  const at = (id, ctx, t) => asst(id, { input_tokens: 100, output_tokens: 50, cache_read_input_tokens: ctx, cache_creation_input_tokens: 1000 }, t);
+  writeJsonl(main, [
+    userPrompt('work'),
+    at('m1', 40000, '2026-06-09T01:00:00Z'),
+    at('m2', 200000, '2026-06-09T01:10:00Z'),  // same turn — context grew within it
+    { type: 'user', message: { role: 'user', content: '<task-notification> done </task-notification>' } },
+    at('m3', 300000, '2026-06-09T01:20:00Z'),  // a subagent-orchestration turn
+  ]);
+  const detail = buildDetail(main, [], pricing());
+  const work = detail.turns.find((t) => t.prompt === 'work');
+  // per-turn context is per-step, not the SUM (which would be 240000)
+  assert.equal(work.tokens.cacheRead, 240000);   // sum across the 2 steps
+  assert.equal(work.avgContext, 120000);         // (40k + 200k) / 2
+  assert.equal(work.peakContext, 200000);        // max step, not the sum
+  assert.equal(work.kind, 'user');
+  // turn-kind classification
+  const orch = detail.turns.find((t) => t.kind === 'subagent-orchestration');
+  assert.ok(orch && orch.prompt.startsWith('<task-notification>'));
+  // summary: duration spans first→last main call; growth curve is per-step
+  const s = detail.summary;
+  assert.equal(s.durationMs, 20 * 60 * 1000);    // 01:00 → 01:20
+  assert.equal(s.contextGrowth.firstCall, 40000);
+  assert.equal(s.contextGrowth.peakContext, 300000);
+  assert.equal(s.contextGrowth.quartileAvgContext.length, 4);
+  // byTurnKind aggregates cost per kind, cost-desc
+  const kinds = s.byTurnKind.map((k) => k.kind);
+  assert.ok(kinds.includes('user') && kinds.includes('subagent-orchestration'));
+  assert.equal(s.byTurnKind.reduce((a, k) => a + k.cost, 0).toFixed(8), detail.total.toFixed(8));
+});
+
 test('buildDetail: subagent cost split out', () => {
   const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-sd4-'));
   tmp.push(cfg);

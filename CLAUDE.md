@@ -44,10 +44,14 @@ labelled by its task — the subagent's first prompt, falling back to the `agent
 `sessions.js <prefix> --analyze` flag swaps the rendered table for a full-fidelity **JSON** payload meant
 for an LLM/agent to reason about *why* a session was costly: raw integer tokens (no compaction),
 untruncated prompts, full tool tallies, a `legend` stating the cost model, plus `turns` (main-session
-prompts in **execution** order) and `calls` (every billed assistant call, chronological, each call's
-`tokens.cacheRead` = the context size at that step — so the consumer can watch context balloon and pinpoint
-where a `/compact`/split would have paid off). Backed by the pure `lib/session-detail.js` (`buildDetail`,
-which now also returns `turns`/`perCall`), which reuses the same dedup as
+prompts in **execution** order, each with `kind`/`avgContext`/`peakContext`), `calls` (every billed
+assistant call, chronological, each call's `tokens.cacheRead` = the context size at that step), and a
+derived `summary` — `durationMs`, `contextGrowth` (per-step cacheRead: firstCall + 4 quartile averages +
+peak, the honest growth curve since a turn's `tokens.cacheRead` is a per-step **sum**, not context size),
+and `byTurnKind` (cost/token totals grouped by `turnKind` — `skill` / `subagent-orchestration` /
+`user` / `session-start` — so "how much did all the review passes cost" is one lookup). Backed by the
+pure `lib/session-detail.js` (`buildDetail`, which now also returns `turns`/`perCall`/`summary`), which
+reuses the same dedup as
 `lib/cost-aggregate.js` so the detail total equals the list COST, and by `calculateCostBreakdown` in
 `lib/cost-compute.js` (the itemized form of `calculateCost`). Renders day-grouped rows (a dim
 `── Ddd Mmm DD ──` rule per local day) of

@@ -209,9 +209,11 @@ function analysisPayload(detail, id, ts, title, recap) {
     legend:
       'Cost ≈ context-size × steps, recomputed from raw tokens × LiteLLM prices (not Claude\'s reported cost). ' +
       'tokens.cacheRead = re-reading accumulated context and is the dominant driver; tokens.input (fresh) is usually negligible. ' +
-      'turns and calls are in EXECUTION order — watch tokens.cacheRead climb to find where a /compact or session split would have paid off. ' +
-      'Each call\'s cacheRead is the context size at that step.',
+      'turns and calls are in EXECUTION order. NOTE: a turn\'s tokens.cacheRead is a SUM across its steps, NOT the context size — use turn.avgContext / turn.peakContext and summary.contextGrowth (per-step cacheRead) for the real growth curve. ' +
+      'A cacheWrite spike usually means the parent re-cached its whole context (e.g. on a subagent return). ' +
+      'Use summary.byTurnKind to see how much each kind of work (skill-review, subagent-orchestration, user) cost in aggregate.',
     components: detail.components,
+    summary: detail.summary,
     byModel: detail.byModel,
     byAgent: detail.byAgent,
     subagents: { total: detail.subagentTotal, count: detail.subagentCount },
