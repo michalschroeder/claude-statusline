@@ -139,20 +139,23 @@ test('buildDetail: summary + per-turn context fix the growth-misread', () => {
   const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-sum-'));
   tmp.push(cfg);
   const main = path.join(cfg, 'projects', 'p', 'sessSUM1.jsonl');
-  const at = (id, ctx, t) => asst(id, { input_tokens: 100, output_tokens: 50, cache_read_input_tokens: ctx, cache_creation_input_tokens: 1000 }, t);
+  const at = (id, ctx, t, tools) => ({
+    type: 'assistant', timestamp: t,
+    message: { id, model: MODEL, usage: { input_tokens: 100, output_tokens: 50, cache_read_input_tokens: ctx, cache_creation_input_tokens: 1000 }, content: (tools || []).map((n) => ({ type: 'tool_use', name: n })) },
+  });
   writeJsonl(main, [
     userPrompt('work'),
-    at('m1', 40000, '2026-06-09T01:00:00Z'),
-    at('m2', 200000, '2026-06-09T01:10:00Z'),  // same turn — context grew within it
+    at('m1', 40000, '2026-06-09T01:00:00Z', ['Bash']),
+    at('m2', 250000, '2026-06-09T01:10:00Z', ['Bash', 'Read']),  // same turn — context grew past 200k
     { type: 'user', message: { role: 'user', content: '<task-notification> done </task-notification>' } },
-    at('m3', 300000, '2026-06-09T01:20:00Z'),  // a subagent-orchestration turn
+    at('m3', 30000, '2026-06-09T01:20:00Z', ['Bash']),  // context reset (250k → 30k drop)
   ]);
   const detail = buildDetail(main, [], pricing());
   const work = detail.turns.find((t) => t.prompt === 'work');
-  // per-turn context is per-step, not the SUM (which would be 240000)
-  assert.equal(work.tokens.cacheRead, 240000);   // sum across the 2 steps
-  assert.equal(work.avgContext, 120000);         // (40k + 200k) / 2
-  assert.equal(work.peakContext, 200000);        // max step, not the sum
+  // per-turn context is per-step, not the SUM (which would be 290000)
+  assert.equal(work.tokens.cacheRead, 290000);   // sum across the 2 steps
+  assert.equal(work.avgContext, 145000);         // (40k + 250k) / 2
+  assert.equal(work.peakContext, 250000);        // max step, not the sum
   assert.equal(work.kind, 'user');
   // turn-kind classification
   const orch = detail.turns.find((t) => t.kind === 'subagent-orchestration');
@@ -161,12 +164,20 @@ test('buildDetail: summary + per-turn context fix the growth-misread', () => {
   const s = detail.summary;
   assert.equal(s.durationMs, 20 * 60 * 1000);    // 01:00 → 01:20
   assert.equal(s.contextGrowth.firstCall, 40000);
-  assert.equal(s.contextGrowth.peakContext, 300000);
+  assert.equal(s.contextGrowth.peakContext, 250000);
   assert.equal(s.contextGrowth.quartileAvgContext.length, 4);
   // byTurnKind aggregates cost per kind, cost-desc
   const kinds = s.byTurnKind.map((k) => k.kind);
   assert.ok(kinds.includes('user') && kinds.includes('subagent-orchestration'));
   assert.equal(s.byTurnKind.reduce((a, k) => a + k.cost, 0).toFixed(8), detail.total.toFixed(8));
+  // toolTally: canonical counts (Bash×3 across the 3 calls, Read×1), desc
+  assert.deepEqual(s.toolTally, [['Bash', 3], ['Read', 1]]);
+  // highContextCost: only m2 (250k) is above the 200k threshold
+  assert.equal(s.highContextCost.thresholdTokens, 200000);
+  assert.equal(s.highContextCost.calls, 1);
+  assert.ok(s.highContextCost.cost > 0);
+  // contextResets: the 250k → 30k drop counts as one reset
+  assert.equal(s.contextResets, 1);
 });
 
 test('buildDetail: subagent cost split out', () => {

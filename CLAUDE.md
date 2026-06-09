@@ -48,8 +48,11 @@ prompts in **execution** order, each with `kind`/`avgContext`/`peakContext`), `c
 assistant call, chronological, each call's `tokens.cacheRead` = the context size at that step), and a
 derived `summary` — `durationMs`, `contextGrowth` (per-step cacheRead: firstCall + 4 quartile averages +
 peak, the honest growth curve since a turn's `tokens.cacheRead` is a per-step **sum**, not context size),
-and `byTurnKind` (cost/token totals grouped by `turnKind` — `skill` / `subagent-orchestration` /
-`user` / `session-start` — so "how much did all the review passes cost" is one lookup). Backed by the
+`byTurnKind` (cost/token totals grouped by `turnKind` — `skill` / `subagent-orchestration` /
+`user` / `session-start` — so "how much did all the review passes cost" is one lookup), `toolTally`
+(canonical main-session tool counts — consumers that re-aggregate `calls[].tools` tend to inflate it),
+`highContextCost` (calls + cost spent above 200k context — the spend a `/compact` would have cut), and
+`contextResets` (how many times context was cleared, a step-to-step cacheRead drop > 100k). Backed by the
 pure `lib/session-detail.js` (`buildDetail`, which now also returns `turns`/`perCall`/`summary`), which
 reuses the same dedup as
 `lib/cost-aggregate.js` so the detail total equals the list COST, and by `calculateCostBreakdown` in

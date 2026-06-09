@@ -211,7 +211,8 @@ function analysisPayload(detail, id, ts, title, recap) {
       'tokens.cacheRead = re-reading accumulated context and is the dominant driver; tokens.input (fresh) is usually negligible. ' +
       'turns and calls are in EXECUTION order. NOTE: a turn\'s tokens.cacheRead is a SUM across its steps, NOT the context size — use turn.avgContext / turn.peakContext and summary.contextGrowth (per-step cacheRead) for the real growth curve. ' +
       'A cacheWrite spike usually means the parent re-cached its whole context (e.g. on a subagent return). ' +
-      'Use summary.byTurnKind to see how much each kind of work (skill-review, subagent-orchestration, user) cost in aggregate.',
+      'Use summary.byTurnKind for cost per kind of work, summary.toolTally for the canonical tool counts (do NOT re-aggregate calls[].tools — that over-counts), ' +
+      'summary.highContextCost for the spend above 200k context (what a /compact would have cut), and summary.contextResets for how many times context was cleared.',
     components: detail.components,
     summary: detail.summary,
     byModel: detail.byModel,
