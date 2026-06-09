@@ -24,7 +24,8 @@ outside itself** — every script, lib, data file and asset it needs is bundled.
 | Inline output | List mode: narrate recent sessions inline. |
 | Rich output | Detail mode: a **reusable HTML report** from a bundled template. |
 | Report location | **cwd** by default (`./session-cost-<shortid>.html`), user may override the path. |
-| `data/` placement | **Sibling of `lib/`** at skill root (not under `scripts/`) so vendored `pricing.js` resolves `__dirname/../data` verbatim. |
+| `lib/` placement | **Under `scripts/`** (`scripts/lib/`). |
+| `data/` placement | At **skill root** (outside `scripts/`). Forces a one-line patch to vendored `pricing.js` (`BUNDLED = __dirname/../../data/...`) — the only non-verbatim edit; parity test covers it. |
 
 ## Layout
 
@@ -32,18 +33,21 @@ outside itself** — every script, lib, data file and asset it needs is bundled.
 .agents/skills/session-cost-analyzer/
   SKILL.md                     # frontmatter (name/description) + agent workflow
   scripts/
-    analyze.js                 # JSON-only entry; require('../lib/...')
-  lib/                         # vendored verbatim from ../../../lib (8 files)
-    transcript.js  cost-aggregate.js  session-detail.js  cost-compute.js
-    pricing.js  periods.js  state.js  budget.js
+    analyze.js                 # JSON-only entry; require('./lib/...')
+    lib/                       # vendored from ../../../../lib (8 files)
+      transcript.js  cost-aggregate.js  session-detail.js  cost-compute.js
+      pricing.js  periods.js  state.js  budget.js
   data/
-    model_prices.json          # vendored verbatim; sibling of lib/
+    model_prices.json          # vendored verbatim; skill root, outside scripts/
   assets/
     report-template.html       # reusable styled HTML shell the agent fills
   SYNC.md                      # canonical source = repo lib/+data/; how to re-vendor
 ```
 
 `color.js` is **not** vendored — it is human-rendering only and the JSON script never calls it.
+All vendored libs are byte-identical copies **except** `pricing.js`, whose `BUNDLED` constant is
+re-pathed from `__dirname/../data` to `__dirname/../../data` (since `data/` is now two levels up,
+outside `scripts/`). This single-line delta is recorded in `SYNC.md` and re-applied on every re-sync.
 
 ## The analyzer script (`scripts/analyze.js`)
 
@@ -61,9 +65,9 @@ Same exit-1 behavior on no-match / ambiguous prefix (writes the reason to stderr
 Config-dir resolution unchanged: `--config-dir` ?? `CLAUDE_CONFIG_DIR` ?? `~/.claude`.
 Offline like the renderer (`loadPricing(..., {allowFetch:false})`).
 
-The vendored libs are **byte-identical** copies — no edits. Because `lib/` and `data/` keep their
-canonical sibling relationship, `pricing.js`'s `path.join(__dirname,'..','data','model_prices.json')`
-resolves correctly with zero changes. The only new code is `analyze.js` (a trim of `bin/sessions.js`).
+The vendored libs are copied as-is except for `pricing.js`'s one-line `BUNDLED` re-path
+(`__dirname/../data` → `__dirname/../../data`), since `data/` lives at the skill root while `lib/`
+lives under `scripts/`. The only new code is `analyze.js` (a trim of `bin/sessions.js`).
 
 ## SKILL.md workflow
 
@@ -109,10 +113,10 @@ canonical CLI — the one thing that could silently break.
 
 ## Drift management (`SYNC.md`)
 
-Canonical source = `../../lib/*.js` + `../../data/model_prices.json` in this repo. While the skill
-lives inside this repo there are two copies; `SYNC.md` records the source paths and a one-liner to
-re-copy. The parity test fails loudly if `analyze.js` ever diverges in output. Vendoring is verbatim
-copy — no manual edits to the libs — so re-syncing is a plain overwrite.
+Canonical source = repo `lib/*.js` + `data/model_prices.json`. While the skill lives inside this
+repo there are two copies; `SYNC.md` records the source paths, the plain-overwrite re-copy step, and
+the single `pricing.js` `BUNDLED` re-path to re-apply after copying. The parity test fails loudly if
+`analyze.js` ever diverges in output.
 
 ## Out of scope (YAGNI)
 
