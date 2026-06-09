@@ -107,7 +107,7 @@ function renderDetail(detail, sessionId, when, title, recap, width) {
   out.push(`SESSION ${sessionId}`);
   out.push(title || '—');
   if (recap) out.push(dim('└ ' + truncate(recap, Math.max(0, width - 2))));
-  out.push(dim(`${dayLabel(when)} ${clock(when)} · ${detail.calls} calls · ${money(detail.total)} total`));
+  out.push(dim(`${dayLabel(when)} ${clock(when)} · ${detail.calls} steps · ${money(detail.total)} total`));
 
   const t = detail.total || 1; // avoid divide-by-zero on an unbilled session
   const comp = [
@@ -135,17 +135,17 @@ function renderDetail(detail, sessionId, when, title, recap, width) {
     out.push(dim('BY MODEL'));
     const mw = Math.max(...detail.byModel.map((m) => m.model.length));
     for (const m of detail.byModel) {
-      out.push(`  ${m.model.padEnd(mw)}  ${money(m.cost)}  ${dim(m.calls + ' call' + (m.calls === 1 ? '' : 's'))}`);
+      out.push(`  ${m.model.padEnd(mw)}  ${money(m.cost)}  ${dim(m.calls + ' step' + (m.calls === 1 ? '' : 's'))}`);
     }
   }
 
   if (detail.topPrompts.length) {
     out.push('');
-    out.push(dim('TOP PROMPTS'));
+    out.push(dim('TOP PROMPTS') + dim('  · ranked by cost; steps = model responses, incl. each tool-use round'));
     const top = detail.topPrompts.slice(0, 10);
     const cw = Math.max(...top.map((p) => money(p.cost).length));
     for (const p of top) {
-      const meta = `${money(p.cost).padStart(cw)}  ${String(p.calls).padStart(2)} call${p.calls === 1 ? ' ' : 's'}  `;
+      const meta = `${money(p.cost).padStart(cw)}  ${String(p.calls).padStart(2)} step${p.calls === 1 ? ' ' : 's'}  `;
       out.push('  ' + meta + truncate(p.text, Math.max(0, width - 2 - meta.length)));
     }
     if (detail.subagentCount > 0) {

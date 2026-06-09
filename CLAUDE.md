@@ -34,8 +34,8 @@ without `--last` shows all matches), `--config-dir <path>`. A bare positional ar
 session ids (zero matches or ambiguous → exit 1). It renders a header (title/recap/total),
 `WHERE IT WENT` (cost split by token type — cache-read/input/output/cache-write/web, with
 proportion bars), `BY MODEL`, `TOP PROMPTS` (main-session user prompts ranked by the cost of the
-turns they drove, plus a `+ $X across N subagents` line), and `BY AGENT` (only when subagents
-exist). Backed by the pure `lib/session-detail.js` (`buildDetail`), which reuses the same dedup as
+turns they drove — the "steps" count = model responses incl. each tool-use round — plus a
+`+ $X across N subagents` line), and `BY AGENT` (only when subagents exist). Backed by the pure `lib/session-detail.js` (`buildDetail`), which reuses the same dedup as
 `lib/cost-aggregate.js` so the detail total equals the list COST, and by `calculateCostBreakdown` in
 `lib/cost-compute.js` (the itemized form of `calculateCost`). Renders day-grouped rows (a dim
 `── Ddd Mmm DD ──` rule per local day) of
