@@ -156,8 +156,11 @@ function renderDetail(detail, sessionId, when, title, recap, width) {
   if (detail.subagentCount > 0) {
     out.push('');
     out.push(dim('BY AGENT'));
-    const aw = Math.max(...detail.byAgent.map((a) => a.name.length));
-    for (const a of detail.byAgent) out.push(`  ${a.name.padEnd(aw)}  ${money(a.cost)}`);
+    const cw = Math.max(...detail.byAgent.map((a) => money(a.cost).length));
+    for (const a of detail.byAgent) {
+      const meta = `${money(a.cost).padStart(cw)}  `;
+      out.push('  ' + meta + truncate(a.label, Math.max(0, width - 2 - meta.length)));
+    }
   }
 
   return out.join('\n') + '\n';

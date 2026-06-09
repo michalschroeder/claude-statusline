@@ -97,15 +97,29 @@ test('buildDetail: subagent cost split out', () => {
   const main = path.join(cfg, 'projects', 'p', 'sessDDD1.jsonl');
   const sub = path.join(cfg, 'projects', 'p', 'sessDDD1', 'subagents', 'agent-x1.jsonl');
   writeJsonl(main, [userPrompt('p'), asst('m1', { input_tokens: 1000, output_tokens: 200 })], '2026-06-09T01:00:00Z');
-  writeJsonl(sub, [asst('s1', { input_tokens: 2000, output_tokens: 400 })], '2026-06-09T01:05:00Z');
+  writeJsonl(sub, [userPrompt('investigate the failing build'), asst('s1', { input_tokens: 2000, output_tokens: 400 })], '2026-06-09T01:05:00Z');
   const detail = buildDetail(main, [sub], pricing());
   assert.equal(detail.subagentCount, 1);
   assert.ok(detail.subagentTotal > 0);
   const names = detail.byAgent.map((a) => a.name);
   assert.ok(names.includes('main'));
   assert.ok(names.includes('agent-x1'));
+  // byAgent carries a human-meaningful label: main → 'main session', subagent → its task
+  assert.equal(detail.byAgent.find((a) => a.name === 'main').label, 'main session');
+  assert.equal(detail.byAgent.find((a) => a.name === 'agent-x1').label, 'investigate the failing build');
   // subagent cost is in the total but NOT in topPrompts
   assert.ok(!detail.topPrompts.some((p) => p.cost === detail.subagentTotal && p.text !== 'p'));
+});
+
+test('buildDetail: subagent label falls back to the agent stem when it has no prompt', () => {
+  const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-sd6-'));
+  tmp.push(cfg);
+  const main = path.join(cfg, 'projects', 'p', 'sessFFF1.jsonl');
+  const sub = path.join(cfg, 'projects', 'p', 'sessFFF1', 'subagents', 'agent-z9.jsonl');
+  writeJsonl(main, [userPrompt('p'), asst('m1', { input_tokens: 1000 })], '2026-06-09T01:00:00Z');
+  writeJsonl(sub, [asst('s1', { input_tokens: 2000 })], '2026-06-09T01:05:00Z'); // no user prompt
+  const detail = buildDetail(main, [sub], pricing());
+  assert.equal(detail.byAgent.find((a) => a.name === 'agent-z9').label, 'agent-z9');
 });
 
 test('buildDetail: empty/unbilled session → zeros, no crash', () => {
