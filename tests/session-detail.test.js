@@ -101,12 +101,14 @@ test('buildDetail: topPrompts carry ctx/out tokens and a tool tally', () => {
   });
   writeJsonl(main, [
     userPrompt('do work'),
-    withTools('m1', { input_tokens: 1000, output_tokens: 200, cache_read_input_tokens: 50000 }, ['Read', 'Bash', 'Bash']),
-    withTools('m2', { input_tokens: 1000, output_tokens: 300, cache_read_input_tokens: 70000 }, ['Bash', 'Edit']),
+    withTools('m1', { input_tokens: 1000, output_tokens: 200, cache_read_input_tokens: 50000, cache_creation_input_tokens: 3000 }, ['Read', 'Bash', 'Bash']),
+    withTools('m2', { input_tokens: 1000, output_tokens: 300, cache_read_input_tokens: 70000, cache_creation_input_tokens: 5000 }, ['Bash', 'Edit']),
   ]);
   const detail = buildDetail(main, [], pricing());
   const p = detail.topPrompts.find((x) => x.text === 'do work');
+  assert.equal(p.inp, 2000);              // 1000 + 1000 fresh input
   assert.equal(p.ctx, 120000);            // 50k + 70k cache-read re-read across the turn
+  assert.equal(p.cw, 8000);               // 3000 + 5000 cache-write
   assert.equal(p.out, 500);               // 200 + 300 output
   assert.deepEqual(p.tools, [['Bash', 3], ['Read', 1], ['Edit', 1]]); // desc by count
 });

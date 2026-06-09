@@ -154,18 +154,26 @@ function renderDetail(detail, sessionId, when, title, recap, width) {
 
   if (detail.topPrompts.length) {
     out.push('');
-    out.push(dim('TOP PROMPTS') + dim('  · cost · steps · context re-read · output · tools · prompt'));
+    out.push(dim('TOP PROMPTS') + dim('  · turns ranked by cost; cache-rd is the dominant driver'));
     const top = detail.topPrompts.slice(0, 10);
-    const cw = Math.max(...top.map((p) => money(p.cost).length));
-    const sw = Math.max(...top.map((p) => String(p.calls).length));
-    const xw = Math.max(...top.map((p) => tok(p.ctx).length));
-    const ow = Math.max(...top.map((p) => tok(p.out).length));
-    const tw = Math.max(...top.map((p) => toolStr(p.tools).length));
+    // Aligned columns: numeric cells right-padded, tools left-padded; a header row
+    // sits above them. cost+steps render at normal weight, token/tool cells dim.
+    const cols = [
+      { h: 'cost',     get: (p) => money(p.cost),    end: false, dim: false },
+      { h: 'steps',    get: (p) => String(p.calls),  end: false, dim: false },
+      { h: 'input',    get: (p) => tok(p.inp),       end: false, dim: true },
+      { h: 'cache-rd', get: (p) => tok(p.ctx),       end: false, dim: true },
+      { h: 'cache-wr', get: (p) => tok(p.cw),        end: false, dim: true },
+      { h: 'output',   get: (p) => tok(p.out),       end: false, dim: true },
+      { h: 'tools',    get: (p) => toolStr(p.tools), end: true,  dim: true },
+    ];
+    for (const c of cols) c.w = Math.max(c.h.length, ...top.map((p) => c.get(p).length));
+    const pad = (s, c) => (c.end ? s.padEnd(c.w) : s.padStart(c.w));
+    const prefixW = 2 + cols.reduce((s, c) => s + c.w, 0) + 2 * cols.length; // gaps incl. one before prompt
+    out.push(dim('  ' + cols.map((c) => pad(c.h, c)).join('  ') + '  prompt'));
     for (const p of top) {
-      const head = `${money(p.cost).padStart(cw)}  ${String(p.calls).padStart(sw)}st  `;
-      const stats = `${tok(p.ctx).padStart(xw)} ctx  ${tok(p.out).padStart(ow)} out  ${toolStr(p.tools).padEnd(tw)}  `;
-      const text = truncate(p.text, Math.max(0, width - 2 - head.length - stats.length));
-      out.push('  ' + head + dim(stats) + text);
+      const cells = cols.map((c) => { const s = pad(c.get(p), c); return c.dim ? dim(s) : s; });
+      out.push('  ' + cells.join('  ') + '  ' + truncate(p.text, Math.max(0, width - prefixW)));
     }
     if (detail.subagentCount > 0) {
       out.push(dim(`  + ${money(detail.subagentTotal)} across ${detail.subagentCount} subagent${detail.subagentCount === 1 ? '' : 's'}`));
