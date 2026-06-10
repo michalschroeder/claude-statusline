@@ -336,6 +336,67 @@ test('buildDetail: contextConsumers attributes tool results to concrete targets'
   assert.equal(ao.thinking.byTurn[0].thinkingTokens, 43);
 });
 
+test('buildDetail: two main files across project dirs sum to the aggregate total (cross-cwd resume)', () => {
+  const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-sd-xcwd-'));
+  tmp.push(cfg);
+  const id = 'sessXCW1';
+  const mainA = path.join(cfg, 'projects', 'pa', id + '.jsonl');
+  const mainB = path.join(cfg, 'projects', 'pb', id + '.jsonl');
+  const subA = path.join(cfg, 'projects', 'pa', id, 'subagents', 'agent-x.jsonl');
+  writeJsonl(mainA, [
+    userPrompt('first cwd'),
+    asst('m1', { input_tokens: 1000, output_tokens: 200 }),
+  ], 1000);
+  writeJsonl(subA, [
+    userPrompt('sub in dir A'),
+    asst('s1', { input_tokens: 2000, output_tokens: 400 }),
+  ], 1500);
+  writeJsonl(mainB, [
+    userPrompt('second cwd'),
+    asst('m2', { input_tokens: 800, output_tokens: 150, cache_read_input_tokens: 5000 }),
+  ], 2000);
+  const px = pricing();
+  const agg = aggregate(cfg, px);
+  const detail = buildDetail([mainA, mainB], [subA], px);
+  // detail total == list COST (aggregate sums every dir's half + its subagents)
+  assert.equal(detail.total.toFixed(8), agg.perSession[id].total.toFixed(8));
+  // both main halves merge into a single 'main' byAgent row; subagent split out
+  const mainRow = detail.byAgent.find((a) => a.name === 'main');
+  assert.ok(mainRow);
+  assert.equal(detail.subagentCount, 1);
+  assert.ok(detail.subagentTotal > 0);
+  // main cost = total minus subagent cost
+  assert.equal(mainRow.cost.toFixed(8), (detail.total - detail.subagentTotal).toFixed(8));
+});
+
+test('buildDetail: single-file (non-array) signature still works', () => {
+  const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-sd-sig-'));
+  tmp.push(cfg);
+  const main = path.join(cfg, 'projects', 'p', 'sessSIG1.jsonl');
+  writeJsonl(main, [
+    userPrompt('p'),
+    asst('m1', { input_tokens: 1000, output_tokens: 200 }),
+  ]);
+  const px = pricing();
+  const agg = aggregate(cfg, px);
+  const detail = buildDetail(main, [], px); // bare path, not array
+  assert.equal(detail.total.toFixed(8), agg.perSession.sessSIG1.total.toFixed(8));
+  assert.equal(detail.calls, 1);
+});
+
+test('buildDetail: global dedup across main files counts a shared message id once', () => {
+  const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-sd-dup-'));
+  tmp.push(cfg);
+  const id = 'sessDUP1';
+  const mainA = path.join(cfg, 'projects', 'pa', id + '.jsonl');
+  const mainB = path.join(cfg, 'projects', 'pb', id + '.jsonl');
+  // same streamed message id 'm1' appears in both halves → must bill once
+  writeJsonl(mainA, [userPrompt('a'), asst('m1', { input_tokens: 1000, output_tokens: 200 })], 1000);
+  writeJsonl(mainB, [userPrompt('b'), asst('m1', { input_tokens: 1000, output_tokens: 200 }), asst('m2', { input_tokens: 500, output_tokens: 50 })], 2000);
+  const detail = buildDetail([mainA, mainB], [], pricing());
+  assert.equal(detail.calls, 2); // m1 (once) + m2
+});
+
 test('buildDetail: bySkill attributes turn cost to the dispatched skill', () => {
   const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-sd7-'));
   tmp.push(cfg);
