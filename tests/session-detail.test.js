@@ -19,6 +19,7 @@ function pricing() {
 }
 
 const MODEL = 'claude-opus-4-8'; // present in data/model_prices.json
+const UNPRICED = 'claude-totally-fake-9'; // absent from the price table → $0
 const asst = (id, usage, ts) => ({ type: 'assistant', timestamp: ts || '2026-06-09T01:00:00Z', message: { id, model: MODEL, usage } });
 const userPrompt = (text) => ({ type: 'user', message: { role: 'user', content: text } });
 const toolResult = () => ({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', content: 'ok' }] } });
@@ -52,6 +53,8 @@ test('buildDetail: total matches aggregate over the same session', () => {
   assert.ok(detail.total > 0);
   assert.equal(detail.total.toFixed(8), agg.perSession.sessAAA1.total.toFixed(8));
   assert.equal(detail.calls, 2);
+  assert.equal(detail.unpriced, 0); // priced-only session → no unpriced calls
+  assert.deepEqual(detail.unpricedModels, []);
 });
 
 test('buildDetail: components sum to total; byModel aggregates', () => {
@@ -395,6 +398,42 @@ test('buildDetail: global dedup across main files counts a shared message id onc
   writeJsonl(mainB, [userPrompt('b'), asst('m1', { input_tokens: 1000, output_tokens: 200 }), asst('m2', { input_tokens: 500, output_tokens: 50 })], 2000);
   const detail = buildDetail([mainA, mainB], [], pricing());
   assert.equal(detail.calls, 2); // m1 (once) + m2
+});
+
+test('buildDetail: unpriced calls are counted, not silently dropped', () => {
+  const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-sd-unp-'));
+  tmp.push(cfg);
+  const main = path.join(cfg, 'projects', 'p', 'sessUNP1.jsonl');
+  writeJsonl(main, [
+    userPrompt('p'),
+    asst('m1', { input_tokens: 1000, output_tokens: 200 }),                          // priced
+    { type: 'assistant', timestamp: '2026-06-09T01:00:00Z', message: { id: 'm2', model: UNPRICED, usage: { input_tokens: 9999, output_tokens: 9999, cache_read_input_tokens: 90000 } } },
+  ]);
+  const px = pricing();
+  const agg = aggregate(cfg, px);
+  const detail = buildDetail(main, [], px);
+  assert.equal(detail.unpriced, 1);
+  assert.deepEqual(detail.unpricedModels, [UNPRICED]);
+  assert.equal(detail.calls, 1);                              // only the priced call counted
+  assert.ok(!detail.byModel.some((m) => m.model === UNPRICED)); // no $0 row pollutes byModel
+  // total = priced call only (== aggregate, which also drops the unpriced call)
+  assert.equal(detail.total.toFixed(8), agg.perSession.sessUNP1.total.toFixed(8));
+});
+
+test('buildDetail: all-unpriced session → unpriced>0, zero total', () => {
+  const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-sd-allunp-'));
+  tmp.push(cfg);
+  const main = path.join(cfg, 'projects', 'p', 'sessUNP2.jsonl');
+  writeJsonl(main, [
+    userPrompt('p'),
+    { type: 'assistant', timestamp: '2026-06-09T01:00:00Z', message: { id: 'm1', model: UNPRICED, usage: { input_tokens: 1000, output_tokens: 200 } } },
+    { type: 'assistant', timestamp: '2026-06-09T01:01:00Z', message: { id: 'm2', model: UNPRICED, usage: { input_tokens: 500, output_tokens: 50 } } },
+  ]);
+  const detail = buildDetail(main, [], pricing());
+  assert.equal(detail.total, 0);
+  assert.equal(detail.calls, 0);
+  assert.equal(detail.unpriced, 2);
+  assert.deepEqual(detail.unpricedModels, [UNPRICED]); // distinct models only
 });
 
 test('buildDetail: bySkill attributes turn cost to the dispatched skill', () => {
