@@ -30,7 +30,7 @@ function money(n) {
   return '$0.00';
 }
 
-// Token counts → compact "140k" / "1.2M", matching the statusline's formatCompact tiers.
+// Token counts → compact "140k" / "1.2M".
 function compactTokens(n) {
   const v = Number(n) || 0;
   if (v < 1000) return String(Math.round(v));
@@ -87,10 +87,225 @@ function topTurnsRows(turns, limit) {
     `<td class="prompt">${esc(truncate(t.prompt, 120))}</td></tr>`).join('\n');
 }
 
-// byAgent carries the main session as label 'main session'; the Subagents table is
-// the fan-out only, so drop that row. Empty → an explicit placeholder, not a blank table.
+// What filled the context, per tool — count of results, est tokens, share bar.
+function consumerToolRows(cc) {
+  const rows = (cc && cc.byTool) || [];
+  if (!rows.length) return '<tr><td colspan="5" class="prompt">no consumer data (re-run analyze.js to regenerate)</td></tr>';
+  const total = Math.max(1, Number(cc.totalEstTokens) || 0);
+  return rows.map((t) => {
+    const pct = Math.round((Number(t.estTokens) || 0) / total * 100);
+    return `<tr><td>${esc(t.tool)}</td><td class="num">${esc(t.count)}</td>` +
+      `<td class="num">${compactTokens(t.estTokens)}</td>` +
+      `<td class="num">${money(t.carriedCost)}</td>` +
+      `<td><div class="bar" style="width:${pct}%"></div></td></tr>`;
+  }).join('\n');
+}
+
+// Top individual context consumers — the concrete file/command/prompt that landed
+// in context, est tokens, and the carried re-read cost.
+function consumerRows(cc, limit) {
+  const rows = ((cc && cc.top) || []).slice(0, limit);
+  if (!rows.length) return '<tr><td colspan="5" class="prompt">no consumer data (re-run analyze.js to regenerate)</td></tr>';
+  const total = Math.max(1, Number(cc.totalEstTokens) || 0);
+  return rows.map((c) => {
+    const pct = Math.round((Number(c.estTokens) || 0) / total * 100);
+    // synthetic rows aggregate the whole session — their count isn't a repeat count
+    const tool = c.count > 1 && !c.synthetic ? `${c.tool} ×${c.count}` : c.tool;
+    return `<tr><td class="num">${compactTokens(c.estTokens)}</td>` +
+      `<td><div class="bar" style="width:${pct}%"></div></td>` +
+      `<td class="num">${money(c.carriedCost)}</td><td>${esc(tool)}</td>` +
+      `<td class="prompt">${esc(truncate(c.target, 110))}</td></tr>`;
+  }).join('\n');
+}
+
+// Thinking drill-down headline: how much, billed cost, stored vs unstored split,
+// per-step stats and the peak step. Plain text — the caller escapes it.
+function thinkingSummary(ao) {
+  const th = ao && ao.thinking;
+  if (!th) return 'no thinking recorded (or payload predates summary.assistantOutput — re-run analyze.js)';
+  const pk = th.peakStep || {};
+  return `${compactTokens(th.storedTokens + th.unstoredTokens)} tokens ${money(ao.byKind.thinking.cost)} billed at the output rate — ` +
+    `${compactTokens(th.unstoredTokens)} interleaved (billed, never saved to the transcript) + ` +
+    `${compactTokens(th.storedTokens)} saved as thinking blocks · ` +
+    `${th.stepsWithThinking}/${th.mainSteps} steps thought · avg ${compactTokens(th.avgPerThinkingStep)}/step · ` +
+    `peak ${compactTokens(pk.tokens)} at step ${pk.seq}${(pk.nextTools || []).length ? ' → ' + pk.nextTools.join(', ') : ''}`;
+}
+
+// Which prompts drove the reasoning — one row per thinking.byTurn entry.
+function thinkingTurnRows(ao, limit) {
+  const th = ao && ao.thinking;
+  const rows = ((th && th.byTurn) || []).slice(0, limit);
+  if (!rows.length) return '<tr><td colspan="4" class="prompt">—</td></tr>';
+  const total = Math.max(1, (th.storedTokens + th.unstoredTokens) || 0);
+  return rows.map((t) => {
+    const pct = Math.round((Number(t.thinkingTokens) || 0) / total * 100);
+    return `<tr><td class="num">${compactTokens(t.thinkingTokens)}</td>` +
+      `<td><div class="bar" style="width:${pct}%"></div></td>` +
+      `<td class="num">${esc(t.steps)}</td>` +
+      `<td class="prompt">${esc(truncate(t.prompt, 110))}</td></tr>`;
+  }).join('\n');
+}
+
+// The heaviest single reasoning bursts: trigger (what landed in context right
+// before) → next action. The thinking text itself is never persisted.
+function thinkingStepRows(ao, limit) {
+  const rows = ((ao && ao.thinking && ao.thinking.topSteps) || []).filter((b) => b.trigger).slice(0, limit);
+  if (!rows.length) return '<tr><td colspan="4" class="prompt">—</td></tr>';
+  return rows.map((b) =>
+    `<tr><td class="num">${compactTokens(b.tokens)}</td>` +
+    `<td class="num">${esc(b.seq)}</td>` +
+    `<td class="prompt">${esc(b.trigger.tool)}: ${esc(truncate(b.trigger.target, 90))}</td>` +
+    `<td>${esc((b.nextTools || []).join(', ') || 'replied')}</td></tr>`).join('\n');
+}
+
+// Cost per skill dispatch — only the turns the skill itself drove.
+function skillRows(bySkill) {
+  const rows = bySkill || [];
+  if (!rows.length) return '<tr><td colspan="4" class="prompt">no skill dispatches</td></tr>';
+  return rows.map((s) =>
+    `<tr><td>${esc(s.skill)}</td><td class="num">${esc(s.turns)}</td>` +
+    `<td class="num">${esc(s.steps)}</td><td class="num">${money(s.cost)}</td></tr>`).join('\n');
+}
+
+// Chart thresholds, mirroring the data layer (lib/session-detail.js): the
+// analyzer publishes them as summary.highContextCost.thresholdTokens and uses
+// RESET_DROP for summary.contextResets — keep these in lockstep.
+const HIGH_CONTEXT = 200000;
+const RESET_DROP = 100000;
+// Context size at one step = the call's cacheRead (re-read accumulated context).
+// SAME basis the data layer uses for summary.highContextCost and contextResets, so
+// the chart's tiers and reset lines never contradict the cards rendered beside them.
+const ctxOf = (c) => (c.tokens && c.tokens.cacheRead) || 0;
+// Chart colors are CSS classes defined once in the template's <style> (next to
+// the legend swatches, so chart and legend can't diverge).
+const tierClass = (v) => (v >= HIGH_CONTEXT ? 'c-high' : v >= RESET_DROP ? 'c-mid' : 'c-low');
+const KIND_CLASS = {
+  user: 'c-user', skill: 'c-skill', 'subagent-orchestration': 'c-orch',
+  'session-start': 'c-start', overhead: 'c-dim',
+};
+
+// Context-window timeline: one SVG bar per main-session step (subagents run in
+// their own context and are excluded). Height = context size at that step,
+// colored by the HIGH_CONTEXT tier. Turn-start ticks under the axis, dashed
+// reset line on a context drop > RESET_DROP. Bars carry data-* attributes for
+// the template's hover readout plus a native <title> tooltip; everything
+// user-derived is escaped.
+function contextTimeline(calls, turns) {
+  const main = (calls || []).filter((c) => c.isMain);
+  if (!main.length) return '<p class="prompt">no per-call data in this payload — re-run analyze.js to regenerate</p>';
+  const W = 860, H = 210, padL = 44, padR = 6, padT = 10, padB = 22;
+  const chartW = W - padL - padR, chartH = H - padT - padB, baseY = padT + chartH;
+  const peak = Math.max(...main.map(ctxOf), 1);
+  const yMax = Math.max(peak, HIGH_CONTEXT * 1.1) * 1.05; // keep the 200k line on-chart even for small sessions
+  const xAt = (i) => padL + (i + 0.1) * (chartW / main.length);
+  const yAt = (v) => padT + chartH * (1 - v / yMax);
+  const barW = Math.max((chartW / main.length) * 0.8, 0.8);
+  // Key on turnIndex, not prompt text: two distinct turns with identical text
+  // (e.g. "continue" twice) stay separate ticks.
+  const kindOf = new Map((turns || []).map((t) => [t.turnIndex, t.kind]));
+  const parts = [];
+  for (const g of [RESET_DROP, HIGH_CONTEXT]) {
+    const gy = yAt(g).toFixed(1);
+    const warn = g === HIGH_CONTEXT;
+    parts.push(`<line x1="${padL}" y1="${gy}" x2="${W - padR}" y2="${gy}" class="${warn ? 'grid-warn' : 'grid'}" stroke-dasharray="4 4"/>`);
+    parts.push(`<text x="2" y="${(Number(gy) + 3).toFixed(1)}" class="ctx-axis">${g / 1000}k</text>`);
+  }
+  let prevTurn = null, prevCtx = 0;
+  main.forEach((c, i) => {
+    const v = ctxOf(c);
+    const xv = xAt(i).toFixed(1);
+    const step = i + 1; // main-session step ordinal (matches summary.mainSteps / thinking seq)
+    if (i > 0 && prevCtx - v > RESET_DROP) {
+      parts.push(`<line x1="${xv}" y1="${padT}" x2="${xv}" y2="${baseY}" class="reset-line" stroke-dasharray="2 3"><title>context dropped ${esc(compactTokens(prevCtx))} → ${esc(compactTokens(v))} — /compact, context clear, or a cache rebuild</title></line>`);
+    }
+    if (c.prompt && c.turnIndex !== prevTurn) {
+      const tick = kindOf.get(c.turnIndex) === 'user' ? 'c-user' : 'c-dim';
+      parts.push(`<rect class="ctx-turn ${tick}" x="${xv}" y="${baseY + 3}" width="${Math.max(barW, 2).toFixed(2)}" height="5"><title>${esc(truncate(c.prompt, 110))}</title></rect>`);
+      prevTurn = c.turnIndex;
+    }
+    const h = Math.max(baseY - yAt(v), 0.5);
+    parts.push(`<rect class="ctx-bar ${tierClass(v)}" x="${xv}" y="${yAt(v).toFixed(1)}" width="${barW.toFixed(2)}" height="${h.toFixed(1)}"` +
+      ` data-step="${esc(step)}" data-ctx="${esc(compactTokens(v))}" data-cost="${esc(money(c.cost))}" data-prompt="${esc(truncate(c.prompt || '', 110))}">` +
+      `<title>step ${esc(step)} · ${esc(compactTokens(v))} context · ${esc(money(c.cost))}</title></rect>`);
+    prevCtx = v;
+  });
+  parts.push(`<line x1="${padL}" y1="${baseY}" x2="${W - padR}" y2="${baseY}" class="grid"/>`);
+  return `<svg class="ctx-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="context window size per step">${parts.join('')}</svg>`;
+}
+
+// Grouped horizontal context bar: consecutive main-session steps serving the same
+// prompt collapse into ONE segment, whose width is how much the context grew while
+// that turn ran (next turn's starting context − this turn's). A dim leading segment
+// is the session's fixed overhead (everything in context before the first reply).
+// Zero-growth turns are skipped; a drop > RESET_DROP renders as a dashed reset divider.
+function contextGrowthBar(calls, turns) {
+  const main = (calls || []).filter((c) => c.isMain);
+  if (!main.length) return '<p class="prompt">no per-call data in this payload — re-run analyze.js to regenerate</p>';
+  const groups = [];
+  for (const c of main) {
+    const last = groups[groups.length - 1];
+    if (last && last.turnIndex === c.turnIndex) {
+      last.end = ctxOf(c); last.steps += 1; last.cost += c.cost;
+    } else {
+      groups.push({ turnIndex: c.turnIndex, prompt: c.prompt || '', start: ctxOf(c), end: ctxOf(c), steps: 1, cost: c.cost });
+    }
+  }
+  const kindOf = new Map((turns || []).map((t) => [t.turnIndex, t.kind]));
+  // Leading segment = the session baseline (system prompt + tool defs + project
+  // context), sized as the first call's cacheRead + cacheWrite + fresh input — the
+  // SAME baseline the session-overhead consumer row reports, so a cold-cache first
+  // call (cacheRead 0, big cacheWrite) doesn't dump the baseline onto turn 1.
+  const f = main[0].tokens || {};
+  const baseline = (f.cacheRead || 0) + (f.cacheWrite || 0) + (f.input || 0);
+  // Growth attributed to a turn = the next turn's starting context − its own
+  // (everything the turn read + wrote that later steps re-read). Negative = a reset.
+  const items = [{ seg: { label: 'session start — system prompt, tool definitions, project context', from: 0, to: baseline, grow: baseline, steps: 0, cost: 0, kind: 'overhead' } }];
+  for (let i = 0; i < groups.length; i++) {
+    const g = groups[i];
+    const nextStart = i + 1 < groups.length ? groups[i + 1].start : g.end;
+    const grow = nextStart - g.start;
+    if (grow < -RESET_DROP) { items.push({ reset: -grow }); continue; }
+    if (grow <= 0) continue;
+    items.push({ seg: { label: g.prompt, from: g.start, to: g.start + grow, grow, steps: g.steps, cost: g.cost, kind: kindOf.get(g.turnIndex) || 'user' } });
+  }
+  const total = items.reduce((a, it) => a + (it.seg ? it.seg.grow : 0), 0);
+  if (total <= 0) return '<p class="prompt">context never grew — nothing to chart</p>';
+  const W = 860, H = 56, barY = 6, barH = 26, padL = 2, padR = 2;
+  const chartW = W - padL - padR;
+  // Proportional widths with a small visible floor, then scaled so floors + segments
+  // never exceed chartW — a session with hundreds of turns shrinks to fit instead of
+  // drawing the latest (often priciest) segments off the edge.
+  const MIN_W = 1.2;
+  const segWidths = items.filter((it) => it.seg).map((it) => Math.max((it.seg.grow / total) * chartW, MIN_W));
+  const sumW = segWidths.reduce((a, b) => a + b, 0);
+  const scale = sumW > chartW ? chartW / sumW : 1;
+  const parts = [];
+  let x = padL, si = 0;
+  for (const it of items) {
+    if (it.reset) {
+      parts.push(`<line x1="${x.toFixed(1)}" y1="${barY - 3}" x2="${x.toFixed(1)}" y2="${barY + barH + 3}" class="divider" stroke-dasharray="2 3"><title>context cleared here — dropped ${esc(compactTokens(it.reset))} (/compact or context clear)</title></line>`);
+      continue;
+    }
+    const s = it.seg;
+    const w = segWidths[si++] * scale;
+    const tip = s.kind === 'overhead'
+      ? `${s.label} · ${compactTokens(s.grow)}`
+      : `${truncate(s.label, 110)} — grew context ${compactTokens(s.from)} → ${compactTokens(s.to)} (+${compactTokens(s.grow)}) · ${s.steps} steps · ${money(s.cost)}`;
+    parts.push(`<rect class="ctx-seg ${KIND_CLASS[s.kind] || KIND_CLASS.user}" x="${x.toFixed(1)}" y="${barY}" width="${w.toFixed(1)}" height="${barH}"` +
+      ` data-kind="${esc(s.kind)}" data-grow="${esc(compactTokens(s.grow))}" data-from="${esc(compactTokens(s.from))}" data-to="${esc(compactTokens(s.to))}"` +
+      ` data-steps="${esc(s.steps)}" data-cost="${esc(money(s.cost))}" data-prompt="${esc(truncate(s.label, 110))}">` +
+      `<title>${esc(tip)}</title></rect>`);
+    x += w;
+  }
+  parts.push(`<text x="${padL}" y="${H - 4}" class="ctx-axis">0</text>`);
+  parts.push(`<text x="${W - padR}" y="${H - 4}" class="ctx-axis" text-anchor="end">+${compactTokens(total)} total context added</text>`);
+  return `<svg class="ctx-growbar" viewBox="0 0 ${W} ${H}" role="img" aria-label="context growth grouped by turn">${parts.join('')}</svg>`;
+}
+
+// byAgent carries the main session as name 'main'; the Subagents table is the
+// fan-out only, so drop that row. Empty → an explicit placeholder, not a blank table.
 function subagentRows(byAgent) {
-  const subs = (byAgent || []).filter((a) => a.label !== 'main session');
+  const subs = (byAgent || []).filter((a) => a.name !== 'main');
   if (!subs.length) return '<tr><td colspan="2" class="prompt">no subagents</td></tr>';
   return subs.map((a) =>
     `<tr><td class="prompt">${esc(truncate(a.label, 100))}</td>` +
@@ -99,10 +314,12 @@ function subagentRows(byAgent) {
 
 // ---- fill ---------------------------------------------------------------------
 
+// Single pass over the ORIGINAL template: a {{TOKEN}} that appears inside an
+// already-substituted value (e.g. a prompt or title containing the literal text
+// "{{SUBAGENT_ROWS}}") is never rescanned, so user-derived text can't inject
+// generated markup. The replacer form also leaves `$` sequences in values intact.
 function fillSlots(tpl, slots) {
-  let out = tpl;
-  for (const [k, v] of Object.entries(slots)) out = out.split(`{{${k}}}`).join(v);
-  return out;
+  return tpl.replace(/\{\{([A-Z_]+)\}\}/g, (m, k) => (k in slots ? slots[k] : m));
 }
 
 function render(detail, template) {
@@ -114,13 +331,24 @@ function render(detail, template) {
     TITLE: esc(detail.title || '—'),
     STARTED_AT: esc(detail.startedAt),
     TOTAL_COST: money(detail.totalCost),
-    STEP_COUNT: esc(detail.steps),
+    // main-session steps — what the timeline draws and thinking counts (detail.steps
+    // also counts subagent calls, which would not match the bars below).
+    STEP_COUNT: esc(s.mainSteps != null ? s.mainSteps : detail.steps),
     DURATION: duration(s.durationMs),
     HIGH_CTX_COST: money(hc.cost),
     HIGH_CTX_CALLS: esc(hc.calls || 0),
     CONTEXT_RESETS: esc(s.contextResets || 0),
     PEAK_CONTEXT: compactTokens(cg.peakContext),
+    CONTEXT_TIMELINE: contextTimeline(detail.calls, detail.turns),
+    CONTEXT_GROWTH_BAR: contextGrowthBar(detail.calls, detail.turns),
     WHERE_IT_WENT_ROWS: whereItWentRows(detail.components || {}, detail.totalCost),
+    CONSUMER_TOOL_ROWS: consumerToolRows(s.contextConsumers),
+    CONSUMER_ROWS: consumerRows(s.contextConsumers, 20),
+    CONSUMERS_NOTE: esc((s.contextConsumers && s.contextConsumers.note) || ''),
+    THINKING_SUMMARY: esc(thinkingSummary(s.assistantOutput)),
+    THINKING_TURN_ROWS: thinkingTurnRows(s.assistantOutput, 8),
+    THINKING_STEP_ROWS: thinkingStepRows(s.assistantOutput, 5),
+    SKILL_ROWS: skillRows(s.bySkill),
     BY_MODEL_ROWS: byModelRows(detail.byModel),
     TOP_TURNS_ROWS: topTurnsRows(detail.turns, 10),
     SUBAGENT_ROWS: subagentRows(detail.byAgent),
@@ -132,7 +360,11 @@ function render(detail, template) {
 function parseArgs(argv) {
   const opts = { out: null };
   for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === '--out') { opts.out = argv[++i]; }
+    if (argv[i] === '--out') {
+      const v = argv[i + 1];
+      if (v == null || v.startsWith('--')) { process.stderr.write('render-report.js: --out requires a path\n'); process.exit(1); }
+      opts.out = v; i++;
+    }
     else { process.stderr.write(`render-report.js: unexpected argument '${argv[i]}'\n`); process.exit(1); }
   }
   return opts;
@@ -165,6 +397,6 @@ async function main() {
   process.stdout.write(out + '\n');
 }
 
-module.exports = { render, money, compactTokens, duration, esc, whereItWentRows, subagentRows };
+module.exports = { render, money, compactTokens, duration };
 
 if (require.main === module) main();

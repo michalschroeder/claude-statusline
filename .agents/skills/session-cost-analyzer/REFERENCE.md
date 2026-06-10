@@ -27,5 +27,32 @@
 - `summary.contextGrowth` — `{firstCall, quartileAvgContext[4], peakContext}` per-step cacheRead:
   the honest growth curve. A turn's `tokens.cacheRead` is a SUM across its steps, NOT context size.
 - `summary.toolTally` — canonical main-session tool counts. Do not recompute from `calls[]`.
+- `summary.contextConsumers` — WHAT filled the context, by concrete target: each tool result
+  (which file was Read, which Bash command ran, which pattern was Grepped) and user prompt,
+  with `estTokens` (~chars/4) and `carriedCost` (the re-read tax on every later step). Includes
+  synthetic rows so the table explains ~all of peak context: `session-overhead` (system prompt +
+  tool defs) and the model's own output split by kind — `assistant-text` (prose replies),
+  `assistant-thinking` (extended-thinking blocks), `assistant-tool-calls` (arguments it wrote:
+  Edit payloads, Bash commands, subagent prompts; the label names the top tools). When
+  assistant-* rows dominate, the session's cost driver is the model's own verbosity (long
+  thinking, big Edit payloads), not what it read. Use `top` to name the exact files/commands
+  that consumed the context; numbers are estimates — say so when reporting them.
+- `summary.assistantOutput` — the drill-down behind those assistant-* rows. `byKind` splits the
+  model's output_tokens (billed at the full output rate, the priciest tier) into
+  `text`/`thinking`/`toolCalls` with apportioned cost. `thinking` explains the big bucket:
+  `unstoredTokens` is interleaved thinking — billed in `output_tokens` but never written to the
+  transcript (inferred as output_tokens minus visible chars/4) — vs `storedTokens` (saved thinking
+  blocks); `byTurn` names WHICH prompts drove the reasoning; `topSteps` are the heaviest single
+  bursts, each with its `trigger` — what landed in context right before (the tool result or
+  prompt it was reacting to) — and the action it took next. The thinking TEXT is never
+  persisted anywhere, so trigger → next-action is the maximum attribution the transcript
+  supports. High thinking is intrinsic to debugging loops (every tool result
+  triggers a reasoning pass) — the lever is fewer, bigger steps and pushing iterate-heavy loops
+  into subagents, not "think less".
+- `summary.bySkill` — cost per skill dispatch (skill name extracted from the expansion prompt or
+  `/slash` command), with turns/steps/token sums. Scope caveat: it counts only the turns the
+  dispatch itself drove — a skill whose instructions shaped the rest of the session (e.g. a
+  workflow skill) costs more than its own turns show; its expansion also sits in context as a
+  `user-prompt` consumer row with a carried cost.
 - `byModel` / `byAgent` / `subagents` — cost split by model, by subagent task, and the subagent total.
 - `turns` (execution order) carry `kind` / `avgContext` / `peakContext`.

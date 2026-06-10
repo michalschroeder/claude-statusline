@@ -64,7 +64,7 @@ test('smoke: detail payload exposes the precomputed summary rollups', async () =
   const out = await runJson(['smoke002'], cfg);
   assert.strictEqual(out.session, 'smoke002');
   assert.ok(out.totalCost > 0);
-  for (const k of ['contextGrowth', 'byTurnKind', 'toolTally', 'highContextCost', 'contextResets']) {
+  for (const k of ['contextGrowth', 'byTurnKind', 'toolTally', 'highContextCost', 'contextResets', 'contextConsumers', 'assistantOutput', 'bySkill']) {
     assert.ok(k in out.summary, `summary.${k} present`);
   }
 });
