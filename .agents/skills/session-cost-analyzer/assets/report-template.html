@@ -1,0 +1,279 @@
+<!doctype html>
+<!--
+  Session cost report template. Slots (double-braced NAME tokens in the body;
+  listed here without braces so the renderer's global replace can't inject
+  user-derived text into this comment) are filled from `analyze.js <prefix>` JSON:
+    SESSION_ID       session
+    TITLE            title (or "—")
+    STARTED_AT       startedAt
+    TOTAL_COST       totalCost, formatted "$0.00"
+    STEP_COUNT       steps
+    DURATION         summary.durationMs → "Xh Ym"
+    HIGH_CTX_COST    summary.highContextCost.cost → "$0.00" (what /compact would save)
+    HIGH_CTX_CALLS   summary.highContextCost.calls
+    CONTEXT_RESETS   summary.contextResets
+    PEAK_CONTEXT     summary.contextGrowth.peakContext → "Nk"
+    CONTEXT_TIMELINE inline SVG — one bar per main-session step (from calls[]), height = context size
+    CONTEXT_GROWTH_BAR inline SVG — horizontal bar, one segment per turn, width = context growth
+    WHERE_IT_WENT_ROWS  one <tr> per components entry: <td>label</td><td>$cost</td><td><bar></td>
+    CONSUMER_TOOL_ROWS  one <tr> per summary.contextConsumers.byTool entry (tool, count, est tokens, carried cost, share)
+    CONSUMER_ROWS       one <tr> per summary.contextConsumers.top entry (est tokens, share, carried cost, tool, target)
+    CONSUMERS_NOTE      summary.contextConsumers.note (estimate disclaimer)
+    THINKING_SUMMARY    summary.assistantOutput.thinking headline (tokens, cost, stored vs unstored, peak step)
+    THINKING_TURN_ROWS  one <tr> per summary.assistantOutput.thinking.byTurn entry (tokens, share, steps, prompt)
+    THINKING_STEP_ROWS  one <tr> per summary.assistantOutput.thinking.topSteps entry (tokens, step, trigger, next action)
+    SKILL_ROWS          one <tr> per summary.bySkill entry (skill, turns, steps, cost)
+    BY_MODEL_ROWS       one <tr> per byModel entry
+    TOP_TURNS_ROWS      one <tr> per top turn (cost, kind, peakContext, prompt)
+    SUBAGENT_ROWS       one <tr> per byAgent entry (task, cost) — omit table if none
+
+  All explanatory copy is static template text by design: the report must stay
+  readable when shared or printed, so explanations are always visible (no tooltips)
+  and the renderer stays a pure slot-filling transform.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session cost · {{SESSION_ID}}</title>
+<style>
+  :root {
+    --bg:#0f1115; --fg:#e6e6e6; --dim:#8a8f98; --accent:#7aa2f7; --warn:#e0af68; --bar:#3b4261;
+    /* chart palette — the single source for SVG fills AND legend swatches below */
+    --c-low:#9ece6a; --c-mid:var(--warn); --c-high:#f7768e;
+    --c-user:var(--accent); --c-skill:#bb9af7; --c-orch:#2ac3de; --c-start:#565f89; --c-dim:var(--bar);
+  }
+  svg .c-low{fill:var(--c-low)} svg .c-mid{fill:var(--c-mid)} svg .c-high{fill:var(--c-high)}
+  svg .c-user{fill:var(--c-user)} svg .c-skill{fill:var(--c-skill)} svg .c-orch{fill:var(--c-orch)}
+  svg .c-start{fill:var(--c-start)} svg .c-dim{fill:var(--c-dim)}
+  svg .grid{stroke:#232838} svg .grid-warn{stroke:var(--c-mid)}
+  svg .reset-line{stroke:var(--c-user)} svg .divider{stroke:var(--fg)}
+  .ctx-legend i.c-low{background:var(--c-low)} .ctx-legend i.c-mid{background:var(--c-mid)}
+  .ctx-legend i.c-high{background:var(--c-high)} .ctx-legend i.c-user{background:var(--c-user)}
+  .ctx-legend i.c-skill{background:var(--c-skill)} .ctx-legend i.c-orch{background:var(--c-orch)}
+  .ctx-legend i.c-start{background:var(--c-start)} .ctx-legend i.c-dim{background:var(--c-dim)}
+  * { box-sizing: border-box; }
+  body { margin:0; font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--bg); color:var(--fg); }
+  .wrap { max-width:900px; margin:0 auto; padding:32px 20px; }
+  h1 { font-size:18px; margin:0 0 4px; }
+  .sub { color:var(--dim); margin:0 0 24px; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:20px; }
+  .card { background:#161922; border:1px solid #232838; border-radius:8px; padding:14px; }
+  .card .k { color:var(--dim); font-size:12px; }
+  .card .v { font-size:20px; margin-top:4px; }
+  .card .v.warn { color:var(--warn); }
+  .primer { background:#161922; border:1px solid #232838; border-left:3px solid var(--accent); border-radius:8px; padding:16px 18px; margin-bottom:28px; }
+  .primer .formula { font-size:16px; color:var(--accent); margin-bottom:8px; }
+  .primer p { margin:0; color:var(--dim); font-size:13px; max-width:75ch; }
+  h2 { font-size:14px; color:var(--accent); border-bottom:1px solid #232838; padding-bottom:6px; margin:28px 0 8px; }
+  .explain { color:var(--dim); font-size:12px; line-height:1.6; margin:0 0 12px; max-width:78ch; }
+  .explain strong { color:var(--fg); font-weight:normal; }
+  table { width:100%; border-collapse:collapse; }
+  td, th { text-align:left; padding:6px 8px; border-bottom:1px solid #1c2030; vertical-align:top; }
+  th { color:var(--dim); font-weight:normal; font-size:12px; }
+  td.num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .bar { height:8px; background:var(--bar); border-radius:4px; }
+  .ctx-chart { width:100%; height:auto; display:block; background:#161922; border:1px solid #232838; border-radius:8px; }
+  .ctx-chart .ctx-axis { fill:var(--dim); font-size:10px; font-family:inherit; }
+  .ctx-bar:hover { opacity:.7; }
+  .ctx-legend { display:flex; gap:16px; flex-wrap:wrap; color:var(--dim); font-size:12px; margin:8px 0 0; }
+  .ctx-legend i { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px; vertical-align:-1px; }
+  #ctx-readout, #grow-readout { color:var(--dim); font-size:12px; margin-top:6px; min-height:1.5em; }
+  h3 { font-size:13px; color:var(--fg); font-weight:normal; margin:24px 0 6px; }
+  .ctx-growbar { width:100%; height:auto; display:block; background:#161922; border:1px solid #232838; border-radius:8px; }
+  .ctx-growbar .ctx-axis { fill:var(--dim); font-size:10px; font-family:inherit; }
+  .ctx-seg:hover { opacity:.7; }
+  .ctx-legend i.reset { background:transparent; border-left:2px dashed var(--c-user); border-radius:0; width:3px; }
+  .prompt { color:var(--dim); }
+  footer { color:var(--dim); font-size:12px; margin-top:32px; max-width:78ch; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>{{TITLE}}</h1>
+  <p class="sub">{{SESSION_ID}} · started {{STARTED_AT}}</p>
+
+  <div class="cards">
+    <div class="card"><div class="k">total cost</div><div class="v">{{TOTAL_COST}}</div></div>
+    <div class="card"><div class="k">steps — each model reply or tool round</div><div class="v">{{STEP_COUNT}}</div></div>
+    <div class="card"><div class="k">duration</div><div class="v">{{DURATION}}</div></div>
+    <div class="card"><div class="k">peak context — fullest the conversation got</div><div class="v">{{PEAK_CONTEXT}}</div></div>
+    <div class="card"><div class="k">spent above 200k context (/compact would cut)</div><div class="v warn">{{HIGH_CTX_COST}}</div><div class="k">{{HIGH_CTX_CALLS}} calls · {{CONTEXT_RESETS}} resets</div></div>
+  </div>
+
+  <div class="primer">
+    <div class="formula">cost ≈ context size × steps</div>
+    <p>Every time the model takes a step — writing a reply, running a tool — it re-reads the
+    whole conversation so far. So a session's price is driven less by what you asked than by
+    how much was already in the conversation when you asked it: a one-line question at hour
+    three can cost more than a big task at minute one. Each section below answers one
+    question about this session; the note under each heading says how to read it.</p>
+  </div>
+
+  <h2>Context window over time</h2>
+  <p class="explain">The shape of the whole session: one bar per step, left to right in time.
+  Bar height is how full the conversation was at that moment — and since every step re-reads
+  everything below it, <strong>taller bars mean pricier steps</strong>. Green is comfortable
+  (under 100k), amber is getting heavy, red is above the dashed 200k line — the zone the "spent
+  above 200k" card adds up. Blue ticks under the axis mark where your prompts landed; a bar
+  suddenly dropping back to near-zero is a /compact or context clear doing its job. The healthy
+  shape is a sawtooth — climb, compact, climb; a single long ramp that stays red means every
+  late step paid the maximum re-read tax. Hover any bar for that step's size, cost, and the
+  prompt it was serving.</p>
+  {{CONTEXT_TIMELINE}}
+  <div class="ctx-legend">
+    <span><i class="c-low"></i>under 100k</span>
+    <span><i class="c-mid"></i>100–200k</span>
+    <span><i class="c-high"></i>above 200k — /compact territory</span>
+    <span><i class="c-user"></i>your prompt landed</span>
+    <span><i class="c-dim"></i>skill / agent turn started</span>
+    <span><i class="reset"></i>context cleared — a vertical dashed line marks a step where the
+    context suddenly shrank: a /compact, a context clear, or the cache being rebuilt</span>
+  </div>
+  <div id="ctx-readout">hover a bar to inspect a step</div>
+
+  <h3>The same growth, grouped by turn — who added what</h3>
+  <p class="explain">The step chart above repeats one prompt across many bars; this bar collapses
+  each turn into a single block. Reading left to right is the context filling up: the dim block
+  at the start is the session's fixed overhead (system prompt, tool definitions, project
+  context — there before you typed anything), and every colored block is one turn, sized by
+  <strong>how much it added to the context</strong> — what it read, ran, and wrote that every
+  later step then re-read. Wide blocks are the turns that made the session heavy; a white dashed
+  divider is a /compact or context clear wiping the slate. Hover a block for the prompt, how far
+  it pushed the context (from → to), and what its turn cost.</p>
+  {{CONTEXT_GROWTH_BAR}}
+  <div class="ctx-legend">
+    <span><i class="c-dim"></i>session overhead</span>
+    <span><i class="c-user"></i>your prompt</span>
+    <span><i class="c-skill"></i>skill dispatch</span>
+    <span><i class="c-orch"></i>subagent orchestration</span>
+    <span><i class="c-start"></i>session start</span>
+  </div>
+  <div id="grow-readout">hover a block to see what that turn added</div>
+
+  <h2>Where it went</h2>
+  <p class="explain">Your total, split the way the API bills it. <strong>cache read</strong> is the
+  model re-reading the conversation on every step — usually the biggest slice and the reason long
+  sessions get expensive. <strong>output</strong> is everything the model wrote, including its
+  private reasoning. <strong>cache write</strong> is saving new material so later steps can re-read
+  it cheaply. <strong>input</strong> is fresh, uncached text — usually tiny.</p>
+  <table><thead><tr><th>component</th><th class="num">cost</th><th>share</th></tr></thead>
+  <tbody>{{WHERE_IT_WENT_ROWS}}</tbody></table>
+
+  <h2>What filled the context — by tool</h2>
+  <p class="explain">What took up space in the conversation, grouped by where it came from.
+  <strong>carried cost</strong> is the re-read tax: once a file read or command output lands in the
+  conversation, the model re-reads it on every later step until the session ends or context is
+  compacted. A big row here is a good candidate to push into a subagent next time — the subagent
+  reads it in its own small context and reports back a summary.</p>
+  <table><thead><tr><th>tool</th><th class="num">results</th><th class="num">est tokens</th><th class="num">carried cost</th><th>share</th></tr></thead>
+  <tbody>{{CONSUMER_TOOL_ROWS}}</tbody></table>
+
+  <h2>Top context consumers</h2>
+  <p class="explain">The same space, item by item: the exact file, command, or prompt.
+  <strong>×3</strong> after a tool name means the same target landed three times — a file re-read
+  three times pays its size three times, plus the re-read tax each time. The
+  <strong>assistant-*</strong> rows are the model's own words: its visible replies
+  (assistant-text), its private reasoning (assistant-thinking), and the arguments it typed into
+  tool calls like Edit payloads and Bash commands (assistant-tool-calls). When those rows sit at
+  the top, the cost driver was the model's own verbosity, not what it read.</p>
+  <table><thead><tr><th class="num">est tokens</th><th>share</th><th class="num">carried cost</th><th>tool</th><th>target (file · command · prompt)</th></tr></thead>
+  <tbody>{{CONSUMER_ROWS}}</tbody></table>
+  <p class="prompt" style="font-size:12px">{{CONSUMERS_NOTE}}</p>
+
+  <h2>Thinking — what the reasoning cost</h2>
+  <p class="explain">Before most replies and tool calls, the model reasons privately. Those tokens
+  are billed at the output rate — the priciest tier — but the text itself is never saved anywhere,
+  so no tool can show it; <strong>interleaved</strong> is exactly that invisible share. The table
+  shows which of your prompts set off the most reasoning. Many steps under one prompt usually
+  means a debugging loop: every test run or log that comes back triggers a fresh round of
+  thinking. The lever is fewer, bigger steps — batching commands, pushing retry loops into a
+  subagent — not "think less".</p>
+  <p class="prompt" style="font-size:12px">{{THINKING_SUMMARY}}</p>
+  <table><thead><tr><th class="num">tokens</th><th>share</th><th class="num">steps</th><th>prompt that drove the reasoning</th></tr></thead>
+  <tbody>{{THINKING_TURN_ROWS}}</tbody></table>
+
+  <h2>Biggest reasoning bursts</h2>
+  <p class="explain">The single steps where the model thought hardest. <strong>trigger</strong> is
+  what had just landed in the conversation — the tool output or prompt it was reacting to;
+  <strong>next action</strong> is what it decided to do. A big burst before a state-changing move
+  (switching worktrees, a large edit) is normal deliberation. Repeated bursts after the same
+  command suggest the model kept re-deriving the same conclusion — a sign the loop could have
+  been a subagent.</p>
+  <table><thead><tr><th class="num">tokens</th><th class="num">step</th><th>trigger (what landed in context right before)</th><th>next action</th></tr></thead>
+  <tbody>{{THINKING_STEP_ROWS}}</tbody></table>
+
+  <h2>By skill</h2>
+  <p class="explain">What each skill you invoked cost — counting only the turns the skill's own
+  instructions drove. A skill that shapes the whole session (a workflow or review skill) truly
+  costs more than this shows: its instructions also sit in the conversation as a
+  <strong>user-prompt</strong> row in the consumer table above, taxing every later step.</p>
+  <table><thead><tr><th>skill</th><th class="num">dispatches</th><th class="num">steps</th><th class="num">cost</th></tr></thead>
+  <tbody>{{SKILL_ROWS}}</tbody></table>
+
+  <h2>By model</h2>
+  <p class="explain">Sessions can mix models — e.g. a cheaper one for quick steps. Costs are
+  recomputed from raw token counts × public per-token prices, so they can differ from the app's
+  reported figure.</p>
+  <table><thead><tr><th>model</th><th class="num">cost</th></tr></thead>
+  <tbody>{{BY_MODEL_ROWS}}</tbody></table>
+
+  <h2>Top turns</h2>
+  <p class="explain">Your prompts, ranked by the cost of the work each one set off.
+  <strong>peak ctx</strong> is how full the conversation was while that work ran — the same task
+  costs several times more at 150k context than at 20k, which is why a short prompt late in a
+  session can out-cost a big one asked early.</p>
+  <table><thead><tr><th class="num">cost</th><th>kind</th><th class="num">peak ctx</th><th>prompt</th></tr></thead>
+  <tbody>{{TOP_TURNS_ROWS}}</tbody></table>
+
+  <h2>Subagents</h2>
+  <p class="explain">Side tasks the session delegated. Each runs in its own fresh, small context
+  and returns only a summary, so they're usually a few cents. If this list is short and the main
+  session was expensive, the lever is moving more exploration into subagents — not trimming the
+  ones you have.</p>
+  <table><thead><tr><th>task</th><th class="num">cost</th></tr></thead>
+  <tbody>{{SUBAGENT_ROWS}}</tbody></table>
+
+  <h2>Spending less next time</h2>
+  <p class="explain">Three levers, in order of impact: <strong>1.</strong> keep the main
+  conversation small — /compact or start a fresh session between distinct phases; everything that
+  stays in context is re-read on every later step (the "spent above 200k" card is what that
+  would have saved here). <strong>2.</strong> push heavy exploration and retry loops into
+  subagents — they read in their own small context and report back. <strong>3.</strong> batch
+  independent commands into one step — every extra step re-reads the conversation and triggers a
+  fresh round of billed reasoning.</p>
+
+  <footer>Costs recomputed from raw tokens × LiteLLM prices (not Claude's reported cost).
+  Token counts marked "est" are estimates (~4 characters per token); dollar totals come from
+  exact billed token counts.</footer>
+</div>
+<script>
+// Hover readouts for the context charts. Pure progressive enhancement: with
+// scripts off (or on paper) the charts still read and native <title> tooltips
+// still work; this just mirrors the hovered element's data-* into a fixed line
+// so scanning a chart doesn't require waiting for tooltips.
+(function () {
+  function wire(chartSel, outId, targetClass, describe) {
+    var out = document.getElementById(outId);
+    var chart = document.querySelector(chartSel);
+    if (!chart) { if (out) out.remove(); return; }
+    var idle = out.textContent;
+    chart.addEventListener('mouseover', function (e) {
+      var el = e.target.closest ? e.target.closest('.' + targetClass) : null;
+      if (el) out.textContent = describe(el.dataset);
+    });
+    chart.addEventListener('mouseleave', function () { out.textContent = idle; });
+  }
+  wire('.ctx-chart', 'ctx-readout', 'ctx-bar', function (d) {
+    return 'step ' + d.step + ' · ' + d.ctx + ' context · ' + d.cost +
+      (d.prompt ? ' · serving: ' + d.prompt : '');
+  });
+  wire('.ctx-growbar', 'grow-readout', 'ctx-seg', function (d) {
+    if (d.kind === 'overhead') return 'session overhead · ' + d.grow + ' in context before the first reply';
+    return '+' + d.grow + ' (' + d.from + ' → ' + d.to + ') · ' + d.steps + ' steps · ' + d.cost +
+      ' · ' + d.kind + ': ' + d.prompt;
+  });
+})();
+</script>
+</body>
+</html>

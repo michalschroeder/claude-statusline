@@ -2,8 +2,7 @@
 'use strict';
 const path = require('path');
 const os = require('os');
-const fs = require('fs');
-const { readTitleRecap, projectDirs, listSessions } = require('../lib/transcript');
+const { readTitleRecap, projectDirs, listSessions, listSubagentTranscripts } = require('../lib/transcript');
 const { dim, cyan, colorByTier, SESSION_TIERS, BUDGET_TIERS } = require('../lib/color');
 const { loadPricing } = require('../lib/pricing');
 const { aggregate } = require('../lib/cost-aggregate');
@@ -13,7 +12,7 @@ const { resolveBudget } = require('../lib/budget');
 const { resolveStateDir } = require('../lib/state');
 
 function parseArgs(argv) {
-  const opts = { last: null, since: null, configDir: undefined, detail: undefined };
+  const opts = { last: null, since: null, configDir: undefined, detail: undefined, analyze: false };
   const needValue = (flag, i) => {
     if (i + 1 >= argv.length || argv[i + 1].startsWith('--')) {
       process.stderr.write(`bin/sessions.js: ${flag} requires a value\n`);
@@ -32,6 +31,7 @@ function parseArgs(argv) {
     }
     else if (a === '--since') { opts.since = needValue('--since', i); i++; }
     else if (a === '--config-dir') { opts.configDir = needValue('--config-dir', i); i++; }
+    else if (a === '--analyze') { opts.analyze = true; } // emit JSON: full-fidelity detail (with a session prefix) or the session list (without)
     else if (a.startsWith('--')) { /* unknown flag: ignored, as before */ }
     else if (opts.detail === undefined) { opts.detail = a; } // first bare token = session prefix
     else {
@@ -120,7 +120,9 @@ function renderDetail(detail, sessionId, when, title, recap, width) {
   out.push(`SESSION ${sessionId}`);
   out.push(title || '—');
   if (recap) out.push(dim('└ ' + truncate(recap, Math.max(0, width - 2))));
-  out.push(dim(`${dayLabel(when)} ${clock(when)} · ${detail.calls} steps · ${money(detail.total)} total`));
+  const mainSteps = (detail.summary && detail.summary.mainSteps != null) ? detail.summary.mainSteps : detail.calls;
+  const subs = detail.subagentCount ? ` + ${detail.subagentCount} subagents` : '';
+  out.push(dim(`${dayLabel(when)} ${clock(when)} · ${mainSteps} steps${subs} · ${money(detail.total)} total`));
 
   const t = detail.total || 1; // avoid divide-by-zero on an unbilled session
   const comp = [
@@ -137,9 +139,69 @@ function renderDetail(detail, sessionId, when, title, recap, width) {
     const BAR = 10;
     for (const [label, c] of comp) {
       const frac = c / t;
-      const fill = Math.max(0, Math.min(BAR, Math.round(frac * BAR)));
+      const fill = barFill(c, t, BAR);
       const bar = '▓'.repeat(fill) + dim('░'.repeat(BAR - fill));
       out.push(`  ${label.padEnd(lw)}  ${bar}  ${dim(String(Math.round(frac * 100)).padStart(3) + '%')}  ${money(c)}`);
+    }
+  }
+
+  const cc = detail.summary && detail.summary.contextConsumers;
+  if (cc && cc.top && cc.top.length) {
+    out.push('');
+    out.push(dim('WHAT FILLED CONTEXT') + dim('  · est tokens (~chars/4) · carried = re-read tax on later steps'));
+    const top = cc.top.slice(0, 10);
+    const toolCell = (c) => c.tool + (c.count > 1 && !c.synthetic ? ` ×${c.count}` : '');
+    const tw = Math.max(...top.map((c) => tok(c.estTokens).length));
+    const cw2 = Math.max(...top.map((c) => money(c.carriedCost).length));
+    const nw = Math.max(...top.map((c) => toolCell(c).length));
+    const metaW = 2 + tw + 2 + cw2 + 2 + nw + 2;
+    for (const c of top) {
+      const meta = `  ${dim(tok(c.estTokens).padStart(tw))}  ${money(c.carriedCost).padStart(cw2)}  ${toolCell(c).padEnd(nw)}  `;
+      out.push(meta + dim(truncate(c.target, Math.max(0, width - metaW))));
+    }
+  }
+
+  const ao = detail.summary && detail.summary.assistantOutput;
+  if (ao && ao.thinking) {
+    const th = ao.thinking;
+    out.push('');
+    out.push(dim('THINKING') + dim(`  · ${tok(th.storedTokens + th.unstoredTokens)} tokens ${money(ao.byKind.thinking.cost)} — billed at the output rate, the priciest tier`));
+    out.push(`  ${tok(th.unstoredTokens)} interleaved ${dim('(billed, never saved to the transcript)')} · ${tok(th.storedTokens)} saved as thinking blocks`);
+    const pk = th.peakStep;
+    out.push(`  ${th.stepsWithThinking}/${th.mainSteps} steps thought · avg ${tok(th.avgPerThinkingStep)}/step · peak ${tok(pk.tokens)} at step ${pk.seq}${pk.nextTools.length ? dim(' → ' + pk.nextTools.join(', ')) : ''}`);
+    const bursts = (th.topSteps || []).filter((b) => b.trigger);
+    if (bursts.length) {
+      out.push(dim('  TOP BURSTS') + dim('  · what landed in context right before → what it did next'));
+      const bw = Math.max(...bursts.map((b) => tok(b.tokens).length));
+      for (const b of bursts) {
+        const next = b.nextTools.length ? b.nextTools.join(', ') : 'replied';
+        const meta = `  ${tok(b.tokens).padStart(bw)}  `;
+        const tail = ` → ${next}`;
+        const trig = `${b.trigger.tool}: ${b.trigger.target}`;
+        out.push(meta + dim(truncate(trig, Math.max(0, width - meta.length - tail.length))) + dim(tail));
+      }
+    }
+    if (th.byTurn.length) {
+      out.push(dim('  BY TURN') + dim('  · which prompts drove the reasoning'));
+      const turns = th.byTurn.slice(0, 5);
+      const tw = Math.max(...turns.map((t) => tok(t.thinkingTokens).length));
+      const sw = Math.max(...turns.map((t) => String(t.steps).length));
+      for (const t of turns) {
+        const meta = `  ${tok(t.thinkingTokens).padStart(tw)}  ${dim(String(t.steps).padStart(sw) + ' steps')}  `;
+        const metaW = 2 + tw + 2 + sw + 6 + 2;
+        out.push(meta + dim(truncate(t.prompt, Math.max(0, width - metaW))));
+      }
+    }
+  }
+
+  const bs = (detail.summary && detail.summary.bySkill) || [];
+  if (bs.length) {
+    out.push('');
+    out.push(dim('BY SKILL') + dim('  · cost of the turns each skill dispatch drove'));
+    const cw3 = Math.max(...bs.map((s) => money(s.cost).length));
+    const sw3 = Math.max(...bs.map((s) => String(s.steps).length));
+    for (const s of bs) {
+      out.push(`  ${money(s.cost).padStart(cw3)}  ${dim(String(s.steps).padStart(sw3) + ' steps')}  ${truncate(s.skill, Math.max(0, width - cw3 - sw3 - 12))}`);
     }
   }
 
@@ -152,20 +214,20 @@ function renderDetail(detail, sessionId, when, title, recap, width) {
     }
   }
 
-  if (detail.topPrompts.length) {
+  if (detail.turns.length) {
     out.push('');
     out.push(dim('TOP PROMPTS') + dim('  · turns ranked by cost; cache-rd is the dominant driver'));
-    const top = detail.topPrompts.slice(0, 10);
+    const top = detail.turns.slice().sort((a, b) => b.cost - a.cost).slice(0, 10);
     // Aligned columns: numeric cells right-padded, tools left-padded; a header row
     // sits above them. cost+steps render at normal weight, token/tool cells dim.
     const cols = [
-      { h: 'cost',     get: (p) => money(p.cost),    end: false, dim: false },
-      { h: 'steps',    get: (p) => String(p.calls),  end: false, dim: false },
-      { h: 'input',    get: (p) => tok(p.inp),       end: false, dim: true },
-      { h: 'cache-rd', get: (p) => tok(p.ctx),       end: false, dim: true },
-      { h: 'cache-wr', get: (p) => tok(p.cw),        end: false, dim: true },
-      { h: 'output',   get: (p) => tok(p.out),       end: false, dim: true },
-      { h: 'tools',    get: (p) => toolStr(p.tools), end: true,  dim: true },
+      { h: 'cost',     get: (p) => money(p.cost),             end: false, dim: false },
+      { h: 'steps',    get: (p) => String(p.steps),           end: false, dim: false },
+      { h: 'input',    get: (p) => tok(p.tokens.input),       end: false, dim: true },
+      { h: 'cache-rd', get: (p) => tok(p.tokens.cacheRead),   end: false, dim: true },
+      { h: 'cache-wr', get: (p) => tok(p.tokens.cacheWrite),  end: false, dim: true },
+      { h: 'output',   get: (p) => tok(p.tokens.output),      end: false, dim: true },
+      { h: 'tools',    get: (p) => toolStr(p.tools),          end: true,  dim: true },
     ];
     for (const c of cols) c.w = Math.max(c.h.length, ...top.map((p) => c.get(p).length));
     const pad = (s, c) => (c.end ? s.padEnd(c.w) : s.padStart(c.w));
@@ -173,7 +235,7 @@ function renderDetail(detail, sessionId, when, title, recap, width) {
     out.push(dim('  ' + cols.map((c) => pad(c.h, c)).join('  ') + '  prompt'));
     for (const p of top) {
       const cells = cols.map((c) => { const s = pad(c.get(p), c); return c.dim ? dim(s) : s; });
-      out.push('  ' + cells.join('  ') + '  ' + truncate(p.text, Math.max(0, width - prefixW)));
+      out.push('  ' + cells.join('  ') + '  ' + truncate(p.prompt, Math.max(0, width - prefixW)));
     }
     if (detail.subagentCount > 0) {
       out.push(dim(`  + ${money(detail.subagentTotal)} across ${detail.subagentCount} subagent${detail.subagentCount === 1 ? '' : 's'}`));
@@ -193,6 +255,62 @@ function renderDetail(detail, sessionId, when, title, recap, width) {
   return out.join('\n') + '\n';
 }
 
+// Full-fidelity JSON for an LLM/agent to reason about *why* a session was costly.
+// Raw integer tokens, untruncated prompts, full tool tallies, execution-ordered
+// turns + per-call records. The `legend` states the cost model so the consumer can
+// interpret the numbers without re-deriving it.
+function analysisPayload(detail, id, ts, title, recap) {
+  return {
+    session: id,
+    title: title || null,
+    recap: recap || null,
+    startedAt: new Date(ts * 1000).toISOString(),
+    totalCost: detail.total,
+    steps: detail.calls,
+    legend:
+      'Cost ≈ context-size × steps, recomputed from raw tokens × LiteLLM prices (not Claude\'s reported cost). ' +
+      'tokens.cacheRead = re-reading accumulated context and is the dominant driver; tokens.input (fresh) is usually negligible. ' +
+      'turns and calls are in EXECUTION order. steps (top level) = total billed assistant calls incl. subagents; summary.mainSteps = main-session steps only (the denominator for per-step views like contextGrowth and the timeline). Each main call carries turnIndex (which turn it served). ' +
+      'NOTE: a turn\'s tokens.cacheRead is a SUM across its steps, NOT the context size — use turn.avgContext / turn.peakContext and summary.contextGrowth (per-step cacheRead) for the real growth curve. ' +
+      'A cacheWrite spike usually means the parent re-cached its whole context (e.g. on a subagent return). ' +
+      'Use summary.byTurnKind for cost per kind of work, summary.toolTally for the canonical tool counts (do NOT re-aggregate calls[].tools — that over-counts), ' +
+      'summary.highContextCost for the spend above 200k context (what a /compact would have cut), and summary.contextResets for how many times context was cleared. ' +
+      'summary.contextConsumers names WHAT filled the context — each tool result (which file was read, which command ran) and user prompt, with estimated tokens (~chars/4) and carriedCost (the re-read tax it incurred on every later step) — use it to say which exact file/command consumed the context; its assistant-text / assistant-thinking / assistant-tool-calls rows split the model\'s ' +
+      'own output by kind (apportioned from exact output_tokens), so a fat assistant share means verbosity, not reads. ' +
+      'summary.assistantOutput drills into that output: byKind token/cost split and a thinking breakdown — storedTokens vs unstoredTokens (interleaved thinking billed in output_tokens but never saved to the transcript), ' +
+      'thinking.byTurn (which prompts drove the reasoning) and thinking.topSteps (the heaviest single bursts, each with its trigger — what landed in context right before — and the action it took next; ' +
+      'the thinking text itself is never persisted, so trigger → next-action is the maximum attribution) — use it to explain WHY assistant-thinking is large. ' +
+      'summary.bySkill attributes cost to skill dispatches (turns whose prompt is a skill expansion or /slash command) — only the turns the skill itself drove, not later work it influenced.',
+    components: detail.components,
+    summary: detail.summary,
+    byModel: detail.byModel,
+    byAgent: detail.byAgent,
+    subagents: { total: detail.subagentTotal, count: detail.subagentCount },
+    turns: detail.turns,
+    calls: detail.perCall,
+  };
+}
+
+// Session list as JSON for an LLM/agent: one record per session (post --since/--last
+// filtering, newest-first like the rendered list), plus the same today/week/month
+// period totals the footer shows. Costs are the recomputed spend (not Claude's).
+function listPayload(rows, costOf, per, budget) {
+  return {
+    sessions: rows.map((r) => {
+      const { title, recap } = readTitleRecap(r.file);
+      return {
+        session: r.id,
+        title: title || null,
+        recap: recap || null,
+        startedAt: new Date(r.ts * 1000).toISOString(),
+        cost: costOf(r.id),
+      };
+    }),
+    periods: { today: per.daily, week: per.weekly, month: per.monthly },
+    monthlyBudget: budget.budgetOptedOut ? null : budget.monthly,
+  };
+}
+
 function main() {
   const opts = parseArgs(process.argv.slice(2));
   const sinceTs = sinceToTs(opts.since); // null when --since absent or unparseable
@@ -208,6 +326,7 @@ function main() {
   const dirs = projectDirs(transcriptRoot);
   let rows = listSessions(transcriptRoot, dirs);
 
+  // Costs recomputed from raw tokens × LiteLLM prices (never trust Claude's cost).
   const stateDir = resolveStateDir(source);
   // Offline like the renderer: a "list sessions" command shouldn't trigger a
   // network fetch or write pricing.json. The background refresh hook keeps prices
@@ -226,29 +345,30 @@ function main() {
       process.exit(1);
     }
     const row = matches[0];
-    const subDir = path.join(path.dirname(row.file), row.id, 'subagents');
-    let subFiles = [];
-    try {
-      subFiles = fs.readdirSync(subDir)
-        .filter((n) => n.startsWith('agent-') && n.endsWith('.jsonl'))
-        .map((n) => path.join(subDir, n));
-    } catch {}
-    const detail = buildDetail(row.file, subFiles, pricing);
+    const detail = buildDetail(row.file, listSubagentTranscripts(row.file, row.id), pricing);
     const { title, recap } = readTitleRecap(row.file);
-    process.stdout.write(renderDetail(detail, row.id, row.ts, title, recap, termWidth()));
+    if (opts.analyze) {
+      process.stdout.write(JSON.stringify(analysisPayload(detail, row.id, row.ts, title, recap), null, 2) + '\n');
+    } else {
+      process.stdout.write(renderDetail(detail, row.id, row.ts, title, recap, termWidth()));
+    }
     return;
   }
 
-  // Recompute spend from raw tokens × LiteLLM prices (never trust Claude's cost);
-  // only the list+footer path below needs it, so it runs after the detail return.
+  // List mode from here on. Recompute every session's spend (full history, no
+  // mtime cap — the one-shot viewer can afford the parse); detail mode above
+  // skips this since buildDetail re-derives the one session it needs.
   const agg = aggregate(transcriptRoot, pricing);
   const costOf = (id) => { const ps = agg.perSession[id]; return ps ? ps.total : 0; };
 
-  // Period totals + budget (footer).
+  // Period totals + budget (footer in text mode, top-level fields in JSON mode).
   const budget = resolveBudget(process.env.STATUSLINE_MONTHLY_BUDGET);
   const per = sumPeriods(agg.perSession, new Date());
+  const emitJson = (rs) => process.stdout.write(
+    JSON.stringify(listPayload(rs, costOf, per, budget), null, 2) + '\n');
 
   if (rows.length === 0) { // truly-empty store (no transcripts at all)
+    if (opts.analyze) { emitJson(rows); return; }
     process.stdout.write('no sessions found\n');
     return;
   }
@@ -258,6 +378,8 @@ function main() {
   if (sinceTs != null) rows = rows.filter((r) => r.ts >= sinceTs);
   const cap = opts.last != null ? opts.last : (opts.since ? Infinity : 10);
   rows = rows.slice(0, cap);
+
+  if (opts.analyze) { emitJson(rows); return; } // JSON list for agents (valid even when empty)
 
   if (rows.length === 0) { // sessions exist, but --since/--last excluded them all
     process.stdout.write('no sessions match\n');

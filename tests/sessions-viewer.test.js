@@ -191,9 +191,75 @@ test('viewer detail: <prefix> renders the section headers + total', async () => 
   require('fs').rmSync(xdg, { recursive: true, force: true });
   assert.match(out, /SESSION sessDET01/);
   assert.match(out, /WHERE IT WENT/);
+  assert.match(out, /WHAT FILLED CONTEXT/);
+  assert.match(out, /session-overhead/); // synthetic consumer row renders
   assert.match(out, /BY MODEL/);
   assert.match(out, /TOP PROMPTS/);
   assert.match(out, /\$\d+\.\d{2} total/);
+});
+
+test('viewer detail: --analyze emits full-fidelity JSON', async () => {
+  const p = mkProfile();
+  const now = new Date().toISOString();
+  writeTranscript(p.configDir, 'sessANL01', [
+    { type: 'ai-title', aiTitle: 'Analyze me' },
+    { type: 'user', message: { role: 'user', content: 'do the thing' } },
+    { type: 'assistant', timestamp: now, message: { id: 'a1', model: 'claude-opus-4-8', usage: { input_tokens: 1000000, output_tokens: 1000 } } },
+  ]);
+  const xdg = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-anl-'));
+  tmpDirs.push(xdg);
+  const out = await runSessions(['--config-dir', p.configDir, 'sessANL', '--analyze'], wide({ XDG_STATE_HOME: xdg }));
+  const j = JSON.parse(out); // must be valid JSON, not the rendered table
+  assert.strictEqual(j.session, 'sessANL01');
+  assert.strictEqual(j.title, 'Analyze me');
+  assert.ok(j.totalCost > 0);
+  assert.strictEqual(j.steps, 1);
+  assert.match(j.legend, /cacheRead/);
+  assert.ok(Array.isArray(j.turns) && j.turns.length === 1);
+  assert.strictEqual(j.turns[0].prompt, 'do the thing');
+  assert.ok(Array.isArray(j.calls) && j.calls.length === 1);
+  assert.strictEqual(j.calls[0].tokens.input, 1000000); // raw integer preserved
+});
+
+test('viewer list: --analyze emits JSON session list, newest-first, with periods', async () => {
+  const p = mkProfile();
+  const now = Math.floor(Date.now() / 1000);
+  writeTranscript(p.configDir, 'sessLST01', [
+    { type: 'ai-title', aiTitle: 'older one' },
+    { type: 'system', subtype: 'away_summary', content: 'did old stuff' },
+  ], now - 7200);
+  writeTranscript(p.configDir, 'sessLST02', [{ type: 'ai-title', aiTitle: 'newer one' }], now - 60);
+  const xdg = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-lst-'));
+  tmpDirs.push(xdg);
+  const out = await runSessions(['--config-dir', p.configDir, '--analyze'], wide({ XDG_STATE_HOME: xdg }));
+  const j = JSON.parse(out); // valid JSON, not the rendered list
+  assert.strictEqual(j.sessions.length, 2);
+  assert.strictEqual(j.sessions[0].session, 'sessLST02'); // newest first
+  assert.strictEqual(j.sessions[0].title, 'newer one');
+  assert.strictEqual(j.sessions[1].recap, 'did old stuff');
+  assert.match(j.sessions[0].startedAt, /^\d{4}-\d{2}-\d{2}T/);
+  assert.ok(typeof j.sessions[0].cost === 'number');
+  assert.ok(j.periods && typeof j.periods.month === 'number');
+});
+
+test('viewer list: --analyze honors --last', async () => {
+  const p = mkProfile();
+  const now = Math.floor(Date.now() / 1000);
+  for (let i = 0; i < 4; i++) {
+    writeTranscript(p.configDir, `sessLC0${i}x`, [{ type: 'ai-title', aiTitle: `t${i}` }], now - i);
+  }
+  const xdg = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-lc-'));
+  tmpDirs.push(xdg);
+  const out = await runSessions(['--config-dir', p.configDir, '--analyze', '--last', '2'], wide({ XDG_STATE_HOME: xdg }));
+  assert.strictEqual(JSON.parse(out).sessions.length, 2);
+});
+
+test('viewer list: --analyze on empty store → valid JSON, empty sessions', async () => {
+  const p = mkProfile();
+  const xdg = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-le-'));
+  tmpDirs.push(xdg);
+  const out = await runSessions(['--config-dir', p.configDir, '--analyze'], wide({ XDG_STATE_HOME: xdg }));
+  assert.deepStrictEqual(JSON.parse(out).sessions, []);
 });
 
 test('viewer detail: unknown prefix → exit 1', async () => {
