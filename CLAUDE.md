@@ -115,7 +115,14 @@ when hidden) and sums today/week/month across **all** sessions including the cur
 day-buckets carry correct per-day attribution). Claude's live payload cost is fresher but undated,
 so the renderer folds only the **delta** (`max(0, live − cachedSessionTotal)`) into the current
 windows — this keeps a session resumed across days from dumping its whole lifetime into "today" and
-makes the `s` chip recomputed-based rather than the reported `total_cost_usd`.
+bases the `s` chip on recomputed cost plus that delta rather than the reported `total_cost_usd`
+alone. The delta subtracts recomputed (basis A) from reported (basis B) cost, so it also carries the
+session's whole-lifetime cross-basis pricing gap. Into the **d/w/m** windows it is **clamped to
+`MAX_LIVE_DELTA` ($5)** so that standing phantom can't exceed one turn's plausible spend (#44); the
+**`s`** chip uses the full (unclamped) delta — it's the whole-session figure and its only basis when
+the session isn't yet cached is the reported total. Trade-off: a genuine >$5 single turn briefly
+under-counts the d/w/m windows until the next `UserPromptSubmit` refresh corrects it — a bounded,
+self-healing error.
 
 Data flow:
 

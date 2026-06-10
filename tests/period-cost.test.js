@@ -59,6 +59,39 @@ test('session spend on a past day is NOT dumped into today', async () => {
   assert.ok(out.includes('d $1.00'));
 });
 
+test('live delta clamped: lifetime cross-basis gap does NOT inflate today (#44)', async () => {
+  // current recomputed $80 on a PAST day (out of today's window), $0 today; live
+  // reports $100 (different pricing basis). Raw delta would be $20 → phantom 'today'.
+  // Clamp caps it at MAX_LIVE_DELTA ($5).
+  const xdg = stateWithCache({ current: { days: { '2020-01-01': 80 }, total: 80 } });
+  const i = baseInput();
+  i.session_id = 'current';
+  i.cost = { total_cost_usd: 100 };
+  const out = await run(i, { XDG_STATE_HOME: xdg, STATUSLINE_MONTHLY_BUDGET: '300' });
+  // daily = today bucket(0) + clamped delta(5) = $5.00, NOT 0 + 20 = $20.00
+  assert.ok(out.includes('d $5.00'), out);
+  assert.ok(!out.includes('d $20.00'), out);
+});
+
+test('s chip is NOT clamped — shows full session spend, only d/w/m fold is capped (#44)', async () => {
+  const xdg = stateWithCache({ current: { days: { '2020-01-01': 80 }, total: 80 } });
+  const i = baseInput();
+  i.session_id = 'current';
+  i.cost = { total_cost_usd: 100 };
+  const out = await run(i, { XDG_STATE_HOME: xdg, STATUSLINE_MONTHLY_BUDGET: '300' });
+  assert.ok(out.includes('s $100.00'), out); // 80 + full delta(20); clamp applies only to d/w/m
+  assert.ok(out.includes('d $5.00'), out);   // period fold capped at MAX_LIVE_DELTA
+});
+
+test('small genuine delta (< clamp) still folds fully (#44)', async () => {
+  const xdg = stateWithCache({ current: { days: { [todayKey()]: 1 }, total: 1 } });
+  const i = baseInput();
+  i.session_id = 'current';
+  i.cost = { total_cost_usd: 3 }; // delta 2 < $5 clamp → unaffected
+  const out = await run(i, { XDG_STATE_HOME: xdg, STATUSLINE_MONTHLY_BUDGET: '300' });
+  assert.ok(out.includes('d $3.00'), out); // today bucket(1) + delta(2)
+});
+
 test('budget opt-out (0) → only session chip, no d/w/m', async () => {
   const xdg = stateWithCache({ other: { days: { [todayKey()]: 2 }, total: 2 } });
   const i = baseInput();
