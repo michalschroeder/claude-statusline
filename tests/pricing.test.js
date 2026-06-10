@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { buildMap, getModelCosts, hashMap, loadPricing } = require('../lib/pricing');
+const { buildMap, isUsablePriceTable, getModelCosts, hashMap, loadPricing } = require('../lib/pricing');
 
 const tmp = [];
 after(() => { for (const d of tmp) fs.rmSync(d, { recursive: true, force: true }); });
@@ -121,4 +121,33 @@ test('loadPricing: falls back to bundled snapshot when no cache, no fetch', () =
   assert.ok(p.map['claude-opus-4-8']);
   assert.equal(typeof p.pricingHash, 'string');
   assert.equal(getModelCosts(p.map, 'gpt-9'), null);
+});
+
+test('isUsablePriceTable: true only when a claude- model is priced', () => {
+  assert.equal(isUsablePriceTable(RAW), true);            // has claude-opus-4-8
+  assert.equal(isUsablePriceTable({ oops: 'not a table' }), false);
+  assert.equal(isUsablePriceTable({}), false);
+  // non-Claude-only table (valid rates, but no claude- key) → rejected
+  assert.equal(isUsablePriceTable({ 'gpt-4': { input_cost_per_token: 1e-6, output_cost_per_token: 2e-6 } }), false);
+  // claude model present but every rate malformed → dropped by buildMap → rejected
+  assert.equal(isUsablePriceTable({ 'claude-opus-4-8': { input_cost_per_token: -1, output_cost_per_token: -1 } }), false);
+});
+
+test('loadPricing: self-heals a junk-but-valid-JSON cache file → bundled (issue #26)', () => {
+  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-price-bad-')); tmp.push(stateDir);
+  fs.writeFileSync(path.join(stateDir, 'pricing.json'),
+    JSON.stringify({ fetchedAt: Date.now(), raw: { oops: 'not a table' } }));
+  const p = loadPricing(stateDir, { allowFetch: false });
+  // Before the fix: empty map, opus → null ($0). After: fell back to bundled.
+  assert.ok(p.map['claude-opus-4-8']);
+  assert.notEqual(getModelCosts(p.map, 'claude-opus-4-8'), null);
+});
+
+test('loadPricing: a good cache file is preferred (self-heal does not clobber valid data)', () => {
+  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-price-good-')); tmp.push(stateDir);
+  // A valid (Claude-pricing) cache with a distinctive rate — must be used, not bundled.
+  fs.writeFileSync(path.join(stateDir, 'pricing.json'),
+    JSON.stringify({ fetchedAt: Date.now(), raw: { 'claude-opus-4-8': { input_cost_per_token: 0.000009, output_cost_per_token: 0.000025 } } }));
+  const p = loadPricing(stateDir, { allowFetch: false });
+  assert.equal(p.map['claude-opus-4-8'].input, 0.000009); // from cache, not bundled
 });
