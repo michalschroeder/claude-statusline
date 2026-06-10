@@ -146,6 +146,13 @@ function formatDuration(ms, icon) {
 // One color per cell; cell N uses CTX_RAMP[N] when filled. Empty cells use CTX_EMPTY.
 const CTX_RAMP = [34, 70, 106, 142, 178, 214, 208, 202, 196, 160];
 const CTX_EMPTY = 240;
+// Cap on the live-cost delta folded into the d/w/m windows (NOT the `s` chip). The
+// delta subtracts recomputed (basis A) from reported (basis B) cost, so it carries
+// the session's whole-lifetime cross-basis pricing gap, not just spend since the
+// last refresh. The refresh fires every UserPromptSubmit, so a single turn
+// realistically spends well under a few dollars — clamp the phantom at $5 instead
+// of the unbounded gap.
+const MAX_LIVE_DELTA = 5;
 const fg256 = (code, s) => `\x1b[38;5;${code}m${s}\x1b[0m`;
 
 /**
@@ -339,6 +346,10 @@ process.stdin.on('end', () => {
     // the current windows (it is recent ⇒ counts toward today/week/month). This
     // keeps a session resumed across days from dumping its whole lifetime into
     // "today" and bases the `s` chip on recomputed cost, not the reported total.
+    // The delta is reported(B) − recomputed(A): different pricing bases, so it
+    // also carries the lifetime cross-basis gap. The d/w/m fold is clamped to
+    // MAX_LIVE_DELTA so that standing bias can't exceed one turn's plausible spend
+    // (#44); the `s` chip uses the full delta (it's the whole-session figure).
     const costFilter = process.env.STATUSLINE_SEGMENTS;
     const costEnabled = !costFilter || !costFilter.trim()
       || costFilter.split(',').map((s) => s.trim()).includes('cost');
@@ -348,15 +359,20 @@ process.stdin.on('end', () => {
       const summary = readSummary(stateDir);
       const perSession = (summary && summary.perSession) || {};
       const cachedSession = (session && perSession[session] && perSession[session].total) || 0;
-      const liveDelta = Math.max(0, (totalCost > 0 ? totalCost : 0) - cachedSession);
-      const sessionTotal = cachedSession + liveDelta;
+      const rawDelta = Math.max(0, (totalCost > 0 ? totalCost : 0) - cachedSession);
+      // `s` shows the whole session, so it uses the full delta (its only basis when
+      // the session isn't cached yet is the reported total). The d/w/m fold is
+      // clamped: the delta carries the lifetime cross-basis pricing gap, which would
+      // otherwise stand as a phantom in "today" forever (#44).
+      const sessionTotal = cachedSession + rawDelta;
+      const periodDelta = Math.min(MAX_LIVE_DELTA, rawDelta);
       const costParts = [formatCost(sessionTotal, budgetOptedOut ? '' : 's ')];
       if (!budgetOptedOut) {
         const { daily, weekly, monthly } = sumPeriods(perSession, new Date());
         costParts.push(
-          formatPeriodCost(daily + liveDelta, dailyLimit, 'd '),
-          formatPeriodCost(weekly + liveDelta, weeklyLimit, 'w '),
-          formatPeriodCost(monthly + liveDelta, monthlyBudget, 'm '),
+          formatPeriodCost(daily + periodDelta, dailyLimit, 'd '),
+          formatPeriodCost(weekly + periodDelta, weeklyLimit, 'w '),
+          formatPeriodCost(monthly + periodDelta, monthlyBudget, 'm '),
         );
       }
       const costShown = costParts.filter(Boolean);
