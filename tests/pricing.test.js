@@ -151,3 +151,50 @@ test('loadPricing: a good cache file is preferred (self-heal does not clobber va
   const p = loadPricing(stateDir, { allowFetch: false });
   assert.equal(p.map['claude-opus-4-8'].input, 0.000009); // from cache, not bundled
 });
+
+// --- fetch attempt-throttle (issue #29) ---
+// The stamp file <stateDir>/pricing.last-attempt is the observable proxy for "fetch
+// attempted": backgroundFetch is fire-and-forget, but the stamp is written
+// synchronously before it, independent of network outcome.
+const STAMP = 'pricing.last-attempt';
+
+test('loadPricing: fresh stamp suppresses a retry within the 1h window', () => {
+  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-price-stamp-fresh-')); tmp.push(stateDir);
+  fs.writeFileSync(path.join(stateDir, STAMP), '');
+  const before = fs.statSync(path.join(stateDir, STAMP)).mtimeMs;
+  loadPricing(stateDir, { allowFetch: true }); // no pricing.json → 24h gate open
+  const after = fs.statSync(path.join(stateDir, STAMP)).mtimeMs;
+  assert.equal(after, before); // not re-stamped → no new attempt
+});
+
+test('loadPricing: a >1h-stale stamp permits a retry and re-stamps to now', () => {
+  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-price-stamp-stale-')); tmp.push(stateDir);
+  const stamp = path.join(stateDir, STAMP);
+  fs.writeFileSync(stamp, '');
+  const old = new Date(Date.now() - 2 * 60 * 60 * 1000); // 2h ago
+  fs.utimesSync(stamp, old, old);
+  const before = fs.statSync(stamp).mtimeMs;
+  loadPricing(stateDir, { allowFetch: true });
+  const after = fs.statSync(stamp).mtimeMs;
+  assert.ok(after > before); // re-stamped → a fresh attempt fired
+});
+
+test('loadPricing: no stamp permits a retry and creates the stamp', () => {
+  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-price-stamp-none-')); tmp.push(stateDir);
+  loadPricing(stateDir, { allowFetch: true });
+  assert.ok(fs.existsSync(path.join(stateDir, STAMP)));
+});
+
+test('loadPricing: allowFetch:false never stamps (offline-test contract)', () => {
+  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-price-stamp-off-')); tmp.push(stateDir);
+  loadPricing(stateDir, { allowFetch: false });
+  assert.equal(fs.existsSync(path.join(stateDir, STAMP)), false);
+});
+
+test('loadPricing: fresh pricing.json (success TTL closed) never stamps', () => {
+  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-price-stamp-fresh-json-')); tmp.push(stateDir);
+  fs.writeFileSync(path.join(stateDir, 'pricing.json'),
+    JSON.stringify({ fetchedAt: Date.now(), raw: RAW }));
+  loadPricing(stateDir, { allowFetch: true });
+  assert.equal(fs.existsSync(path.join(stateDir, STAMP)), false); // 24h gate short-circuits the throttle
+});
