@@ -84,14 +84,71 @@ test('buildDetail: turn attribution — calls bucket under active prompt, tool r
     asst('m3', { input_tokens: 100 }),
   ]);
   const detail = buildDetail(main, [], pricing());
-  const texts = detail.topPrompts.map((p) => p.text);
+  const texts = detail.turns.map((p) => p.prompt);
   assert.ok(texts.includes('big task'));
   assert.ok(texts.includes('(session start)'));
-  const big = detail.topPrompts.find((p) => p.text === 'big task');
-  assert.equal(big.calls, 2); // m1 + m2 (tool result did not split the turn)
+  const big = detail.turns.find((p) => p.prompt === 'big task');
+  assert.equal(big.steps, 2); // m1 + m2 (tool result did not split the turn)
 });
 
-test('buildDetail: topPrompts carry ctx/out tokens and a tool tally', () => {
+test('buildDetail: undated billable call is dropped (parity with list COST)', () => {
+  const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-sd-und-'));
+  tmp.push(cfg);
+  const main = path.join(cfg, 'projects', 'p', 'sessUND1.jsonl');
+  writeJsonl(main, [
+    userPrompt('p'),
+    asst('m1', { input_tokens: 1000, output_tokens: 200 }),
+    // no timestamp → cost-aggregate drops it when bucketing, so buildDetail must too
+    { type: 'assistant', message: { id: 'm2', model: MODEL, usage: { input_tokens: 9999, output_tokens: 9999, cache_read_input_tokens: 90000 } } },
+  ]);
+  const px = pricing();
+  const agg = aggregate(cfg, px);
+  const detail = buildDetail(main, [], px);
+  assert.equal(detail.calls, 1); // m2 dropped — not counted
+  assert.equal(detail.total.toFixed(8), agg.perSession.sessUND1.total.toFixed(8));
+});
+
+test('buildDetail: repeated identical prompt text stays two distinct turns', () => {
+  const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-sd-rep-'));
+  tmp.push(cfg);
+  const main = path.join(cfg, 'projects', 'p', 'sessREP1.jsonl');
+  writeJsonl(main, [
+    userPrompt('continue'),
+    asst('m1', { input_tokens: 1000, output_tokens: 100 }),
+    userPrompt('continue'),
+    asst('m2', { input_tokens: 1000, output_tokens: 100, cache_read_input_tokens: 5000 }),
+  ]);
+  const detail = buildDetail(main, [], pricing());
+  const conts = detail.turns.filter((t) => t.prompt === 'continue');
+  assert.equal(conts.length, 2); // keyed on turn index, not text → not merged
+  assert.notEqual(conts[0].turnIndex, conts[1].turnIndex);
+  // perCall carries the turn it served, so renderers group structurally
+  const mainCalls = detail.perCall.filter((c) => c.isMain);
+  assert.equal(mainCalls.length, 2);
+  assert.notEqual(mainCalls[0].turnIndex, mainCalls[1].turnIndex);
+});
+
+test('buildDetail: summary.mainSteps counts main calls only; detail.calls includes subagents', () => {
+  const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-sd-ms-'));
+  tmp.push(cfg);
+  const id = 'sessMS01';
+  const main = path.join(cfg, 'projects', 'p', id + '.jsonl');
+  const sub = path.join(cfg, 'projects', 'p', id, 'subagents', 'agent-x.jsonl');
+  writeJsonl(main, [
+    userPrompt('p'),
+    asst('m1', { input_tokens: 1000, output_tokens: 100 }),
+    asst('m2', { input_tokens: 1000, output_tokens: 100, cache_read_input_tokens: 5000 }),
+  ], 2000); // main is the newest write → sorts last, exercising seq/mainStep alignment
+  writeJsonl(sub, [
+    userPrompt('sub task'),
+    asst('s1', { input_tokens: 1000, output_tokens: 100 }),
+  ], 1000);
+  const detail = buildDetail(main, [sub], pricing());
+  assert.equal(detail.summary.mainSteps, 2); // main-only denominator
+  assert.equal(detail.calls, 3);             // 2 main + 1 subagent billed call
+});
+
+test('buildDetail: turns carry ctx/out tokens and a tool tally', () => {
   const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-sdt-'));
   tmp.push(cfg);
   const main = path.join(cfg, 'projects', 'p', 'sessTLS1.jsonl');
@@ -105,11 +162,11 @@ test('buildDetail: topPrompts carry ctx/out tokens and a tool tally', () => {
     withTools('m2', { input_tokens: 1000, output_tokens: 300, cache_read_input_tokens: 70000, cache_creation_input_tokens: 5000 }, ['Bash', 'Edit']),
   ]);
   const detail = buildDetail(main, [], pricing());
-  const p = detail.topPrompts.find((x) => x.text === 'do work');
-  assert.equal(p.inp, 2000);              // 1000 + 1000 fresh input
-  assert.equal(p.ctx, 120000);            // 50k + 70k cache-read re-read across the turn
-  assert.equal(p.cw, 8000);               // 3000 + 5000 cache-write
-  assert.equal(p.out, 500);               // 200 + 300 output
+  const p = detail.turns.find((x) => x.prompt === 'do work');
+  assert.equal(p.tokens.input, 2000);      // 1000 + 1000 fresh input
+  assert.equal(p.tokens.cacheRead, 120000); // 50k + 70k cache-read re-read across the turn
+  assert.equal(p.tokens.cacheWrite, 8000); // 3000 + 5000 cache-write
+  assert.equal(p.tokens.output, 500);      // 200 + 300 output
   assert.deepEqual(p.tools, [['Bash', 3], ['Read', 1], ['Edit', 1]]); // desc by count
 });
 
@@ -196,8 +253,8 @@ test('buildDetail: subagent cost split out', () => {
   // byAgent carries a human-meaningful label: main → 'main session', subagent → its task
   assert.equal(detail.byAgent.find((a) => a.name === 'main').label, 'main session');
   assert.equal(detail.byAgent.find((a) => a.name === 'agent-x1').label, 'investigate the failing build');
-  // subagent cost is in the total but NOT in topPrompts
-  assert.ok(!detail.topPrompts.some((p) => p.cost === detail.subagentTotal && p.text !== 'p'));
+  // subagent cost is in the total but NOT in the main-session turns
+  assert.ok(!detail.turns.some((p) => p.cost === detail.subagentTotal && p.prompt !== 'p'));
 });
 
 test('buildDetail: subagent label falls back to the agent stem when it has no prompt', () => {
@@ -220,5 +277,88 @@ test('buildDetail: empty/unbilled session → zeros, no crash', () => {
   assert.equal(detail.total, 0);
   assert.equal(detail.calls, 0);
   assert.deepEqual(detail.byModel, []);
-  assert.deepEqual(detail.topPrompts, []);
+  assert.deepEqual(detail.turns, []);
+});
+
+test('buildDetail: contextConsumers attributes tool results to concrete targets', () => {
+  const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-sd6-'));
+  tmp.push(cfg);
+  const main = path.join(cfg, 'projects', 'p', 'sessGGG1.jsonl');
+  const bigRead = 'x'.repeat(8000); // → ~2000 est tokens
+  writeJsonl(main, [
+    userPrompt('analyze the file'),
+    { type: 'assistant', timestamp: '2026-06-09T01:00:00Z',
+      message: { id: 'm1', model: MODEL, usage: { input_tokens: 100, output_tokens: 50, cache_read_input_tokens: 10000 },
+        content: [{ type: 'tool_use', id: 't1', name: 'Read', input: { file_path: '/tmp/big.js' } }] } },
+    { type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: bigRead }] } },
+    asst('m2', { input_tokens: 50, output_tokens: 20, cache_read_input_tokens: 12000 }),
+  ]);
+  const detail = buildDetail(main, [], pricing());
+  const cc = detail.summary.contextConsumers;
+  assert.ok(cc.note.includes('chars/4'));
+  const read = cc.top.find((c) => c.tool === 'Read');
+  assert.equal(read.target, '/tmp/big.js');
+  assert.equal(read.estTokens, 2000);
+  assert.ok(read.carriedCost > 0); // one step followed it, at a positive cache-read rate
+  // synthetic rows make the table explain the whole context, not just tool results
+  assert.ok(cc.byTool.some((t) => t.tool === 'session-overhead'));
+  // m1: 50 output tokens but only ~6.75 visible (27 chars of Read args) → the excess
+  // is attributed to unstored thinking, not smeared onto the tiny tool args.
+  // m2: 20 output tokens, no content blocks → prose.
+  const tc = cc.byTool.find((t) => t.tool === 'assistant-tool-calls');
+  assert.equal(tc.estTokens, 7); // round(27 chars / 4)
+  assert.match(cc.top.find((c) => c.tool === 'assistant-tool-calls').target, /Read \d+/); // per-tool breakdown in label
+  assert.equal(cc.byTool.find((t) => t.tool === 'assistant-thinking').estTokens, 43); // round(50 − 27/4)
+  assert.equal(cc.byTool.find((t) => t.tool === 'assistant-text').estTokens, 20);
+  const up = cc.byTool.find((t) => t.tool === 'user-prompt');
+  assert.equal(up.count, 1); // the tool_result entry is not a user prompt
+  assert.equal(cc.totalEstTokens, cc.byTool.reduce((a, t) => a + t.estTokens, 0));
+  // assistantOutput drills into the same apportionment: kind split, stored vs
+  // unstored thinking, per-turn attribution, peak step.
+  const ao = detail.summary.assistantOutput;
+  assert.equal(ao.byKind.text.tokens, 20);
+  assert.equal(ao.byKind.thinking.tokens, 43);
+  assert.equal(ao.byKind.toolCalls.tokens, 7);
+  assert.ok(ao.byKind.thinking.cost > 0);
+  assert.equal(ao.thinking.storedTokens, 0); // no thinking blocks in the transcript
+  assert.equal(ao.thinking.unstoredTokens, 43); // all inferred from output_tokens
+  assert.equal(ao.thinking.stepsWithThinking, 1);
+  assert.equal(ao.thinking.mainSteps, 2);
+  assert.equal(ao.thinking.peakStep.seq, 1);
+  assert.deepEqual(ao.thinking.peakStep.nextTools, ['Read']);
+  // the burst's trigger = what landed in context right before that call — here the
+  // user prompt (the call follows it directly; the Read result lands after).
+  assert.equal(ao.thinking.topSteps.length, 1);
+  assert.deepEqual(ao.thinking.topSteps[0].trigger, { tool: 'user-prompt', target: 'analyze the file' });
+  assert.equal(ao.thinking.byTurn.length, 1);
+  assert.equal(ao.thinking.byTurn[0].prompt, 'analyze the file');
+  assert.equal(ao.thinking.byTurn[0].steps, 2);
+  assert.equal(ao.thinking.byTurn[0].thinkingTokens, 43);
+});
+
+test('buildDetail: bySkill attributes turn cost to the dispatched skill', () => {
+  const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-sd7-'));
+  tmp.push(cfg);
+  const main = path.join(cfg, 'projects', 'p', 'sessHHH1.jsonl');
+  writeJsonl(main, [
+    userPrompt('Base directory for this skill: /home/u/.claude/skills/writing-tests # Writing tests…'),
+    asst('m1', { input_tokens: 1000, output_tokens: 100 }),
+    asst('m2', { input_tokens: 500, output_tokens: 50 }),
+    userPrompt('/code-review the diff'),
+    asst('m3', { input_tokens: 800, output_tokens: 80 }),
+    userPrompt('plain question'),
+    asst('m4', { input_tokens: 200, output_tokens: 20 }),
+  ]);
+  const detail = buildDetail(main, [], pricing());
+  const bs = detail.summary.bySkill;
+  assert.equal(bs.length, 2); // the plain prompt is not a skill
+  const wt = bs.find((s) => s.skill === 'writing-tests');
+  assert.equal(wt.turns, 1);
+  assert.equal(wt.steps, 2);
+  assert.ok(wt.cost > 0);
+  assert.ok(wt.tokens.input >= 1500);
+  const cr = bs.find((s) => s.skill === 'code-review');
+  assert.equal(cr.steps, 1);
+  // skill turn costs are a subset of the total
+  assert.ok(bs.reduce((a, s) => a + s.cost, 0) < detail.total);
 });

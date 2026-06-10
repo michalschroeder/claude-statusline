@@ -191,6 +191,8 @@ test('viewer detail: <prefix> renders the section headers + total', async () => 
   require('fs').rmSync(xdg, { recursive: true, force: true });
   assert.match(out, /SESSION sessDET01/);
   assert.match(out, /WHERE IT WENT/);
+  assert.match(out, /WHAT FILLED CONTEXT/);
+  assert.match(out, /session-overhead/); // synthetic consumer row renders
   assert.match(out, /BY MODEL/);
   assert.match(out, /TOP PROMPTS/);
   assert.match(out, /\$\d+\.\d{2} total/);

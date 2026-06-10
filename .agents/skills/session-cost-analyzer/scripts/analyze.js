@@ -6,8 +6,7 @@
 // live in ./lib, the price snapshot in ../data. See SYNC.md for the canonical source.
 const path = require('path');
 const os = require('os');
-const fs = require('fs');
-const { readTitleRecap, projectDirs, listSessions } = require('./lib/transcript');
+const { readTitleRecap, projectDirs, listSessions, listSubagentTranscripts } = require('./lib/transcript');
 const { loadPricing } = require('./lib/pricing');
 const { aggregate } = require('./lib/cost-aggregate');
 const { buildDetail } = require('./lib/session-detail');
@@ -24,6 +23,7 @@ function parseArgs(argv) {
     }
     return argv[i + 1];
   };
+  let sawPositional = false;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--last') {
@@ -35,9 +35,13 @@ function parseArgs(argv) {
     }
     else if (a === '--since') { opts.since = needValue('--since', i); i++; }
     else if (a === '--config-dir') { opts.configDir = needValue('--config-dir', i); i++; }
-    else if (a === 'list') { /* explicit list subcommand: leave opts.detail undefined */ }
     else if (a.startsWith('--')) { /* unknown flag: ignored */ }
-    else if (opts.detail === undefined) { opts.detail = a; } // first bare token = session prefix
+    else if (!sawPositional) {
+      // First positional only: 'list' = explicit list subcommand (detail stays
+      // undefined); anything else = session prefix. A second positional errors.
+      sawPositional = true;
+      if (a !== 'list') opts.detail = a;
+    }
     else {
       process.stderr.write(`analyze.js: unexpected argument '${a}'\n`);
       process.exit(1);
@@ -66,10 +70,17 @@ function analysisPayload(detail, id, ts, title, recap) {
     legend:
       'Cost ≈ context-size × steps, recomputed from raw tokens × LiteLLM prices (not Claude\'s reported cost). ' +
       'tokens.cacheRead = re-reading accumulated context and is the dominant driver; tokens.input (fresh) is usually negligible. ' +
-      'turns and calls are in EXECUTION order. NOTE: a turn\'s tokens.cacheRead is a SUM across its steps, NOT the context size — use turn.avgContext / turn.peakContext and summary.contextGrowth (per-step cacheRead) for the real growth curve. ' +
+      'turns and calls are in EXECUTION order. steps (top level) = total billed assistant calls incl. subagents; summary.mainSteps = main-session steps only (the denominator for per-step views like contextGrowth and the timeline). Each main call carries turnIndex (which turn it served). ' +
+      'NOTE: a turn\'s tokens.cacheRead is a SUM across its steps, NOT the context size — use turn.avgContext / turn.peakContext and summary.contextGrowth (per-step cacheRead) for the real growth curve. ' +
       'A cacheWrite spike usually means the parent re-cached its whole context (e.g. on a subagent return). ' +
       'Use summary.byTurnKind for cost per kind of work, summary.toolTally for the canonical tool counts (do NOT re-aggregate calls[].tools — that over-counts), ' +
-      'summary.highContextCost for the spend above 200k context (what a /compact would have cut), and summary.contextResets for how many times context was cleared.',
+      'summary.highContextCost for the spend above 200k context (what a /compact would have cut), and summary.contextResets for how many times context was cleared. ' +
+      'summary.contextConsumers names WHAT filled the context — each tool result (which file was read, which command ran) and user prompt, with estimated tokens (~chars/4) and carriedCost (the re-read tax it incurred on every later step) — use it to say which exact file/command consumed the context; its assistant-text / assistant-thinking / assistant-tool-calls rows split the model\'s ' +
+      'own output by kind (apportioned from exact output_tokens), so a fat assistant share means verbosity, not reads. ' +
+      'summary.assistantOutput drills into that output: byKind token/cost split and a thinking breakdown — storedTokens vs unstoredTokens (interleaved thinking billed in output_tokens but never saved to the transcript), ' +
+      'thinking.byTurn (which prompts drove the reasoning) and thinking.topSteps (the heaviest single bursts, each with its trigger — what landed in context right before — and the action it took next; ' +
+      'the thinking text itself is never persisted, so trigger → next-action is the maximum attribution) — use it to explain WHY assistant-thinking is large. ' +
+      'summary.bySkill attributes cost to skill dispatches (turns whose prompt is a skill expansion or /slash command) — only the turns the skill itself drove, not later work it influenced.',
     components: detail.components,
     summary: detail.summary,
     byModel: detail.byModel,
@@ -81,10 +92,10 @@ function analysisPayload(detail, id, ts, title, recap) {
 }
 
 // Session list as JSON for an LLM/agent: one record per session, plus period totals.
-function listPayload(rows, costOf, readTR, per, budget) {
+function listPayload(rows, costOf, per, budget) {
   return {
     sessions: rows.map((r) => {
-      const { title, recap } = readTR(r.file);
+      const { title, recap } = readTitleRecap(r.file);
       return {
         session: r.id,
         title: title || null,
@@ -113,8 +124,6 @@ function main() {
 
   const stateDir = resolveStateDir(source);
   const pricing = loadPricing(stateDir, { allowFetch: false });
-  const agg = aggregate(transcriptRoot, pricing);
-  const costOf = (id) => { const ps = agg.perSession[id]; return ps ? ps.total : 0; };
 
   if (opts.detail !== undefined) {
     const matches = rows.filter((r) => r.id.startsWith(opts.detail));
@@ -128,25 +137,21 @@ function main() {
       process.exit(1);
     }
     const row = matches[0];
-    const subDir = path.join(path.dirname(row.file), row.id, 'subagents');
-    let subFiles = [];
-    try {
-      subFiles = fs.readdirSync(subDir)
-        .filter((n) => n.startsWith('agent-') && n.endsWith('.jsonl'))
-        .map((n) => path.join(subDir, n));
-    } catch {}
-    const detail = buildDetail(row.file, subFiles, pricing);
+    const detail = buildDetail(row.file, listSubagentTranscripts(row.file, row.id), pricing);
     const { title, recap } = readTitleRecap(row.file);
     process.stdout.write(JSON.stringify(analysisPayload(detail, row.id, row.ts, title, recap), null, 2) + '\n');
     return;
   }
 
+  // List mode: recompute every session's spend (detail mode above skips this —
+  // buildDetail re-derives the one session it needs).
+  const agg = aggregate(transcriptRoot, pricing);
+  const costOf = (id) => { const ps = agg.perSession[id]; return ps ? ps.total : 0; };
   const budget = resolveBudget(process.env.STATUSLINE_MONTHLY_BUDGET);
   const per = sumPeriods(agg.perSession, new Date());
   const emitJson = (rs) => process.stdout.write(
-    JSON.stringify(listPayload(rs, costOf, readTitleRecap, per, budget), null, 2) + '\n');
+    JSON.stringify(listPayload(rs, costOf, per, budget), null, 2) + '\n');
 
-  if (rows.length === 0) { emitJson(rows); return; }
   if (sinceTs != null) rows = rows.filter((r) => r.ts >= sinceTs);
   const cap = opts.last != null ? opts.last : (opts.since ? Infinity : 10);
   rows = rows.slice(0, cap);
