@@ -193,8 +193,13 @@ function firstPrompt(file) {
 // Global dedup: first occurrence wins, files processed oldest mtime first (so the
 // total equals lib/cost-aggregate.js's per-session total). Returns:
 // { total, calls, components:{input,output,cacheWrite,cacheRead,web},
-//   byModel:[{model,cost,calls}], byAgent:[{name,label,cost}],
-//   turns:[...], perCall:[...], subagentTotal, subagentCount }.
+//   unpriced, unpricedModels:[...], byModel:[{model,cost,calls}],
+//   byAgent:[{name,label,cost}], turns:[...], perCall:[...],
+//   subagentTotal, subagentCount }.
+// `unpriced` counts billed calls excluded from cost rollups because their model
+// isn't in the price table (the #25 stale-snapshot failure); `unpricedModels`
+// lists the distinct models, so the detail view can warn rather than silently
+// undercount.
 // byAgent `label` is 'main session' for the main file, else the subagent's task
 // (its first prompt) falling back to the agent-<hash> stem.
 // `turns` are main-session prompts in EXECUTION order (not cost order) — each with
@@ -202,13 +207,17 @@ function firstPrompt(file) {
 // climb. `perCall` is every billed assistant call in chronological-by-file order,
 // each with raw per-call tokens (the call's cacheRead is the context size at that
 // step). Both carry raw integers + untruncated prompts for downstream analysis.
+// `mainFile` accepts a single path or an array — a session resumed under a
+// different cwd has a transcript half under each `projects/<enc-cwd>/` dir, and
+// all halves must be folded in to match the list COST (aggregate sums them all).
 function buildDetail(mainFile, subagentFiles, pricing) {
   const descriptors = [];
   const add = (file, name, isMain, label) => {
     let st; try { st = fs.statSync(file); } catch { return; }
     descriptors.push({ file, name, isMain, label, mtime: st.mtimeMs });
   };
-  add(mainFile, 'main', true, 'main session');
+  const mains = Array.isArray(mainFile) ? mainFile : [mainFile];
+  for (const f of mains) add(f, 'main', true, 'main session');
   for (const f of subagentFiles || []) {
     const name = path.basename(f).replace(/\.jsonl$/, '');
     add(f, name, false, firstPrompt(f) || name);
@@ -223,19 +232,27 @@ function buildDetail(mainFile, subagentFiles, pricing) {
   const perCall = [];
   const consumerEvents = []; // main-session only: what landed in context, per target
   let total = 0, calls = 0, subagentTotal = 0;
+  let unpriced = 0;                  // billed calls dropped because their model isn't in the price table
+  const unpricedModels = new Set();  // which models — surfaces the stale-pricing failure (#25/#27)
   let mainParsedSteps = 0; // distinct main-file calls in parse order (consumer afterStep space)
   const subWithCost = new Set();
 
   const mainIdx = []; // per kept main call: its index in the main file's parse order
   for (const d of descriptors) {
     const parsed = parseCalls(d.file, d.isMain, d.isMain ? consumerEvents : null);
-    if (d.isMain) mainParsedSteps = parsed.length;
+    if (d.isMain) mainParsedSteps += parsed.length; // accumulate across multiple main halves (cross-cwd resume)
     for (let fi = 0; fi < parsed.length; fi++) {
       const call = parsed[fi];
       if (!dayKey(call.ts)) continue; // parity: cost-aggregate drops undated calls, so the detail total matches list COST
       if (call.id) { if (seen.has(call.id)) continue; seen.add(call.id); }
-      const b = calculateCostBreakdown(call.usage, getModelCosts(pricing.map, call.model));
-      if (b.total <= 0) continue; // unknown/local model or zero-cost usage
+      const costs = getModelCosts(pricing.map, call.model);
+      const b = calculateCostBreakdown(call.usage, costs);
+      if (b.total <= 0) {
+        // A null `costs` means the model isn't in the price table (the #25 stale-snapshot
+        // failure) — count it so the detail view can warn instead of silently undercounting.
+        if (!costs) { unpriced++; unpricedModels.add(call.model); }
+        continue; // unknown/local model or zero-cost usage — excluded from cost rollups
+      }
       const cc = extractCacheCreation(call.usage);
       const u = call.usage;
       const tokens = {
@@ -326,6 +343,7 @@ function buildDetail(mainFile, subagentFiles, pricing) {
   summary.bySkill = [...bySkill.values()].sort((a, b) => b.cost - a.cost);
   return {
     total, calls, components,
+    unpriced, unpricedModels: [...unpricedModels],
     byModel: [...byModel.values()].sort(desc),
     byAgent: [...byAgent.values()].sort(desc),
     turns, perCall,

@@ -262,6 +262,26 @@ test('viewer list: --analyze on empty store → valid JSON, empty sessions', asy
   assert.deepStrictEqual(JSON.parse(out).sessions, []);
 });
 
+test('viewer detail: unpriced model surfaces a warning + --analyze fields', async () => {
+  const p = mkProfile();
+  const now = new Date().toISOString();
+  writeTranscript(p.configDir, 'sessUNP01', [
+    { type: 'ai-title', aiTitle: 'Unpriced' },
+    { type: 'user', message: { role: 'user', content: 'do the thing' } },
+    { type: 'assistant', timestamp: now, message: { id: 'u1', model: 'claude-totally-fake-9', usage: { input_tokens: 100000, output_tokens: 1000 } } },
+  ]);
+  const xdg = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-unp-'));
+  tmpDirs.push(xdg);
+  const env = wide({ XDG_STATE_HOME: xdg });
+  const rendered = await runSessions(['--config-dir', p.configDir, 'sessUNP'], env);
+  assert.match(rendered, /unpriced/);
+  assert.match(rendered, /claude-totally-fake-9/);
+  const j = JSON.parse(await runSessions(['--config-dir', p.configDir, 'sessUNP', '--analyze'], env));
+  assert.strictEqual(j.unpriced, 1);
+  assert.deepStrictEqual(j.unpricedModels, ['claude-totally-fake-9']);
+  assert.match(j.legend, /unpriced/);
+});
+
 test('viewer detail: cross-cwd resume — detail total equals list COST', async () => {
   // Same session id under two project dirs (resumed under a different cwd), with
   // subagents in the older dir. Detail must fold every half → total == list COST.

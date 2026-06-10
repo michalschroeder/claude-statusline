@@ -67,6 +67,8 @@ function analysisPayload(detail, id, ts, title, recap) {
     startedAt: new Date(ts * 1000).toISOString(),
     totalCost: detail.total,
     steps: detail.calls,
+    unpriced: detail.unpriced,
+    unpricedModels: detail.unpricedModels,
     legend:
       'Cost ≈ context-size × steps, recomputed from raw tokens × LiteLLM prices (not Claude\'s reported cost). ' +
       'tokens.cacheRead = re-reading accumulated context and is the dominant driver; tokens.input (fresh) is usually negligible. ' +
@@ -80,7 +82,8 @@ function analysisPayload(detail, id, ts, title, recap) {
       'summary.assistantOutput drills into that output: byKind token/cost split and a thinking breakdown — storedTokens vs unstoredTokens (interleaved thinking billed in output_tokens but never saved to the transcript), ' +
       'thinking.byTurn (which prompts drove the reasoning) and thinking.topSteps (the heaviest single bursts, each with its trigger — what landed in context right before — and the action it took next; ' +
       'the thinking text itself is never persisted, so trigger → next-action is the maximum attribution) — use it to explain WHY assistant-thinking is large. ' +
-      'summary.bySkill attributes cost to skill dispatches (turns whose prompt is a skill expansion or /slash command) — only the turns the skill itself drove, not later work it influenced.',
+      'summary.bySkill attributes cost to skill dispatches (turns whose prompt is a skill expansion or /slash command) — only the turns the skill itself drove, not later work it influenced. ' +
+      'unpriced = billed calls EXCLUDED from totalCost/components/byModel because their model (unpricedModels) is missing from the price table — totalCost is undercounted by their unknown amount.',
     components: detail.components,
     summary: detail.summary,
     byModel: detail.byModel,
