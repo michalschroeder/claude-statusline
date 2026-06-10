@@ -81,6 +81,18 @@ test('buildMap: bundled snapshot — opus-4-7 present, sonnet-4-6 has NO >200K p
   assert.equal(m['claude-haiku-4-5'].output, 0.000005);
 });
 
+test('bundled snapshot resolves current Claude models', () => {
+  // Extend this id list whenever a new Claude model ships, so CI fails loudly
+  // instead of silently pricing the new model $0 (issue #25).
+  const raw = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'data', 'model_prices.json'), 'utf8'));
+  const map = buildMap(raw);
+  for (const id of ['claude-fable-5', 'claude-opus-4-8', 'claude-opus-4-7',
+                    'claude-opus-4-6', 'claude-opus-4-5', 'claude-sonnet-4-6',
+                    'claude-sonnet-4-5', 'claude-haiku-4-5', 'claude-haiku-4-5-20251001'])
+    assert.ok(getModelCosts(map, id), `${id} missing from bundled snapshot`);
+  assert.equal(getModelCosts(map, 'claude-fable-5').input, 0.00001);
+});
+
 test('getModelCosts: exact, date-stripped, and longest-prefix match', () => {
   const m = buildMap(RAW);
   assert.equal(getModelCosts(m, 'claude-opus-4-8').input, 0.000005);
