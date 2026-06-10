@@ -262,6 +262,43 @@ test('viewer list: --analyze on empty store → valid JSON, empty sessions', asy
   assert.deepStrictEqual(JSON.parse(out).sessions, []);
 });
 
+test('viewer detail: cross-cwd resume — detail total equals list COST', async () => {
+  // Same session id under two project dirs (resumed under a different cwd), with
+  // subagents in the older dir. Detail must fold every half → total == list COST.
+  const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-xcwd-'));
+  tmpDirs.push(configDir);
+  const id = 'sessXCWD01';
+  const now = Math.floor(Date.now() / 1000);
+  const write = (dir, file, entries, when) => {
+    const d = path.join(configDir, 'projects', dir);
+    fs.mkdirSync(path.dirname(path.join(d, file)), { recursive: true });
+    fs.writeFileSync(path.join(d, file), entries.map((o) => JSON.stringify(o)).join('\n') + '\n');
+    const t = new Date(when * 1000);
+    fs.utimesSync(path.join(d, file), t, t);
+  };
+  const nowIso = new Date(now * 1000).toISOString();
+  write('pa', `${id}.jsonl`, [
+    { type: 'user', message: { role: 'user', content: 'in dir A' } },
+    { type: 'assistant', timestamp: nowIso, message: { id: 'm1', model: 'claude-opus-4-8', usage: { input_tokens: 500000, output_tokens: 500 } } },
+  ], now - 200);
+  write('pa', path.join(id, 'subagents', 'agent-x.jsonl'), [
+    { type: 'user', message: { role: 'user', content: 'sub task' } },
+    { type: 'assistant', timestamp: nowIso, message: { id: 's1', model: 'claude-opus-4-8', usage: { input_tokens: 300000, output_tokens: 300 } } },
+  ], now - 150);
+  write('pb', `${id}.jsonl`, [
+    { type: 'user', message: { role: 'user', content: 'in dir B' } },
+    { type: 'assistant', timestamp: nowIso, message: { id: 'm2', model: 'claude-opus-4-8', usage: { input_tokens: 400000, output_tokens: 400, cache_read_input_tokens: 5000 } } },
+  ], now - 100);
+  const xdg = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-xcwd-x-'));
+  tmpDirs.push(xdg);
+  const env = wide({ XDG_STATE_HOME: xdg });
+  const detailJson = JSON.parse(await runSessions(['--config-dir', configDir, 'sessXCWD', '--analyze'], env));
+  const listJson = JSON.parse(await runSessions(['--config-dir', configDir, '--analyze'], env));
+  const listRow = listJson.sessions.find((s) => s.session === id);
+  assert.ok(listRow, 'session present in list');
+  assert.strictEqual(detailJson.totalCost.toFixed(8), listRow.cost.toFixed(8));
+});
+
 test('viewer detail: unknown prefix → exit 1', async () => {
   const p = mkProfile();
   writeTranscript(p.configDir, 'sessXYZ01', [{ type: 'ai-title', aiTitle: 'x' }]);

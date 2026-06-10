@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 'use strict';
+const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { readTitleRecap, projectDirs, listSessions, listSubagentTranscripts } = require('../lib/transcript');
@@ -345,7 +346,16 @@ function main() {
       process.exit(1);
     }
     const row = matches[0];
-    const detail = buildDetail(row.file, listSubagentTranscripts(row.file, row.id), pricing);
+    // A session resumed under a different cwd has a transcript half under each
+    // projects/<enc-cwd>/ dir; collect all of them so the detail total matches
+    // the list COST (aggregate sums every dir's <id>.jsonl + its subagents).
+    const mainFiles = [], subFiles = [];
+    for (const d of dirs) {
+      const f = path.join(d, `${row.id}.jsonl`);
+      try { if (fs.statSync(f).isFile()) mainFiles.push(f); } catch {}
+      for (const s of listSubagentTranscripts(f, row.id)) subFiles.push(s);
+    }
+    const detail = buildDetail(mainFiles, subFiles, pricing);
     const { title, recap } = readTitleRecap(row.file);
     if (opts.analyze) {
       process.stdout.write(JSON.stringify(analysisPayload(detail, row.id, row.ts, title, recap), null, 2) + '\n');
