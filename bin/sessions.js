@@ -2,16 +2,18 @@
 'use strict';
 const path = require('path');
 const os = require('os');
+const fs = require('fs');
 const { readTitleRecap, projectDirs, listSessions } = require('../lib/transcript');
 const { dim, cyan, colorByTier, SESSION_TIERS, BUDGET_TIERS } = require('../lib/color');
 const { loadPricing } = require('../lib/pricing');
 const { aggregate } = require('../lib/cost-aggregate');
+const { buildDetail } = require('../lib/session-detail');
 const { sumPeriods } = require('../lib/periods');
 const { resolveBudget } = require('../lib/budget');
 const { resolveStateDir } = require('../lib/state');
 
 function parseArgs(argv) {
-  const opts = { last: null, since: null, configDir: undefined };
+  const opts = { last: null, since: null, configDir: undefined, detail: undefined };
   const needValue = (flag, i) => {
     if (i + 1 >= argv.length || argv[i + 1].startsWith('--')) {
       process.stderr.write(`bin/sessions.js: ${flag} requires a value\n`);
@@ -30,6 +32,12 @@ function parseArgs(argv) {
     }
     else if (a === '--since') { opts.since = needValue('--since', i); i++; }
     else if (a === '--config-dir') { opts.configDir = needValue('--config-dir', i); i++; }
+    else if (a.startsWith('--')) { /* unknown flag: ignored, as before */ }
+    else if (opts.detail === undefined) { opts.detail = a; } // first bare token = session prefix
+    else {
+      process.stderr.write(`bin/sessions.js: unexpected argument '${a}'\n`);
+      process.exit(1);
+    }
   }
   return opts;
 }
@@ -46,6 +54,21 @@ function truncate(s, width) {
   if (width <= 0) return '';
   if (s.length <= width) return s;
   return s.slice(0, Math.max(0, width - 1)) + '…';
+}
+
+const money = (c) => '$' + c.toFixed(2);
+
+// Compact token count: 950, 12k, 4.1M.
+function tok(n) {
+  if (n < 1000) return String(n);
+  if (n < 1e6) return Math.round(n / 1000) + 'k';
+  return (n / 1e6).toFixed(1) + 'M';
+}
+
+// Top-3 tools of a turn as 'NN×Tool …', e.g. '40×Bash 26×Edit 13×Read'. '—' if none.
+function toolStr(tools, n = 3) {
+  if (!tools || !tools.length) return '—';
+  return tools.slice(0, n).map(([name, count]) => `${count}×${name}`).join(' ');
 }
 
 // '2h ago' style age. nowSec/ts both unix seconds; future clamps to 'just now'.
@@ -91,6 +114,85 @@ function termWidth() {
 }
 
 
+// Render the per-session detail view (see lib/session-detail.buildDetail).
+function renderDetail(detail, sessionId, when, title, recap, width) {
+  const out = [];
+  out.push(`SESSION ${sessionId}`);
+  out.push(title || '—');
+  if (recap) out.push(dim('└ ' + truncate(recap, Math.max(0, width - 2))));
+  out.push(dim(`${dayLabel(when)} ${clock(when)} · ${detail.calls} steps · ${money(detail.total)} total`));
+
+  const t = detail.total || 1; // avoid divide-by-zero on an unbilled session
+  const comp = [
+    ['cache-read', detail.components.cacheRead],
+    ['input', detail.components.input],
+    ['output', detail.components.output],
+    ['cache-write', detail.components.cacheWrite],
+    ['web search', detail.components.web],
+  ].filter(([, c]) => c > 0).sort((a, b) => b[1] - a[1]);
+  if (comp.length) {
+    out.push('');
+    out.push(dim('WHERE IT WENT'));
+    const lw = Math.max(...comp.map(([l]) => l.length));
+    const BAR = 10;
+    for (const [label, c] of comp) {
+      const frac = c / t;
+      const fill = Math.max(0, Math.min(BAR, Math.round(frac * BAR)));
+      const bar = '▓'.repeat(fill) + dim('░'.repeat(BAR - fill));
+      out.push(`  ${label.padEnd(lw)}  ${bar}  ${dim(String(Math.round(frac * 100)).padStart(3) + '%')}  ${money(c)}`);
+    }
+  }
+
+  if (detail.byModel.length) {
+    out.push('');
+    out.push(dim('BY MODEL'));
+    const mw = Math.max(...detail.byModel.map((m) => m.model.length));
+    for (const m of detail.byModel) {
+      out.push(`  ${m.model.padEnd(mw)}  ${money(m.cost)}  ${dim(m.calls + ' step' + (m.calls === 1 ? '' : 's'))}`);
+    }
+  }
+
+  if (detail.topPrompts.length) {
+    out.push('');
+    out.push(dim('TOP PROMPTS') + dim('  · turns ranked by cost; cache-rd is the dominant driver'));
+    const top = detail.topPrompts.slice(0, 10);
+    // Aligned columns: numeric cells right-padded, tools left-padded; a header row
+    // sits above them. cost+steps render at normal weight, token/tool cells dim.
+    const cols = [
+      { h: 'cost',     get: (p) => money(p.cost),    end: false, dim: false },
+      { h: 'steps',    get: (p) => String(p.calls),  end: false, dim: false },
+      { h: 'input',    get: (p) => tok(p.inp),       end: false, dim: true },
+      { h: 'cache-rd', get: (p) => tok(p.ctx),       end: false, dim: true },
+      { h: 'cache-wr', get: (p) => tok(p.cw),        end: false, dim: true },
+      { h: 'output',   get: (p) => tok(p.out),       end: false, dim: true },
+      { h: 'tools',    get: (p) => toolStr(p.tools), end: true,  dim: true },
+    ];
+    for (const c of cols) c.w = Math.max(c.h.length, ...top.map((p) => c.get(p).length));
+    const pad = (s, c) => (c.end ? s.padEnd(c.w) : s.padStart(c.w));
+    const prefixW = 2 + cols.reduce((s, c) => s + c.w, 0) + 2 * cols.length; // gaps incl. one before prompt
+    out.push(dim('  ' + cols.map((c) => pad(c.h, c)).join('  ') + '  prompt'));
+    for (const p of top) {
+      const cells = cols.map((c) => { const s = pad(c.get(p), c); return c.dim ? dim(s) : s; });
+      out.push('  ' + cells.join('  ') + '  ' + truncate(p.text, Math.max(0, width - prefixW)));
+    }
+    if (detail.subagentCount > 0) {
+      out.push(dim(`  + ${money(detail.subagentTotal)} across ${detail.subagentCount} subagent${detail.subagentCount === 1 ? '' : 's'}`));
+    }
+  }
+
+  if (detail.subagentCount > 0) {
+    out.push('');
+    out.push(dim('BY AGENT'));
+    const cw = Math.max(...detail.byAgent.map((a) => money(a.cost).length));
+    for (const a of detail.byAgent) {
+      const meta = `${money(a.cost).padStart(cw)}  `;
+      out.push('  ' + meta + truncate(a.label, Math.max(0, width - 2 - meta.length)));
+    }
+  }
+
+  return out.join('\n') + '\n';
+}
+
 function main() {
   const opts = parseArgs(process.argv.slice(2));
   const sinceTs = sinceToTs(opts.since); // null when --since absent or unparseable
@@ -106,17 +208,47 @@ function main() {
   const dirs = projectDirs(transcriptRoot);
   let rows = listSessions(transcriptRoot, dirs);
 
-  // Recompute spend from raw tokens × LiteLLM prices (never trust Claude's cost).
-  // Full history (no mtime cap) — the viewer can afford the parse.
   const stateDir = resolveStateDir(source);
   // Offline like the renderer: a "list sessions" command shouldn't trigger a
   // network fetch or write pricing.json. The background refresh hook keeps prices
   // fresh; the viewer uses the cached/bundled snapshot.
   const pricing = loadPricing(stateDir, { allowFetch: false });
+
+  if (opts.detail !== undefined) {
+    const matches = rows.filter((r) => r.id.startsWith(opts.detail));
+    if (matches.length === 0) {
+      process.stderr.write(`bin/sessions.js: no session matching '${opts.detail}'\n`);
+      process.exit(1);
+    }
+    if (matches.length > 1) {
+      process.stderr.write(`bin/sessions.js: '${opts.detail}' is ambiguous:\n` +
+        matches.map((m) => '  ' + m.id).join('\n') + '\n');
+      process.exit(1);
+    }
+    const row = matches[0];
+    const subDir = path.join(path.dirname(row.file), row.id, 'subagents');
+    let subFiles = [];
+    try {
+      subFiles = fs.readdirSync(subDir)
+        .filter((n) => n.startsWith('agent-') && n.endsWith('.jsonl'))
+        .map((n) => path.join(subDir, n));
+    } catch {}
+    const detail = buildDetail(row.file, subFiles, pricing);
+    const { title, recap } = readTitleRecap(row.file);
+    process.stdout.write(renderDetail(detail, row.id, row.ts, title, recap, termWidth()));
+    return;
+  }
+
+  // Recompute spend from raw tokens × LiteLLM prices (never trust Claude's cost);
+  // only the list+footer path below needs it, so it runs after the detail return.
   const agg = aggregate(transcriptRoot, pricing);
   const costOf = (id) => { const ps = agg.perSession[id]; return ps ? ps.total : 0; };
 
-  if (rows.length === 0) {
+  // Period totals + budget (footer).
+  const budget = resolveBudget(process.env.STATUSLINE_MONTHLY_BUDGET);
+  const per = sumPeriods(agg.perSession, new Date());
+
+  if (rows.length === 0) { // truly-empty store (no transcripts at all)
     process.stdout.write('no sessions found\n');
     return;
   }
@@ -174,10 +306,7 @@ function main() {
   }
 
   // Footer: budget bars when a budget is set, else a plain d/w/m line.
-  const { budgetOptedOut, monthly: mBudget, daily: dLimit, weekly: wLimit } =
-    resolveBudget(process.env.STATUSLINE_MONTHLY_BUDGET);
-  const per = sumPeriods(agg.perSession, new Date());
-  const money = (c) => '$' + c.toFixed(2);
+  const { budgetOptedOut, monthly: mBudget, daily: dLimit, weekly: wLimit } = budget;
   out.push('');
   if (budgetOptedOut) {
     out.push(
