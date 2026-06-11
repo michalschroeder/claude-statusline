@@ -117,13 +117,14 @@ test('render: top-turns — skill column, summary, and styled tooltip only on us
   assert.match(html, /class="prompt"[^>]*>↩ subagent results</);
   // a Haiku summary wins in the WHAT cell
   assert.match(html, /Applied 6 edits and ran shell validation/);
-  // user row whose full message exceeds the summary carries the styled tooltip (data-full),
-  // NOT a native title=, and skill/orchestration rows do not
+  // user rows expose the full message via the styled tooltip (data-full), NOT native title=;
+  // skill/orchestration rows do not
   assert.match(html, /class="prompt turn-tip" data-kind="user" data-full="read log tags[^"]*"/);
   assert.ok(!/title="Base directory/.test(html), 'no native title tooltip');
   assert.ok(!/turn-tip[^>]*write-a-skill/.test(html), 'skill row has no tooltip');
-  // 'do it' == its own full text so no redundant tooltip on that user row
-  assert.ok(!/data-full="do it"/.test(html), 'no tooltip when full == cell');
+  // the original user prompt is preserved even when a summary replaced it in the cell —
+  // "do it" stays reachable on hover, not lost
+  assert.match(html, /data-full="do it">Applied 6 edits and ran shell validation</);
 });
 
 test('render: all user-derived text is HTML-escaped (no injection)', () => {

@@ -530,16 +530,25 @@
   }
   function track(e) { px = e.clientX; py = e.clientY; if (!raf) raf = requestAnimationFrame(place); }
 
-  function wire(chartSel, outId, targetClass, html, line) {
+  // hideOnGap: hide as soon as the cursor is over a non-target inside the container, not
+  // only on container exit. Tables need this — moving from a tagged cell to a plain cell in
+  // the same table must drop the tip (else it sticks). Charts leave it off: their targets
+  // are contiguous, so hiding on sub-pixel gaps would just flicker.
+  function wire(chartSel, outId, targetClass, html, line, hideOnGap) {
     var chart = document.querySelector(chartSel);
     var out = document.getElementById(outId);
     if (!chart) { if (out) out.remove(); return; }
     // Drop the native <title>s so the browser's slow grey popup can't compete.
     chart.querySelectorAll('title').forEach(function (t) { t.remove(); });
     var idle = out ? out.textContent : '';
+    function hide() {
+      tip.classList.remove('show');
+      tip.hidden = true;
+      if (out) out.textContent = idle;
+    }
     chart.addEventListener('mouseover', function (e) {
       var el = e.target.closest ? e.target.closest('.' + targetClass) : null;
-      if (!el) return;
+      if (!el) { if (hideOnGap) hide(); return; }
       tip.innerHTML = html(el.dataset);
       tip.hidden = false;
       requestAnimationFrame(function () { tip.classList.add('show'); });
@@ -547,11 +556,7 @@
       if (out) out.textContent = line(el.dataset);
     });
     chart.addEventListener('mousemove', track);
-    chart.addEventListener('mouseleave', function () {
-      tip.classList.remove('show');
-      tip.hidden = true;
-      if (out) out.textContent = idle;
-    });
+    chart.addEventListener('mouseleave', hide);
   }
 
   wire('.ctx-chart', 'ctx-readout', 'ctx-bar',
@@ -588,7 +593,7 @@
       return '<div class="tip-h">' + esc(d.kind) + ' message</div>' +
         '<div class="tip-b">' + esc(d.full) + '</div>';
     },
-    function (d) { return d.full || ''; });
+    function (d) { return d.full || ''; }, true);
 })();
 
 // Sortable columns + a totals footer. Pure progressive enhancement over the

@@ -108,10 +108,10 @@ function topTurnsRows(turns, limit) {
     // the raw message adds detail beyond the cell — i.e. real user turns. Skill expansions
     // and <task-notification> blobs are boilerplate: no tooltip, no giant native popup.
     const full = t.kind === 'user' ? truncate(t.prompt, 600) : '';
-    // Tooltip only when the raw message genuinely adds detail — i.e. it's longer than what
-    // the cell shows (a truncated prompt, or a shorter Haiku summary). A bare "do it" under
-    // its own summary adds nothing, so it stays untagged.
-    const whatCell = full.length > what.length
+    // Preserve the user's original words: whenever the cell shows something other than the
+    // raw message (a Haiku summary, or a truncated prompt), expose the full message on hover
+    // — even a short "do it". Skill/orchestration rows have full='' (boilerplate) → no tooltip.
+    const whatCell = full && full !== what
       ? `<td class="prompt turn-tip" data-kind="${esc(t.kind)}" data-full="${esc(full)}">${esc(what)}</td>`
       : `<td class="prompt">${esc(what)}</td>`;
     return `<tr><td class="num">${money(t.cost)}</td><td>${esc(t.kind)}</td>` +
