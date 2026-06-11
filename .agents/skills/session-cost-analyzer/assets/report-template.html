@@ -172,14 +172,14 @@
   /* Spending-less levers as flat lime ribbon-cards, each tagged with a black sticker number. */
   ol.tips { counter-reset:tip; list-style:none; padding:0; margin:0 0 8px;
     display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:14px; align-items:start; }
-  ol.tips li { counter-increment:tip; position:relative; padding:44px 18px 16px; color:var(--ink);
-    font-family:var(--font-body); font-size:17px; line-height:1.5;
+  ol.tips li { counter-increment:tip; position:relative; padding:44px 18px 18px; color:var(--ink);
+    font-family:var(--font-body); font-size:20px; line-height:1.5;
     background:var(--t-lime); border:1px solid var(--frame); }
   ol.tips li::before { content:counter(tip); position:absolute; left:0; top:0; width:32px; height:32px;
     display:flex; align-items:center; justify-content:center; font-family:var(--font-head);
     font-weight:700; font-size:15px; color:var(--canvas); background:var(--frame); }
   ol.tips strong { display:block; font-family:var(--font-head); font-weight:700; text-transform:uppercase;
-    font-size:13px; color:var(--ink); margin-bottom:4px; }
+    font-size:15px; color:var(--ink); margin-bottom:5px; }
 
   /* Catalog data tables: full 1px black HTML-3.2 grid, black header bar, Times body, zebra stripe. */
   table { width:100%; border-collapse:collapse; background:var(--canvas);
