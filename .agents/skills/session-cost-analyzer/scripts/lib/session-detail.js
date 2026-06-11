@@ -176,6 +176,18 @@ function skillName(text) {
   return slash ? slash[1] : null;
 }
 
+// The dispatcher-authored task label from a subagent's sibling `<agent>.meta.json`
+// (`description` — the Task tool's 3-5 word summary), or null. Preferred over the
+// raw first prompt: it's a purpose-built one-liner, where first prompts share a long
+// boilerplate preamble (MCP setup, auth) that truncates to indistinguishable rows.
+function agentDescription(file) {
+  const meta = file.replace(/\.jsonl$/, '.meta.json');
+  let raw; try { raw = fs.readFileSync(meta, 'utf8'); } catch { return null; }
+  let o; try { o = JSON.parse(raw); } catch { return null; }
+  const d = o && typeof o.description === 'string' ? o.description.trim() : '';
+  return d || null;
+}
+
 // First genuine user prompt in a transcript (the agent's task), or null. Used to
 // give subagents a human-meaningful label instead of their opaque agent-<hash> id.
 function firstPrompt(file) {
@@ -200,8 +212,8 @@ function firstPrompt(file) {
 // isn't in the price table (the #25 stale-snapshot failure); `unpricedModels`
 // lists the distinct models, so the detail view can warn rather than silently
 // undercount.
-// byAgent `label` is 'main session' for the main file, else the subagent's task
-// (its first prompt) falling back to the agent-<hash> stem.
+// byAgent `label` is 'main session' for the main file, else the subagent's task —
+// its meta.json `description`, falling back to its first prompt, then the agent-<hash> stem.
 // `turns` are main-session prompts in EXECUTION order (not cost order) — each with
 // full text, raw token sums, and a tool tally — so a consumer can watch cacheRead
 // climb. `perCall` is every billed assistant call in chronological-by-file order,
@@ -220,7 +232,7 @@ function buildDetail(mainFile, subagentFiles, pricing) {
   for (const f of mains) add(f, 'main', true, 'main session');
   for (const f of subagentFiles || []) {
     const name = path.basename(f).replace(/\.jsonl$/, '');
-    add(f, name, false, firstPrompt(f) || name);
+    add(f, name, false, agentDescription(f) || firstPrompt(f) || name);
   }
   descriptors.sort((a, b) => a.mtime - b.mtime); // oldest first → first occurrence wins
 

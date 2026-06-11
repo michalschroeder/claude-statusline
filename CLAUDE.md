@@ -46,7 +46,8 @@ incl. each tool-use round; the four token columns are the per-turn sums of fresh
 / cache-write / output, where **cache-rd** dominates the cost, which is why a short late prompt over
 a large context can cost more than a long early one; tools = the turn's top-3 `tool_use` tally —
 plus a `+ $X across N subagents` line), and `BY AGENT` (only when subagents exist; each agent is
-labelled by its task — the subagent's first prompt, falling back to the `agent-<hash>` stem). A
+labelled by its task — its `<agent>.meta.json` `description` (the dispatcher's short Task summary),
+falling back to the subagent's first prompt, then the `agent-<hash>` stem). A
 `sessions.js <prefix> --analyze` flag swaps the rendered table for a full-fidelity **JSON** payload meant
 for an LLM/agent to reason about *why* a session was costly: raw integer tokens (no compaction),
 untruncated prompts, full tool tallies, a `legend` stating the cost model, plus `turns` (main-session
