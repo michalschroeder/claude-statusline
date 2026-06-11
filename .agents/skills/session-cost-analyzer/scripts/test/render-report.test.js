@@ -142,6 +142,22 @@ test('render: context consumers name the concrete target, escaped', () => {
   assert.match(html, /estimates, not billed/i); // disclaimer note rendered
 });
 
+test('render: long un-summarized consumer target gets a hover tooltip (no --summarize)', () => {
+  const longTarget = 'Base directory for this skill: ' + '/very/long/path'.repeat(12);
+  const withLong = {
+    ...detail,
+    summary: {
+      ...detail.summary,
+      contextConsumers: { ...detail.summary.contextConsumers, totalEstTokens: 60000,
+        top: [{ tool: 'user-prompt', target: longTarget, count: 1, estTokens: 38000, carriedCost: 1.1 }] },
+    },
+  };
+  const html = render(withLong, TEMPLATE);
+  // tagged for the tooltip, full target on data-full, even though no summary was applied
+  assert.match(html, /class="prompt cc-tip"[^>]*data-full="Base directory for this skill: \/very\/long/);
+  assert.ok(!html.includes(longTarget + '</td>'), 'visible cell text is truncated, not the full target');
+});
+
 test('render: consumer summary replaces target, raw target stays on hover', () => {
   const withSummary = {
     ...detail,
