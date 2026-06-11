@@ -199,8 +199,8 @@
   .ctx-chart .ctx-axis { fill:var(--dim); font-size:10px; font-family:var(--font-head); }
   .ctx-bar:hover { opacity:.7; }
   .ctx-legend { display:flex; gap:16px; flex-wrap:wrap; color:#222; font-family:var(--font-body);
-    font-size:16px; margin:10px 0 0; }
-  .ctx-legend i { display:inline-block; width:12px; height:12px; border:1px solid var(--frame);
+    font-size:18px; margin:10px 0 0; }
+  .ctx-legend i { display:inline-block; width:14px; height:14px; border:1px solid var(--frame);
     margin-right:7px; vertical-align:-1px; }
   #ctx-readout, #grow-readout { color:#222; font-family:var(--font-body); font-size:16px;
     margin-top:8px; min-height:1.5em; }
@@ -329,17 +329,17 @@
   step's size, cost, and the message it was working on.</p>
   {{CONTEXT_TIMELINE}}
   <div class="ctx-legend">
-    <span><i class="c-low"></i>under 100k</span>
-    <span><i class="c-mid"></i>100–200k</span>
-    <span><i class="c-high"></i>above 200k — /compact territory</span>
-    <span><i class="c-user"></i>your prompt landed</span>
-    <span><i class="c-dim"></i>skill / agent turn started</span>
-    <span><i class="reset"></i>context cleared — a vertical dashed line marks a step where the
-    context suddenly shrank: a /compact, a context clear, or the cache being rebuilt</span>
+    <span><i class="c-low"></i>under 100k (comfortable)</span>
+    <span><i class="c-mid"></i>100k to 200k (getting heavy)</span>
+    <span><i class="c-high"></i>above 200k (time to clear the conversation)</span>
+    <span><i class="c-user"></i>where your message landed</span>
+    <span><i class="c-dim"></i>a skill or helper started</span>
+    <span><i class="reset"></i>conversation cleared: the dashed line marks a point where the
+    conversation suddenly shrank, from a /compact, a manual clear, or the saved copy being rebuilt</span>
   </div>
   <div id="ctx-readout">hover a bar to inspect a step</div>
 
-  <h3>The same growth, grouped by turn — who added what</h3>
+  <h3>The same growth, grouped by message: who added what</h3>
   <p class="explain">The chart above uses many bars for a single message. This one is simpler:
   each message you sent gets one block. Read it left to right as the conversation filling up. The
   grey block at the start is the fixed setup that is always there before you type anything (the
@@ -351,10 +351,10 @@
   pushed the conversation (from one size to the next), and what that turn cost.</p>
   {{CONTEXT_GROWTH_BAR}}
   <div class="ctx-legend">
-    <span><i class="c-dim"></i>session overhead</span>
-    <span><i class="c-user"></i>your prompt</span>
-    <span><i class="c-skill"></i>skill dispatch</span>
-    <span><i class="c-orch"></i>subagent orchestration</span>
+    <span><i class="c-dim"></i>fixed setup</span>
+    <span><i class="c-user"></i>your message</span>
+    <span><i class="c-skill"></i>a skill running</span>
+    <span><i class="c-orch"></i>managing helpers</span>
     <span><i class="c-start"></i>session start</span>
   </div>
   <div id="grow-readout">hover a block to see what that turn added</div>
@@ -460,20 +460,21 @@
   <tbody>{{TOP_TURNS_ROWS}}</tbody></table>
 
   <h2 id="tips" class="tint-olive">Spending less next time</h2>
-  <p class="explain">Three levers, in order of impact:</p>
+  <p class="explain">Three things you can do, starting with the one that saves the most:</p>
   <ol class="tips">
-    <li><strong>Keep the main conversation small.</strong> /compact or start a fresh session
-    between distinct phases; everything that stays in context is re-read on every later step (the
-    "spent above 200k" card is what that would have saved here).</li>
-    <li><strong>Push heavy exploration and retry loops into subagents.</strong> They read in their
-    own small context and report back a summary, so the bulk never enters the main thread.</li>
-    <li><strong>Batch independent commands into one step.</strong> Every extra step re-reads the
-    whole conversation and triggers a fresh round of billed reasoning.</li>
+    <li><strong>Keep the main conversation short.</strong> Run /compact, or start a fresh session,
+    when you move on to a new task. Everything left in the conversation gets re-read at every later
+    step. The "spent above 200k" card shows how much that would have saved here.</li>
+    <li><strong>Hand heavy exploring and retry loops to helpers.</strong> A helper reads everything
+    in its own separate conversation and sends back just a summary, so the bulky parts never pile up
+    in your main chat.</li>
+    <li><strong>Group commands that do not depend on each other into a single step.</strong> Every
+    extra step re-reads the whole conversation and sets off another round of paid thinking.</li>
   </ol>
 
-  <footer>Costs recomputed from raw tokens × LiteLLM prices (not Claude's reported cost).
-  Token counts marked "est" are estimates (~4 characters per token); dollar totals come from
-  exact billed token counts.</footer>
+  <footer>Costs are calculated from the raw token counts using public LiteLLM prices, not the
+  figure Claude reports. Numbers marked "est" are estimates (about 4 characters per token). The
+  dollar totals are based on the exact billed token counts.</footer>
   </div>
 </div>
 <script>
