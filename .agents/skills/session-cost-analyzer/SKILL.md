@@ -22,11 +22,15 @@ The scripts are **bundled inside this skill** (pure Node stdlib, no install, no 
 files). They do **NOT** live in the user's repo — do not look for them there, and do not
 `cd` into the user's project expecting to find them.
 
-Every command below is written relative to this skill's base directory. **Replace `<SKILL>`
-with the absolute path shown on the `Base directory for this skill: …` line printed when this
-skill loads** (e.g. `/home/you/.claude/skills/session-cost-analyzer`). Commands run fine from
-any working directory — the report's `--out` still writes to the user's current directory by
-default. Example: `node <SKILL>/scripts/analyze.js list --last 10`.
+Every command below references the scripts via **`${CLAUDE_SKILL_DIR}`** — the documented
+Claude Code substitution that expands to this skill's own directory (works from any working
+directory, for personal/project/plugin installs alike). It is already expanded to an absolute
+path in the text you are reading, so run the commands verbatim — no manual substitution. The
+report's `--out` still writes to the user's current directory by default.
+
+(Fallback: if a command ever shows a literal, unexpanded `${CLAUDE_SKILL_DIR}` or resolves to
+an empty path, substitute the absolute path from the `Base directory for this skill: …` line
+the loader printed.)
 
 ## Arguments
 
@@ -58,10 +62,10 @@ presence/absence as the on/off switch, don't infer it from prose. Unknown flags:
 
 ```bash
 # List recent sessions (newest first) with their recomputed cost:
-node <SKILL>/scripts/analyze.js list --last 10
+node ${CLAUDE_SKILL_DIR}/scripts/analyze.js list --last 10
 
 # Full cost breakdown for one session (id or unambiguous prefix):
-node <SKILL>/scripts/analyze.js <session-id-prefix>
+node ${CLAUDE_SKILL_DIR}/scripts/analyze.js <session-id-prefix>
 ```
 
 Both print JSON to stdout. `--config-dir <path>` points at a non-default `~/.claude`.
@@ -71,10 +75,10 @@ Both print JSON to stdout. `--config-dir <path>` points at a non-default `~/.cla
 
 1. **Select the session.**
    - If the user gave a session id/prefix, skip to step 2 with it.
-   - Otherwise run `node <SKILL>/scripts/analyze.js list --last 10`, summarize the sessions
+   - Otherwise run `node ${CLAUDE_SKILL_DIR}/scripts/analyze.js list --last 10`, summarize the sessions
      inline (`title · $cost · age`), and ask which one to analyze.
 
-2. **Pull the detail.** Run `node <SKILL>/scripts/analyze.js <prefix>` and parse the JSON.
+2. **Pull the detail.** Run `node ${CLAUDE_SKILL_DIR}/scripts/analyze.js <prefix>` and parse the JSON.
    Read the `legend` field first — it states the cost model.
 
 3. **Read the precomputed rollups, do NOT hand-aggregate `calls[]`.**
@@ -99,7 +103,7 @@ Both print JSON to stdout. `--config-dir <path>` points at a non-default `~/.cla
      proportion bars, ranks the top turns, and HTML-escapes every prompt/title/label):
 
      ```bash
-     node <SKILL>/scripts/analyze.js <prefix> | node <SKILL>/scripts/render-report.js --out ./session-cost-<shortid>.html
+     node ${CLAUDE_SKILL_DIR}/scripts/analyze.js <prefix> | node ${CLAUDE_SKILL_DIR}/scripts/render-report.js --out ./session-cost-<shortid>.html
      ```
 
      It prints the path it wrote. Pass a different `--out` if the user names one. Tell the
@@ -119,13 +123,13 @@ Both print JSON to stdout. `--config-dir <path>` points at a non-default `~/.cla
      their output with the pure helper:
 
      ```bash
-     node <SKILL>/scripts/analyze.js <prefix> > /tmp/detail.json
+     node ${CLAUDE_SKILL_DIR}/scripts/analyze.js <prefix> > /tmp/detail.json
      # Read /tmp/detail.json's `turns` (sort by cost, take ~10). Dispatch 1-2 Haiku
      # subagents, each given a batch of turns (turnIndex + kind + tool tally + prompt),
      # asking for a JSON map { "<turnIndex>": "<=10-word phrase", ... }. Write the merged
      # map to /tmp/summaries.json, then:
-     node <SKILL>/scripts/apply-summaries.js --summaries /tmp/summaries.json < /tmp/detail.json \
-       | node <SKILL>/scripts/render-report.js --out ./session-cost-<shortid>.html
+     node ${CLAUDE_SKILL_DIR}/scripts/apply-summaries.js --summaries /tmp/summaries.json < /tmp/detail.json \
+       | node ${CLAUDE_SKILL_DIR}/scripts/render-report.js --out ./session-cost-<shortid>.html
      ```
 
      `apply-summaries.js` is pure (keys by `turnIndex`, ignores unknown/missing, passes the
