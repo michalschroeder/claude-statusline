@@ -52,11 +52,15 @@
     --t-olive:#8e8a25; --t-sage:#b3bd95; --t-salmon:#d77a7a; --t-peach:#e6915d;
     --t-lime:#c0d4a7; --t-sky:#9ab6c8; --t-steel:#a5b8c0; --t-periwinkle:#8c9ae0;
     --zebra:#f1efe2; --highlight:#fff3c4;
-    /* Chart palette mapped onto the catalog tints — single source for SVG fills AND
-       legend swatches below. Context heat low→high uses sage→peach→salmon (a
-       muted-green→orange→muted-red severity ramp that stays inside the closed palette,
-       so Dell red itself is never spent on a chart). */
-    --c-low:var(--t-sage); --c-mid:var(--t-peach); --c-high:var(--t-salmon);
+    /* Context-heat severity ramp — single source for SVG bar fills AND legend
+       swatches below. Deliberately NOT the muted section tints: a stoplight needs
+       real separation, and sage→peach→salmon collapsed (peach orange and salmon
+       pink read almost identical, so "getting heavy" vs "expensive" was invisible).
+       This is a proper green→amber→red ramp with distinct hue AND lightness at each
+       step, kept slightly muted so it still reads as flat 90s catalog ink rather
+       than neon. Dell red (#e91d2a, the CTA/total accent) stays off the chart; the
+       danger tier uses its own brick red. */
+    --c-low:#5f9e3f; --c-mid:#e8a01e; --c-high:#c0392b;
     --c-user:var(--t-sky); --c-skill:var(--t-periwinkle); --c-orch:var(--t-olive);
     --c-start:var(--t-steel); --c-dim:#d9d6c4;
     --font-display:"Arial Black","Helvetica Neue",Helvetica,Arial,sans-serif;
@@ -331,11 +335,11 @@
   <p class="explain">One bar per step, left to right in time order. The height of a bar is how
   full the conversation was at that moment, measured in tokens (roughly, pieces of words).
   Because every step re-reads everything before it, <strong>taller bars cost more</strong>.
-  Sage bars are a comfortable size (under 100k tokens). Peach is getting heavy. Salmon is past
+  Green bars are a comfortable size (under 100k tokens). Amber is getting heavy. Red is past
   the dashed 200k line, which is the expensive zone the "spent above 200k" card adds up. The
   blue ticks under the bottom line show where your messages landed. When a bar suddenly drops
   back to almost nothing, that is a /compact or a context clear emptying the conversation. The
-  healthy pattern is a zig-zag: fill up, clear, fill up again. One long climb that stays salmon
+  healthy pattern is a zig-zag: fill up, clear, fill up again. One long climb that stays red
   means every later step was paying the highest re-reading cost. Hover over any bar to see that
   step's size, cost, and the message it was working on.</p>
   {{CONTEXT_TIMELINE}}
