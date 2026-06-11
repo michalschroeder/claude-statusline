@@ -192,6 +192,17 @@
   td.num { font-variant-numeric:tabular-nums; white-space:nowrap; }
   tbody tr:nth-child(even) { background:var(--zebra); }
   tbody tr:hover { background:var(--highlight); }
+  /* Sortable headers: click to sort, with a small arrow cue. Black header bar, white glyph. */
+  thead th[data-sort] { cursor:pointer; user-select:none; white-space:nowrap; }
+  thead th[data-sort]:hover { background:#222; }
+  thead th[data-sort]:focus-visible { outline:2px solid var(--yellow); outline-offset:-2px; }
+  thead th[data-sort]::after { content:"\2195"; opacity:.45; margin-left:6px; font-size:11px; }
+  thead th.sort-asc::after { content:"\25B2"; opacity:1; }
+  thead th.sort-desc::after { content:"\25BC"; opacity:1; }
+  /* Totals row: bold Helvetica, heavy top rule, tinted so it reads as a sum line. */
+  tfoot td { font-family:var(--font-head); font-weight:700; background:var(--zebra);
+    border-top:3px solid var(--frame); font-size:16px; }
+  tfoot td:first-child { text-transform:uppercase; letter-spacing:.02em; }
   /* Flat tinted progress bar with a hard black hairline — no gradient, no radius. */
   .bar { height:12px; background:var(--t-periwinkle); border:1px solid var(--frame); min-width:2px; }
 
@@ -369,7 +380,7 @@
       never see. <strong>cache write</strong> is the cost of saving new material once, so that later
       steps can re-read it more cheaply. <strong>input</strong> is brand-new text that has not been
       saved yet, and it is usually tiny.</p>
-      <table><thead><tr><th scope="col">component</th><th scope="col" class="num">cost</th><th scope="col">share</th></tr></thead>
+      <table><thead><tr><th scope="col" data-sort="text">component</th><th scope="col" class="num" data-sort="num" data-sum="money">cost</th><th scope="col">share</th></tr></thead>
       <tbody>{{WHERE_IT_WENT_ROWS}}</tbody></table>
     </section>
     <section>
@@ -380,7 +391,7 @@
       session ends or the conversation is cleared. A big row here is a good thing to hand off to a
       helper (a subagent) next time. The helper reads it in its own separate conversation and sends
       back only a short summary, so the bulky original never weighs down your main chat.</p>
-      <table><thead><tr><th scope="col">tool</th><th scope="col" class="num">results</th><th scope="col" class="num">est tokens</th><th scope="col" class="num">carried cost</th><th scope="col">share</th></tr></thead>
+      <table><thead><tr><th scope="col" data-sort="text">tool</th><th scope="col" class="num" data-sort="num" data-sum="int">results</th><th scope="col" class="num" data-sort="num" data-sum="tokens">est tokens</th><th scope="col" class="num" data-sort="num" data-sum="money">carried cost</th><th scope="col">share</th></tr></thead>
       <tbody>{{CONSUMER_TOOL_ROWS}}</tbody></table>
     </section>
   </div>
@@ -394,7 +405,7 @@
   typed into its tools, such as the contents of an edit or a command it ran (assistant-tool-calls).
   When those rows are near the top, the cost came mostly from how much the model itself wrote, not
   from what it read.</p>
-  <table><thead><tr><th scope="col" class="num">est tokens</th><th scope="col">share</th><th scope="col" class="num">carried cost</th><th scope="col">tool</th><th scope="col">target (file · command · prompt)</th></tr></thead>
+  <table><thead><tr><th scope="col" class="num" data-sort="num" data-sum="tokens">est tokens</th><th scope="col">share</th><th scope="col" class="num" data-sort="num" data-sum="money">carried cost</th><th scope="col" data-sort="text">tool</th><th scope="col">target (file · command · prompt)</th></tr></thead>
   <tbody>{{CONSUMER_ROWS}}</tbody></table>
   <p class="prompt" style="font-size:12px">{{CONSUMERS_NOTE}}</p>
 
@@ -408,7 +419,7 @@
   once or handing a repetitive retry loop to a helper. It is not about making the model "think
   less".</p>
   <p class="prompt" style="font-size:12px">{{THINKING_SUMMARY}}</p>
-  <table><thead><tr><th scope="col" class="num">tokens</th><th scope="col">share</th><th scope="col" class="num">steps</th><th scope="col">prompt that drove the reasoning</th></tr></thead>
+  <table><thead><tr><th scope="col" class="num" data-sort="num" data-sum="tokens">tokens</th><th scope="col">share</th><th scope="col" class="num" data-sort="num" data-sum="int">steps</th><th scope="col">prompt that drove the reasoning</th></tr></thead>
   <tbody>{{THINKING_TURN_ROWS}}</tbody></table>
 
   <h2 class="think">Biggest reasoning bursts</h2>
@@ -418,7 +429,7 @@
   before an important action, like making a large edit, is just the model taking time to plan, which
   is normal. But repeated bursts after the same command usually mean the model kept working out the
   same answer over and over, a sign that loop would have been better handed to a helper.</p>
-  <table><thead><tr><th scope="col" class="num">tokens</th><th scope="col" class="num">step</th><th scope="col">trigger (what landed in context right before)</th><th scope="col">next action</th></tr></thead>
+  <table><thead><tr><th scope="col" class="num" data-sort="num" data-sum="tokens">tokens</th><th scope="col" class="num" data-sort="num">step</th><th scope="col">trigger (what landed in context right before)</th><th scope="col">next action</th></tr></thead>
   <tbody>{{THINKING_STEP_ROWS}}</tbody></table>
 
   <div class="trio">
@@ -429,7 +440,7 @@
       skill) really costs more than this number shows. Its instructions also stay in the
       conversation, listed as a <strong>user-prompt</strong> row in the table above, adding to the
       cost of every later step.</p>
-      <table><thead><tr><th scope="col">skill</th><th scope="col" class="num">dispatches</th><th scope="col" class="num">steps</th><th scope="col" class="num">cost</th></tr></thead>
+      <table><thead><tr><th scope="col" data-sort="text">skill</th><th scope="col" class="num" data-sort="num" data-sum="int">dispatches</th><th scope="col" class="num" data-sort="num" data-sum="int">steps</th><th scope="col" class="num" data-sort="num" data-sum="money">cost</th></tr></thead>
       <tbody>{{SKILL_ROWS}}</tbody></table>
     </section>
     <section>
@@ -437,7 +448,7 @@
       <p class="explain">A single session can use more than one model, for example a cheaper one
       for quick steps. These costs are worked out from the raw token counts and the public price per
       token, so they may not exactly match the figure the app shows you.</p>
-      <table><thead><tr><th scope="col">model</th><th scope="col" class="num">cost</th></tr></thead>
+      <table><thead><tr><th scope="col" data-sort="text">model</th><th scope="col" class="num" data-sort="num" data-sum="money">cost</th></tr></thead>
       <tbody>{{BY_MODEL_ROWS}}</tbody></table>
     </section>
     <section>
@@ -446,7 +457,7 @@
       its own short, separate conversation and sends back only a summary, so they usually cost just a
       few cents. If this list is short but the main session was expensive, the way to save money is to
       hand off more of the exploring to helpers, not to cut back on the ones you already have.</p>
-      <table><thead><tr><th scope="col">task</th><th scope="col" class="num">cost</th></tr></thead>
+      <table><thead><tr><th scope="col" data-sort="text">task</th><th scope="col" class="num" data-sort="num" data-sum="money">cost</th></tr></thead>
       <tbody>{{SUBAGENT_ROWS}}</tbody></table>
     </section>
   </div>
@@ -456,7 +467,7 @@
   <strong>peak ctx</strong> is how full the conversation was while that work was running. The same
   task costs several times more when the conversation is already large than when it is small, which
   is why a short message late in a session can cost more than a big one asked at the start.</p>
-  <table><thead><tr><th scope="col" class="num">cost</th><th scope="col">kind</th><th scope="col" class="num">peak ctx</th><th scope="col">prompt</th></tr></thead>
+  <table><thead><tr><th scope="col" class="num" data-sort="num" data-sum="money">cost</th><th scope="col" data-sort="text">kind</th><th scope="col" class="num" data-sort="num">peak ctx</th><th scope="col">prompt</th></tr></thead>
   <tbody>{{TOP_TURNS_ROWS}}</tbody></table>
 
   <h2 id="tips" class="tint-olive">Spending less next time</h2>
@@ -559,6 +570,105 @@
       return '+' + d.grow + ' (' + d.from + ' → ' + d.to + ') · ' + d.steps + ' steps · ' + d.cost +
         ' · ' + d.kind + ': ' + d.prompt;
     });
+})();
+
+// Sortable columns + a totals footer. Pure progressive enhancement over the
+// server-rendered tables: parses the already-formatted cell text ($1.23, 151k,
+// 1.2M, 150), so it needs no extra data from the renderer. Columns opt in via
+// <th data-sort="num|text"> (clickable) and <th data-sum="money|tokens|int">
+// (summed into a <tfoot>). Placeholder "no data" rows (a single colspan cell)
+// are skipped by both, and kept pinned to the bottom when sorting.
+(function () {
+  function parseNum(text) {
+    if (text == null) return NaN;
+    var s = String(text).replace(/[$,\s]/g, '');
+    var m = s.match(/^(-?\d*\.?\d+)\s*([kKmM]?)/);
+    if (!m) return NaN;
+    var n = parseFloat(m[1]);
+    if (m[2] === 'k' || m[2] === 'K') n *= 1e3;
+    else if (m[2] === 'm' || m[2] === 'M') n *= 1e6;
+    return n;
+  }
+  function fmtSum(kind, v) {
+    if (kind === 'money') return '$' + v.toFixed(2);
+    if (kind === 'tokens') {
+      if (v < 1000) return String(Math.round(v));
+      if (v < 1e6) return Math.round(v / 1e3) + 'k';
+      return (v / 1e6).toFixed(1) + 'M';
+    }
+    return String(Math.round(v));
+  }
+
+  function enhance(table) {
+    var head = table.tHead, body = table.tBodies[0];
+    if (!head || !body || !head.rows[0]) return;
+    var ths = Array.prototype.slice.call(head.rows[0].cells);
+    var ncols = ths.length;
+    var sums = ths.map(function (th) { return th.getAttribute('data-sum'); });
+    function dataRows() {
+      return Array.prototype.filter.call(body.rows, function (r) { return r.cells.length === ncols; });
+    }
+
+    // Totals footer (only over real rows, only when something is summable).
+    if (sums.some(Boolean)) {
+      var rows = dataRows();
+      if (rows.length) {
+        var totals = ths.map(function (th, i) {
+          if (!sums[i]) return null;
+          var s = 0;
+          rows.forEach(function (r) { var v = parseNum(r.cells[i].textContent); if (!isNaN(v)) s += v; });
+          return s;
+        });
+        var labelIdx = ths.findIndex(function (th) { return th.getAttribute('data-sort') === 'text'; });
+        if (labelIdx < 0) for (var j = ncols - 1; j >= 0; j--) { if (!sums[j]) { labelIdx = j; break; } }
+        if (labelIdx < 0) labelIdx = 0;
+        var foot = table.createTFoot();
+        var tr = foot.insertRow();
+        ths.forEach(function (th, i) {
+          var td = tr.insertCell();
+          if (sums[i]) { td.className = 'num'; td.textContent = fmtSum(sums[i], totals[i]); }
+          else if (i === labelIdx) { td.textContent = 'Total'; }
+        });
+      }
+    }
+
+    // Click-to-sort headers.
+    ths.forEach(function (th, i) {
+      var type = th.getAttribute('data-sort');
+      if (!type) return;
+      th.tabIndex = 0;
+      th.setAttribute('role', 'button');
+      function run() {
+        var dir = th.getAttribute('aria-sort') === 'ascending' ? 'descending' : 'ascending';
+        ths.forEach(function (o) { o.removeAttribute('aria-sort'); o.classList.remove('sort-asc', 'sort-desc'); });
+        th.setAttribute('aria-sort', dir);
+        th.classList.add(dir === 'ascending' ? 'sort-asc' : 'sort-desc');
+        var rows = dataRows();
+        var rest = Array.prototype.filter.call(body.rows, function (r) { return r.cells.length !== ncols; });
+        rows.sort(function (a, b) {
+          var cmp;
+          if (type === 'num') {
+            var av = parseNum(a.cells[i].textContent), bv = parseNum(b.cells[i].textContent);
+            if (isNaN(av)) av = -Infinity;
+            if (isNaN(bv)) bv = -Infinity;
+            cmp = av - bv;
+          } else {
+            var as = a.cells[i].textContent.trim().toLowerCase(), bs = b.cells[i].textContent.trim().toLowerCase();
+            cmp = as < bs ? -1 : as > bs ? 1 : 0;
+          }
+          return dir === 'ascending' ? cmp : -cmp;
+        });
+        rows.forEach(function (r) { body.appendChild(r); });
+        rest.forEach(function (r) { body.appendChild(r); });
+      }
+      th.addEventListener('click', run);
+      th.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); run(); }
+      });
+    });
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('table'), enhance);
 })();
 </script>
 </body>
