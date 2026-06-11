@@ -144,10 +144,19 @@ function consumerRows(cc, limit) {
     const pct = Math.round((Number(c.estTokens) || 0) / total * 100);
     // synthetic rows aggregate the whole session — their count isn't a repeat count
     const tool = c.count > 1 && !c.synthetic ? `${c.tool} ×${c.count}` : c.tool;
+    // A Haiku summary (c.summary, set only when --summarize ran) replaces the raw
+    // target with "what this is"; the full target stays reachable on hover. Same
+    // contract as TOP TURNS: only tag the cell when it shows something other than
+    // the raw target, so the original is always one hover away.
+    const full = c.target || '';
+    const what = c.summary ? truncate(c.summary, 600) : truncate(full, 110);
+    const targetCell = full && c.summary && c.summary.trim() && c.summary.trim() !== full
+      ? `<td class="prompt cc-tip" data-tool="${esc(c.tool)}" data-full="${esc(full)}">${esc(what)}</td>`
+      : `<td class="prompt">${esc(what)}</td>`;
     return `<tr><td class="num">${compactTokens(c.estTokens)}</td>` +
       `<td><div class="bar" style="width:${pct}%"></div></td>` +
       `<td class="num">${money(c.carriedCost)}</td><td>${esc(tool)}</td>` +
-      `<td class="prompt">${esc(truncate(c.target, 110))}</td></tr>`;
+      targetCell + `</tr>`;
   }).join('\n');
 }
 

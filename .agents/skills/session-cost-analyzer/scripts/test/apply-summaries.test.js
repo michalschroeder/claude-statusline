@@ -28,6 +28,14 @@ const payload = () => ({
     { turnIndex: 2, kind: 'user', prompt: 'do it', cost: 2 },
     { turnIndex: 3, kind: 'subagent-orchestration', prompt: '<task-notification>', cost: 1 },
   ],
+  summary: {
+    contextConsumers: {
+      top: [
+        { tool: 'Read', target: '/a/render-report.js', estTokens: 5000 },
+        { tool: 'Bash', target: 'node --test scripts/test/*.test.js', estTokens: 3000 },
+      ],
+    },
+  },
 });
 
 function withTmp(obj, fn) {
@@ -52,6 +60,29 @@ test('apply-summaries: array-of-records shape is accepted too', async () => {
     const out = JSON.parse(await run(JSON.stringify(payload()), ['--summaries', arr]));
     assert.strictEqual(out.turns[2].summary, 'Processed subagent output');
   } finally { fs.rmSync(arr, { force: true }); }
+});
+
+test('apply-summaries: namespaced map fills turns and consumers independently', async () => {
+  const f = path.join(os.tmpdir(), `sca-sum-ns-${process.pid}.json`);
+  fs.writeFileSync(f, JSON.stringify({
+    turns: { '2': 'Applied edits' },
+    consumers: { '0': 'The HTML report renderer', '1': 'Ran the full test suite' },
+  }));
+  try {
+    const out = JSON.parse(await run(JSON.stringify(payload()), ['--summaries', f]));
+    assert.strictEqual(out.turns[1].summary, 'Applied edits');
+    const top = out.summary.contextConsumers.top;
+    assert.strictEqual(top[0].summary, 'The HTML report renderer');
+    assert.strictEqual(top[1].summary, 'Ran the full test suite');
+  } finally { fs.rmSync(f, { force: true }); }
+});
+
+test('apply-summaries: flat map (legacy) touches turns only, never consumers', async () => {
+  await withTmp({ '1': 'Authored a skill', __n: 9 }, async (f) => {
+    const out = JSON.parse(await run(JSON.stringify(payload()), ['--summaries', f]));
+    assert.strictEqual(out.turns[0].summary, 'Authored a skill');
+    assert.ok(!('summary' in out.summary.contextConsumers.top[0]), 'consumers untouched by flat map');
+  });
 });
 
 test('apply-summaries: missing --summaries → payload passes through unchanged', async () => {

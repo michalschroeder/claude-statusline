@@ -17,7 +17,7 @@
     CONTEXT_GROWTH_BAR inline SVG — horizontal bar, one segment per turn, width = context growth
     WHERE_IT_WENT_ROWS  one <tr> per components entry: <td>label</td><td>$cost</td><td><bar></td>
     CONSUMER_TOOL_ROWS  one <tr> per summary.contextConsumers.byTool entry (tool, count, est tokens, carried cost, share)
-    CONSUMER_ROWS       one <tr> per summary.contextConsumers.top entry (est tokens, share, carried cost, tool, target)
+    CONSUMER_ROWS       one <tr> per summary.contextConsumers.top entry (est tokens, share, carried cost, tool, target — target cell shows the Haiku summary with the raw target on hover when one was applied)
     CONSUMERS_NOTE      summary.contextConsumers.note (estimate disclaimer)
     THINKING_SUMMARY    summary.assistantOutput.thinking headline (tokens, cost, stored vs unstored, peak step)
     THINKING_TURN_ROWS  one <tr> per summary.assistantOutput.thinking.byTurn entry (tokens, share, steps, prompt)
@@ -249,7 +249,7 @@
   .prompt { font-family:var(--font-body); color:#333; }
   p.prompt[style] { font-size:13px !important; }
   /* Cells wired to the styled .tip card (full user message on hover). */
-  td.turn-tip { cursor:help; }
+  td.turn-tip, td.cc-tip { cursor:help; }
 
   /* Footer band: white, 1px black top rule, small Times print. */
   footer { font-family:var(--font-body); color:#333; font-size:15px; border-top:1px solid var(--frame);
@@ -415,7 +415,7 @@
   typed into its tools, such as the contents of an edit or a command it ran (assistant-tool-calls).
   When those rows are near the top, the cost came mostly from how much the model itself wrote, not
   from what it read.</p>
-  <table><thead><tr><th scope="col" class="num" data-sort="num" data-sum="tokens">est tokens</th><th scope="col">share</th><th scope="col" class="num" data-sort="num" data-sum="money">carried cost</th><th scope="col" data-sort="text">tool</th><th scope="col">target (file · command · prompt)</th></tr></thead>
+  <table id="consumers-table"><thead><tr><th scope="col" class="num" data-sort="num" data-sum="tokens">est tokens</th><th scope="col">share</th><th scope="col" class="num" data-sort="num" data-sum="money">carried cost</th><th scope="col" data-sort="text">tool</th><th scope="col">target (file · command · prompt)</th></tr></thead>
   <tbody>{{CONSUMER_ROWS}}</tbody></table>
   <p class="prompt" style="font-size:12px">{{CONSUMERS_NOTE}}</p>
 
@@ -591,6 +591,15 @@
   wire('#turns-table', null, 'turn-tip',
     function (d) {
       return '<div class="tip-h">' + esc(d.kind) + ' message</div>' +
+        '<div class="tip-b">' + esc(d.full) + '</div>';
+    },
+    function (d) { return d.full || ''; }, true);
+
+  // Top context consumers: when a Haiku summary replaced the raw target, the same
+  // styled card surfaces the exact file/command/prompt behind it on hover.
+  wire('#consumers-table', null, 'cc-tip',
+    function (d) {
+      return '<div class="tip-h">' + esc(d.tool) + ' target</div>' +
         '<div class="tip-b">' + esc(d.full) + '</div>';
     },
     function (d) { return d.full || ''; }, true);

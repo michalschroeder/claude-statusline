@@ -142,6 +142,27 @@ test('render: context consumers name the concrete target, escaped', () => {
   assert.match(html, /estimates, not billed/i); // disclaimer note rendered
 });
 
+test('render: consumer summary replaces target, raw target stays on hover', () => {
+  const withSummary = {
+    ...detail,
+    summary: {
+      ...detail.summary,
+      contextConsumers: {
+        ...detail.summary.contextConsumers,
+        top: [
+          { tool: 'Read', target: '/repo/src/<huge> & "big".js', count: 2, estTokens: 38000, carriedCost: 1.1, summary: 'The oversized bundled renderer module' },
+          { tool: 'Bash', target: 'git log --stat', count: 1, estTokens: 15000, carriedCost: 0.3 },
+        ],
+      },
+    },
+  };
+  const html = render(withSummary, TEMPLATE);
+  // summary text shown in the cell, tagged for the styled tooltip, raw target on data-full
+  assert.match(html, /class="prompt cc-tip"[^>]*data-tool="Read"[^>]*data-full="\/repo\/src\/&lt;huge&gt; &amp; &quot;big&quot;\.js"[^>]*>The oversized bundled renderer module</);
+  // un-summarized row stays a plain cell with the raw target, no tooltip
+  assert.match(html, /<td class="prompt">git log --stat<\/td>/);
+});
+
 test('render: payload without contextConsumers → placeholder rows, no crash', () => {
   const old = { ...detail, summary: { ...detail.summary, contextConsumers: undefined } };
   const html = render(old, TEMPLATE);
