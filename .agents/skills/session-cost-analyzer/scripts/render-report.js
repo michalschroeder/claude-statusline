@@ -196,7 +196,10 @@ function contextTimeline(calls, turns) {
   const W = 860, H = 210, padL = 44, padR = 6, padT = 10, padB = 22;
   const chartW = W - padL - padR, chartH = H - padT - padB, baseY = padT + chartH;
   const peak = Math.max(...main.map(ctxOf), 1);
-  const yMax = Math.max(peak, HIGH_CONTEXT * 1.1) * 1.05; // keep the 200k line on-chart even for small sessions
+  // Keep a fixed minimum ceiling above 200k so the red danger zone is always a
+  // real visible band (not a sliver) even when a session never gets there; tall
+  // sessions still scale to their own peak.
+  const yMax = Math.max(peak * 1.05, HIGH_CONTEXT * 1.3);
   const xAt = (i) => padL + (i + 0.1) * (chartW / main.length);
   const yAt = (v) => padT + chartH * (1 - v / yMax);
   const barW = Math.max((chartW / main.length) * 0.8, 0.8);
@@ -204,6 +207,17 @@ function contextTimeline(calls, turns) {
   // (e.g. "continue" twice) stay separate ticks.
   const kindOf = new Map((turns || []).map((t) => [t.turnIndex, t.kind]));
   const parts = [];
+  // Faint severity zones painted behind everything: green 0–100k, amber 100–200k,
+  // red above 200k. They make all three tier colors legible even on a low session,
+  // so the bar colors always read against a constant backdrop.
+  const zoneX = padL, zoneW = (W - padR - padL).toFixed(1);
+  const band = (cls, topV, botV) => {
+    const y0 = yAt(topV), y1 = botV == null ? baseY : yAt(botV);
+    parts.push(`<rect class="ctx-zone ${cls}" x="${zoneX}" y="${y0.toFixed(1)}" width="${zoneW}" height="${(y1 - y0).toFixed(1)}"/>`);
+  };
+  band('zone-high', yMax, HIGH_CONTEXT);
+  band('zone-mid', HIGH_CONTEXT, RESET_DROP);
+  band('zone-low', RESET_DROP, 0);
   for (const g of [RESET_DROP, HIGH_CONTEXT]) {
     const gy = yAt(g).toFixed(1);
     const warn = g === HIGH_CONTEXT;

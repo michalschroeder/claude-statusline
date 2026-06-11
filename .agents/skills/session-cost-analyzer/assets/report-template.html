@@ -70,6 +70,10 @@
   svg .c-low{fill:var(--c-low)} svg .c-mid{fill:var(--c-mid)} svg .c-high{fill:var(--c-high)}
   svg .c-user{fill:var(--c-user)} svg .c-skill{fill:var(--c-skill)} svg .c-orch{fill:var(--c-orch)}
   svg .c-start{fill:var(--c-start)} svg .c-dim{fill:var(--c-dim)}
+  /* Faint severity zones behind the timeline bars (green/amber/red 0–100k–200k–up),
+     so all three tier colours stay legible even when bars never reach the red zone. */
+  svg .ctx-zone{opacity:.12} svg .zone-low{fill:var(--c-low)}
+  svg .zone-mid{fill:var(--c-mid)} svg .zone-high{fill:var(--c-high)}
   svg .grid{stroke:#999} svg .grid-warn{stroke:var(--red)}
   svg .reset-line{stroke:var(--red)} svg .divider{stroke:var(--ink)}
   .ctx-legend i.c-low{background:var(--c-low)} .ctx-legend i.c-mid{background:var(--c-mid)}
