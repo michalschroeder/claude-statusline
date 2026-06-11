@@ -199,6 +199,51 @@ test('render: thinking section carries the headline and per-turn rows, escaped',
   assert.match(html, /replied/);
 });
 
+test('render: thinking turn reuses the matching turn Haiku summary, full prompt on hover', () => {
+  // A summarized user turn whose words also drove reasoning: the thinking row should
+  // show the summary, tag the cell, and keep the raw prompt one hover away.
+  const withSummary = {
+    ...detail,
+    turns: [
+      { turnIndex: 5, prompt: 'do it', kind: 'user', cost: 1.0, peakContext: 100000,
+        summary: 'Approved the migration plan and told the agent to execute it' },
+    ],
+    summary: {
+      ...detail.summary,
+      assistantOutput: {
+        ...detail.summary.assistantOutput,
+        thinking: {
+          ...detail.summary.assistantOutput.thinking,
+          byTurn: [{ prompt: 'do it', kind: 'user', steps: 13, thinkingTokens: 17000 }],
+        },
+      },
+    },
+  };
+  const html = render(withSummary, TEMPLATE);
+  assert.match(html, /class="prompt tt-tip"[^>]*data-kind="user"[^>]*data-full="do it"/);
+  assert.match(html, /Approved the migration plan and told the agent to execute it/);
+});
+
+test('render: long un-summarized thinking prompt gets a hover tooltip (no --summarize)', () => {
+  const long = 'Base directory for this skill: /home/ms/.claude/skills/write-a-skill # Writing Skills ## Process 1. and so on for a very long expansion that exceeds the cell width';
+  const noSum = {
+    ...detail,
+    turns: [{ turnIndex: 5, prompt: long, kind: 'user', cost: 1.0, peakContext: 100000 }],
+    summary: {
+      ...detail.summary,
+      assistantOutput: {
+        ...detail.summary.assistantOutput,
+        thinking: {
+          ...detail.summary.assistantOutput.thinking,
+          byTurn: [{ prompt: long.slice(0, 200), kind: 'user', steps: 7, thinkingTokens: 10000 }],
+        },
+      },
+    },
+  };
+  const html = render(noSum, TEMPLATE);
+  assert.match(html, /class="prompt tt-tip"[^>]*data-full="Base directory for this skill: \/home\/ms/);
+});
+
 test('render: by-skill rows + placeholder when absent', () => {
   const html = render(detail, TEMPLATE);
   assert.match(html, /writing-phpunit-tests/);

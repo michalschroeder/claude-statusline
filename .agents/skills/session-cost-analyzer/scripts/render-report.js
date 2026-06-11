@@ -7,12 +7,9 @@
 //
 //   node scripts/analyze.js <prefix> | node scripts/render-report.js [--out <path>]
 //
-// Without --out the file is written into a fresh mktemp dir as
-// <tmp>/session-cost-<xxxxxx>/session-cost-<first8-of-session>.html, so report
-// generation never litters the user's working directory; the final path is printed to
-// stdout. Self-contained — no deps outside this folder.
+// Without --out the file is written to ./session-cost-<first8-of-session>.html in the
+// cwd; the final path is printed to stdout. Self-contained — no deps outside this folder.
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 
 const TEMPLATE = path.join(__dirname, '..', 'assets', 'report-template.html');
@@ -177,17 +174,35 @@ function thinkingSummary(ao) {
 }
 
 // Which prompts drove the reasoning — one row per thinking.byTurn entry.
-function thinkingTurnRows(ao, limit) {
+// These rows are keyed by the same user prompts as TOP TURNS, so when --summarize
+// ran we reuse that turn's Haiku summary here instead of re-summarizing: byTurn.prompt
+// is the first 200 chars of the turn prompt, so we match on that prefix and lift both
+// the summary and the full prompt. Same hover contract as the other tables — whenever
+// the cell shows anything but the full prompt (a summary OR a truncation), the raw
+// message stays one hover away.
+function thinkingTurnRows(ao, limit, turns) {
   const th = ao && ao.thinking;
   const rows = ((th && th.byTurn) || []).slice(0, limit);
   if (!rows.length) return '<tr><td colspan="4" class="prompt">—</td></tr>';
   const total = Math.max(1, (th.storedTokens + th.unstoredTokens) || 0);
+  // prefix (byTurn key, ≤200 chars) → { summary, full } from the matching turn
+  const byPrompt = new Map();
+  for (const t of turns || []) {
+    if (t && t.prompt) byPrompt.set(t.prompt.slice(0, 200), { summary: t.summary, full: t.prompt });
+  }
   return rows.map((t) => {
     const pct = Math.round((Number(t.thinkingTokens) || 0) / total * 100);
+    const match = byPrompt.get(t.prompt) || {};
+    const full = match.full || t.prompt || '';
+    const what = match.summary && match.summary.trim()
+      ? truncate(match.summary, 600) : truncate(full, 110);
+    const promptCell = full && full !== what
+      ? `<td class="prompt tt-tip" data-kind="${esc(t.kind)}" data-full="${esc(full)}">${esc(what)}</td>`
+      : `<td class="prompt">${esc(what)}</td>`;
     return `<tr><td class="num">${compactTokens(t.thinkingTokens)}</td>` +
       `<td><div class="bar" style="width:${pct}%"></div></td>` +
       `<td class="num">${esc(t.steps)}</td>` +
-      `<td class="prompt">${esc(truncate(t.prompt, 110))}</td></tr>`;
+      promptCell + `</tr>`;
   }).join('\n');
 }
 
@@ -405,7 +420,7 @@ function render(detail, template) {
     CONSUMER_ROWS: consumerRows(s.contextConsumers, 20),
     CONSUMERS_NOTE: esc((s.contextConsumers && s.contextConsumers.note) || ''),
     THINKING_SUMMARY: esc(thinkingSummary(s.assistantOutput)),
-    THINKING_TURN_ROWS: thinkingTurnRows(s.assistantOutput, 8),
+    THINKING_TURN_ROWS: thinkingTurnRows(s.assistantOutput, 8, detail.turns),
     THINKING_STEP_ROWS: thinkingStepRows(s.assistantOutput, 5),
     SKILL_ROWS: skillRows(s.bySkill),
     BY_MODEL_ROWS: byModelRows(detail.byModel),
@@ -451,10 +466,7 @@ async function main() {
   }
   const template = fs.readFileSync(TEMPLATE, 'utf8');
   const html = render(detail, template);
-  const id = String(detail.session).slice(0, 8);
-  // Default: a unique mktemp dir, so re-runs never clobber and the report stays out of
-  // the user's repo. An explicit --out still writes exactly where asked.
-  const out = opts.out || path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'session-cost-')), `session-cost-${id}.html`);
+  const out = opts.out || `./session-cost-${String(detail.session).slice(0, 8)}.html`;
   fs.writeFileSync(out, html);
   process.stdout.write(out + '\n');
 }

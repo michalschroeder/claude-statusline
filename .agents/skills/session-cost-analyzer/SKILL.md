@@ -25,9 +25,8 @@ files). They do **NOT** live in the user's repo — do not look for them there, 
 Every command below references the scripts via **`${CLAUDE_SKILL_DIR}`** — the documented
 Claude Code substitution that expands to this skill's own directory (works from any working
 directory, for personal/project/plugin installs alike). It is already expanded to an absolute
-path in the text you are reading, so run the commands verbatim — no manual substitution.
-Without `--out` the report is written into a fresh mktemp dir (never the user's working
-directory); the renderer prints the absolute path it wrote — relay that to the user.
+path in the text you are reading, so run the commands verbatim — no manual substitution. The
+report's `--out` still writes to the user's current directory by default.
 
 (Fallback: if a command ever shows a literal, unexpanded `${CLAUDE_SKILL_DIR}` or resolves to
 an empty path, substitute the absolute path from the `Base directory for this skill: …` line
@@ -42,9 +41,9 @@ these tokens **before** running the workflow; they map deterministically to the 
 |---|---|
 | `<session-id-prefix>` | Analyze that session (detail report). Omit → ask which (step 1). |
 | `list` | List recent sessions by cost instead of a detail report. |
-| `--summarize` | Opt in to **Haiku summaries** of opaque/raw text in the report — the TOP TURNS prompt cell and the TOP CONTEXT CONSUMERS target cell (the subagent flow in step 5). Absent → deterministic relabel + tooltip only. Alias: `--haiku`. |
+| `--summarize` | Opt in to **Haiku summaries** of opaque/raw text in the report — the TOP TURNS prompt cell and the TOP CONTEXT CONSUMERS target cell (the subagent flow in step 5). The THINKING "prompt that drove the reasoning" cell reuses the matching turn's summary automatically (no extra batch). Absent → deterministic relabel + tooltip only. Alias: `--haiku`. |
 | `--config-dir <path>` | Non-default transcript root (e.g. `~/.claude-lendable`). Passed straight to `analyze.js`. |
-| `--out <path>` | Report output path. Default: a fresh mktemp dir, `<tmp>/session-cost-<rand>/session-cost-<shortid>.html` (keeps it out of the user's repo). |
+| `--out <path>` | Report output path. Default `./session-cost-<shortid>.html`. |
 | `--last N` / `--since YYYY-MM-DD` | `list`-mode filters. |
 
 The Haiku step is gated **only** by `--summarize` (or its aliases) — treat its
@@ -104,11 +103,10 @@ Both print JSON to stdout. `--config-dir <path>` points at a non-default `~/.cla
      proportion bars, ranks the top turns, and HTML-escapes every prompt/title/label):
 
      ```bash
-     node ${CLAUDE_SKILL_DIR}/scripts/analyze.js <prefix> | node ${CLAUDE_SKILL_DIR}/scripts/render-report.js
+     node ${CLAUDE_SKILL_DIR}/scripts/analyze.js <prefix> | node ${CLAUDE_SKILL_DIR}/scripts/render-report.js --out ./session-cost-<shortid>.html
      ```
 
-     It prints the absolute path it wrote (a fresh mktemp dir). Pass `--out <path>` if the
-     user names one. Tell the
+     It prints the path it wrote. Pass a different `--out` if the user names one. Tell the
      user the file path. The report opens with an interactive context-window timeline (one
      SVG bar per step, colored by the 200k threshold, hover for per-step size/cost/prompt).
      (`assets/report-template.html` holds the styling if you need to tweak it.)
@@ -121,7 +119,10 @@ Both print JSON to stdout. `--config-dir <path>` points at a non-default `~/.cla
    - **`--summarize` → Haiku summaries.** Run this step **iff** the flag (or an alias)
      was passed; otherwise skip it. It rewrites two opaque cells into one-line "what this
      is" phrases: the TOP TURNS prompt cell ("what this turn accomplished") and the TOP
-     CONTEXT CONSUMERS target cell ("what this file/command/prompt was"). Don't shell out
+     CONTEXT CONSUMERS target cell ("what this file/command/prompt was"). The THINKING
+     "prompt that drove the reasoning" cell picks up the same turn summary by prompt match,
+     so terse prompts like "do it"/"add it" become descriptive there too — no extra batch.
+     Don't shell out
      to a model — dispatch a couple of cheap Haiku **subagents** (the Agent tool with
      `model: haiku`), then merge their output with the pure helper:
 
@@ -140,7 +141,7 @@ Both print JSON to stdout. `--config-dir <path>` points at a non-default `~/.cla
      #     "consumers": { "<index>":     "<summary>", ... } }
      # (A flat { "<turnIndex>": ... } map is still accepted but applies to turns only.)
      node ${CLAUDE_SKILL_DIR}/scripts/apply-summaries.js --summaries /tmp/summaries.json < /tmp/detail.json \
-       | node ${CLAUDE_SKILL_DIR}/scripts/render-report.js
+       | node ${CLAUDE_SKILL_DIR}/scripts/render-report.js --out ./session-cost-<shortid>.html
      ```
 
      `apply-summaries.js` is pure (turns key by `turnIndex`, consumers key by their index

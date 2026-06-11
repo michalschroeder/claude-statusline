@@ -20,7 +20,7 @@
     CONSUMER_ROWS       one <tr> per summary.contextConsumers.top entry (est tokens, share, carried cost, tool, target — target cell shows the Haiku summary with the raw target on hover when one was applied)
     CONSUMERS_NOTE      summary.contextConsumers.note (estimate disclaimer)
     THINKING_SUMMARY    summary.assistantOutput.thinking headline (tokens, cost, stored vs unstored, peak step)
-    THINKING_TURN_ROWS  one <tr> per summary.assistantOutput.thinking.byTurn entry (tokens, share, steps, prompt)
+    THINKING_TURN_ROWS  one <tr> per summary.assistantOutput.thinking.byTurn entry (tokens, share, steps, prompt); the prompt cell reuses the matching turn's Haiku summary when --summarize ran, raw message on hover
     THINKING_STEP_ROWS  one <tr> per summary.assistantOutput.thinking.topSteps entry (tokens, step, trigger, next action)
     SKILL_ROWS          one <tr> per summary.bySkill entry (skill, turns, steps, cost)
     BY_MODEL_ROWS       one <tr> per byModel entry
@@ -249,7 +249,7 @@
   .prompt { font-family:var(--font-body); color:#333; }
   p.prompt[style] { font-size:13px !important; }
   /* Cells wired to the styled .tip card (full user message on hover). */
-  td.turn-tip, td.cc-tip { cursor:help; }
+  td.turn-tip, td.cc-tip, td.tt-tip { cursor:help; }
 
   /* Footer band: white, 1px black top rule, small Times print. */
   footer { font-family:var(--font-body); color:#333; font-size:15px; border-top:1px solid var(--frame);
@@ -429,7 +429,7 @@
   once or handing a repetitive retry loop to a helper. It is not about making the model "think
   less".</p>
   <p class="prompt" style="font-size:12px">{{THINKING_SUMMARY}}</p>
-  <table><thead><tr><th scope="col" class="num" data-sort="num" data-sum="tokens">tokens</th><th scope="col">share</th><th scope="col" class="num" data-sort="num" data-sum="int">steps</th><th scope="col">prompt that drove the reasoning</th></tr></thead>
+  <table id="thinking-turns-table"><thead><tr><th scope="col" class="num" data-sort="num" data-sum="tokens">tokens</th><th scope="col">share</th><th scope="col" class="num" data-sort="num" data-sum="int">steps</th><th scope="col">prompt that drove the reasoning</th></tr></thead>
   <tbody>{{THINKING_TURN_ROWS}}</tbody></table>
 
   <h2 class="think">Biggest reasoning bursts</h2>
@@ -600,6 +600,16 @@
   wire('#consumers-table', null, 'cc-tip',
     function (d) {
       return '<div class="tip-h">' + esc(d.tool) + ' target</div>' +
+        '<div class="tip-b">' + esc(d.full) + '</div>';
+    },
+    function (d) { return d.full || ''; }, true);
+
+  // Thinking "prompt that drove the reasoning": reuses the matching turn's Haiku
+  // summary, so the same card surfaces the full user message ("do it", "add it", …)
+  // behind the summarized or truncated cell.
+  wire('#thinking-turns-table', null, 'tt-tip',
+    function (d) {
+      return '<div class="tip-h">' + esc(d.kind) + ' message</div>' +
         '<div class="tip-b">' + esc(d.full) + '</div>';
     },
     function (d) { return d.full || ''; }, true);
