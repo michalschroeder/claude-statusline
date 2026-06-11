@@ -2,4 +2,5 @@
 *.log
 .claude/worktrees/
 .worktrees/
+.claude/skills/
 
