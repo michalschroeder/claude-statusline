@@ -5,11 +5,11 @@ description: >-
   model, turn, and subagent, and produce an HTML report. Use when the user asks where a
   session's cost or tokens went, why a session was costly, to analyze or audit token or
   dollar spend, to list recent sessions by cost, or mentions session cost, /compact
-  savings, or context growth. Args: `[<session-id-prefix> | list] [--summarize-turns]
+  savings, or context growth. Args: `[<session-id-prefix> | list] [--summarize]
   [--config-dir <path>] [--out <path>] [--last N] [--since YYYY-MM-DD]`. Examples:
-  `/session-cost-analyzer 848c5b25`, `/session-cost-analyzer 848c5b25 --summarize-turns`,
+  `/session-cost-analyzer 848c5b25`, `/session-cost-analyzer 848c5b25 --summarize`,
   `/session-cost-analyzer list --last 20 --config-dir ~/.claude-lendable`.
-argument-hint: "[<session-id-prefix> | list] [--summarize-turns] [--config-dir <path>] [--out <path>] [--last N] [--since YYYY-MM-DD]"
+argument-hint: "[<session-id-prefix> | list] [--summarize] [--config-dir <path>] [--out <path>] [--last N] [--since YYYY-MM-DD]"
 ---
 
 # Session Cost Analyzer
@@ -25,21 +25,21 @@ these tokens **before** running the workflow; they map deterministically to the 
 |---|---|
 | `<session-id-prefix>` | Analyze that session (detail report). Omit → ask which (step 1). |
 | `list` | List recent sessions by cost instead of a detail report. |
-| `--summarize-turns` | Opt in to **Haiku per-turn summaries** in TOP TURNS (the subagent flow in step 5). Absent → deterministic relabel + tooltip only. Aliases: `--haiku`, `--turn-summaries`. |
+| `--summarize` | Opt in to **Haiku summaries** of opaque/raw text in the report — currently the TOP TURNS prompt cell (the subagent flow in step 5); more sections later. Absent → deterministic relabel + tooltip only. Alias: `--haiku`. |
 | `--config-dir <path>` | Non-default transcript root (e.g. `~/.claude-lendable`). Passed straight to `analyze.js`. |
 | `--out <path>` | Report output path. Default `./session-cost-<shortid>.html`. |
 | `--last N` / `--since YYYY-MM-DD` | `list`-mode filters. |
 
-The Haiku step is gated **only** by `--summarize-turns` (or its aliases) — treat its
+The Haiku step is gated **only** by `--summarize` (or its aliases) — treat its
 presence/absence as the on/off switch, don't infer it from prose. Unknown flags: ignore.
 
 ### Examples
 
 ```bash
-/session-cost-analyzer 848c5b25                         # detail report, deterministic labels
-/session-cost-analyzer 848c5b25 --summarize-turns       # + Haiku "what each turn did" summaries
-/session-cost-analyzer 848c5b25 --config-dir ~/.claude-lendable --summarize-turns
-/session-cost-analyzer list --last 20                   # rank recent sessions by cost
+/session-cost-analyzer 848c5b25                # detail report, deterministic labels
+/session-cost-analyzer 848c5b25 --summarize    # + Haiku "what each turn did" summaries
+/session-cost-analyzer list --last 20          # rank recent sessions by cost
+/session-cost-analyzer 848c5b25 --config-dir ~/.claude-lendable --summarize
 ```
 
 ## Quick start
@@ -98,9 +98,9 @@ Both print JSON to stdout. `--config-dir <path>` points at a non-default `~/.cla
      By default the TOP TURNS prompt cell is cleaned deterministically (skill dispatches →
      their skill name, `<task-notification>` returns → `↩ subagent results`, user turns
      keep their words) with the full raw prompt on hover. **No extra step needed** — this is
-     the path when `--summarize-turns` is absent.
+     the path when `--summarize` is absent.
 
-   - **`--summarize-turns` → Haiku turn summaries.** Run this step **iff** the flag (or an
+   - **`--summarize` → Haiku turn summaries.** Run this step **iff** the flag (or an
      alias) was passed; otherwise skip it. Replace the prompt cell with a one-line "what
      this turn accomplished" phrase. Don't shell out to a model — dispatch a couple of cheap
      Haiku **subagents** (the Agent tool with `model: haiku`) over the top turns, then merge
