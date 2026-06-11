@@ -78,13 +78,38 @@ function byModelRows(byModel) {
     `<tr><td>${esc(m.model)}</td><td class="num">${money(m.cost)}</td></tr>`).join('\n');
 }
 
+// Skill name from a skill-dispatch prompt. Mirrors lib/session-detail.js skillName()
+// — kept inline so the renderer stays a pure formatter with no lib import; cosmetic only.
+function skillNameOf(prompt) {
+  const base = /^Base directory for this skill:\s*(\S+)/.exec(prompt || '');
+  if (base) return base[1].replace(/\/+$/, '').split('/').pop();
+  const slash = /^\/(\S+)/.exec(prompt || '');
+  return slash ? slash[1] : null;
+}
+
+// Readable label for a turn's PROMPT cell. A Haiku one-liner (turn.summary, set only
+// when the optional summarize-turns.js enrichment ran) wins; otherwise the raw prompt
+// is cleaned by kind — skill dispatches collapse to their skill name and subagent-return
+// turns to a fixed label (both are opaque boilerplate), while genuine user turns keep
+// their own words. The full raw prompt is always available on hover (title=).
+function turnDisplay(t) {
+  if (t.summary) return truncate(t.summary, 120);
+  if (t.kind === 'skill') {
+    const n = skillNameOf(t.prompt);
+    if (n) return `skill: ${n}`;
+  } else if (t.kind === 'subagent-orchestration') {
+    return '↩ subagent results';
+  }
+  return truncate(t.prompt, 120);
+}
+
 function topTurnsRows(turns, limit) {
   const ranked = (turns || []).slice().sort((a, b) => b.cost - a.cost).slice(0, limit);
   if (!ranked.length) return '<tr><td colspan="4" class="prompt">—</td></tr>';
   return ranked.map((t) =>
     `<tr><td class="num">${money(t.cost)}</td><td>${esc(t.kind)}</td>` +
     `<td class="num">${compactTokens(t.peakContext)}</td>` +
-    `<td class="prompt">${esc(truncate(t.prompt, 120))}</td></tr>`).join('\n');
+    `<td class="prompt" title="${esc(t.prompt)}">${esc(turnDisplay(t))}</td></tr>`).join('\n');
 }
 
 // What filled the context, per tool — count of results, est tokens, share bar.

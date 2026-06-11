@@ -98,6 +98,30 @@ test('render: rows are built from the arrays', () => {
   assert.match(html, /short late prompt/);          // top-turns row
 });
 
+test('render: top-turns PROMPT cell — relabel, summary, and full-prompt tooltip', () => {
+  const d = { ...detail, turns: [
+    { turnIndex: 1, kind: 'skill', cost: 3.0, peakContext: 176000,
+      prompt: 'Base directory for this skill: /home/u/.claude/skills/write-a-skill # Writing Skills ...' },
+    { turnIndex: 2, kind: 'subagent-orchestration', cost: 2.0, peakContext: 239000,
+      prompt: '<task-notification> <task-id>bjraq17xi</task-id> <tool-use-id>toolu_x</tool-use-id> done' },
+    { turnIndex: 3, kind: 'user', cost: 1.5, peakContext: 104000,
+      prompt: 'read log tags, we have some useful tags there like adhoc job or worker' },
+    { turnIndex: 4, kind: 'user', cost: 1.0, peakContext: 61000,
+      prompt: 'do it', summary: 'Applied 6 edits and ran shell validation' },
+  ] };
+  const html = render(d, TEMPLATE);
+  // skill expansion collapses to its skill name; orchestration to a fixed label
+  assert.match(html, /class="prompt"[^>]*>skill: write-a-skill</);
+  assert.match(html, /class="prompt"[^>]*>↩ subagent results</);
+  // genuine user prompt keeps its own words
+  assert.match(html, /class="prompt"[^>]*>read log tags/);
+  // a Haiku summary, when present, wins over the raw prompt ("do it")
+  assert.match(html, /class="prompt"[^>]*>Applied 6 edits and ran shell validation</);
+  // every cell carries the FULL raw prompt on hover (title=), incl. the opaque blob
+  assert.match(html, /title="Base directory for this skill: \/home\/u\/\.claude\/skills\/write-a-skill[^"]*"/);
+  assert.match(html, /title="&lt;task-notification&gt;[^"]*"/); // escaped raw prompt in tooltip
+});
+
 test('render: all user-derived text is HTML-escaped (no injection)', () => {
   const html = render(detail, TEMPLATE);
   assert.ok(!html.includes('<script>alert(1)</script>'), 'raw script tag leaked');
