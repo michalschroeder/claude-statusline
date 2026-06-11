@@ -98,28 +98,32 @@ test('render: rows are built from the arrays', () => {
   assert.match(html, /short late prompt/);          // top-turns row
 });
 
-test('render: top-turns PROMPT cell — relabel, summary, and full-prompt tooltip', () => {
+test('render: top-turns — skill column, summary, and styled tooltip only on user rows', () => {
   const d = { ...detail, turns: [
     { turnIndex: 1, kind: 'skill', cost: 3.0, peakContext: 176000,
       prompt: 'Base directory for this skill: /home/u/.claude/skills/write-a-skill # Writing Skills ...' },
     { turnIndex: 2, kind: 'subagent-orchestration', cost: 2.0, peakContext: 239000,
       prompt: '<task-notification> <task-id>bjraq17xi</task-id> <tool-use-id>toolu_x</tool-use-id> done' },
     { turnIndex: 3, kind: 'user', cost: 1.5, peakContext: 104000,
-      prompt: 'read log tags, we have some useful tags there like adhoc job or worker' },
+      prompt: 'read log tags, we have some useful tags there like adhoc job or worker — a fairly long message that exceeds the displayed summary so the tooltip adds detail',
+      summary: 'Parsed Datadog log tags' },
     { turnIndex: 4, kind: 'user', cost: 1.0, peakContext: 61000,
       prompt: 'do it', summary: 'Applied 6 edits and ran shell validation' },
   ] };
   const html = render(d, TEMPLATE);
-  // skill expansion collapses to its skill name; orchestration to a fixed label
-  assert.match(html, /class="prompt"[^>]*>skill: write-a-skill</);
+  // skill name lands in its own column; the skill row's WHAT cell is blank (no redundancy)
+  assert.match(html, /<td>write-a-skill<\/td>/);
+  // orchestration → fixed label, no tooltip tagging
   assert.match(html, /class="prompt"[^>]*>↩ subagent results</);
-  // genuine user prompt keeps its own words
-  assert.match(html, /class="prompt"[^>]*>read log tags/);
-  // a Haiku summary, when present, wins over the raw prompt ("do it")
-  assert.match(html, /class="prompt"[^>]*>Applied 6 edits and ran shell validation</);
-  // every cell carries the FULL raw prompt on hover (title=), incl. the opaque blob
-  assert.match(html, /title="Base directory for this skill: \/home\/u\/\.claude\/skills\/write-a-skill[^"]*"/);
-  assert.match(html, /title="&lt;task-notification&gt;[^"]*"/); // escaped raw prompt in tooltip
+  // a Haiku summary wins in the WHAT cell
+  assert.match(html, /Applied 6 edits and ran shell validation/);
+  // user row whose full message exceeds the summary carries the styled tooltip (data-full),
+  // NOT a native title=, and skill/orchestration rows do not
+  assert.match(html, /class="prompt turn-tip" data-kind="user" data-full="read log tags[^"]*"/);
+  assert.ok(!/title="Base directory/.test(html), 'no native title tooltip');
+  assert.ok(!/turn-tip[^>]*write-a-skill/.test(html), 'skill row has no tooltip');
+  // 'do it' == its own full text so no redundant tooltip on that user row
+  assert.ok(!/data-full="do it"/.test(html), 'no tooltip when full == cell');
 });
 
 test('render: all user-derived text is HTML-escaped (no injection)', () => {

@@ -87,29 +87,37 @@ function skillNameOf(prompt) {
   return slash ? slash[1] : null;
 }
 
-// Readable label for a turn's PROMPT cell. A Haiku one-liner (turn.summary, set only
-// when the optional summarize-turns.js enrichment ran) wins; otherwise the raw prompt
-// is cleaned by kind — skill dispatches collapse to their skill name and subagent-return
-// turns to a fixed label (both are opaque boilerplate), while genuine user turns keep
-// their own words. The full raw prompt is always available on hover (title=).
-function turnDisplay(t) {
-  if (t.summary) return truncate(t.summary, 120);
-  if (t.kind === 'skill') {
-    const n = skillNameOf(t.prompt);
-    if (n) return `skill: ${n}`;
-  } else if (t.kind === 'subagent-orchestration') {
-    return '↩ subagent results';
-  }
-  return truncate(t.prompt, 120);
+// The WHAT column. A Haiku summary (turn.summary, set only when --summarize ran) wins —
+// now a descriptive sentence, so it gets a generous cap. Otherwise: skill rows go blank
+// (the skill name has its own column), subagent-return turns get a fixed label, and
+// genuine user turns keep their own (truncated) words.
+function turnWhat(t) {
+  if (t.summary) return truncate(t.summary, 600);
+  if (t.kind === 'skill') return '';
+  if (t.kind === 'subagent-orchestration') return '↩ subagent results';
+  return truncate(t.prompt, 200);
 }
 
 function topTurnsRows(turns, limit) {
   const ranked = (turns || []).slice().sort((a, b) => b.cost - a.cost).slice(0, limit);
-  if (!ranked.length) return '<tr><td colspan="4" class="prompt">—</td></tr>';
-  return ranked.map((t) =>
-    `<tr><td class="num">${money(t.cost)}</td><td>${esc(t.kind)}</td>` +
-    `<td class="num">${compactTokens(t.peakContext)}</td>` +
-    `<td class="prompt" title="${esc(t.prompt)}">${esc(turnDisplay(t))}</td></tr>`).join('\n');
+  if (!ranked.length) return '<tr><td colspan="5" class="prompt">—</td></tr>';
+  return ranked.map((t) => {
+    const skill = t.kind === 'skill' ? (skillNameOf(t.prompt) || '') : '';
+    const what = turnWhat(t);
+    // Styled hover tooltip (the report's `.tip` card, wired in the template) only where
+    // the raw message adds detail beyond the cell — i.e. real user turns. Skill expansions
+    // and <task-notification> blobs are boilerplate: no tooltip, no giant native popup.
+    const full = t.kind === 'user' ? truncate(t.prompt, 600) : '';
+    // Tooltip only when the raw message genuinely adds detail — i.e. it's longer than what
+    // the cell shows (a truncated prompt, or a shorter Haiku summary). A bare "do it" under
+    // its own summary adds nothing, so it stays untagged.
+    const whatCell = full.length > what.length
+      ? `<td class="prompt turn-tip" data-kind="${esc(t.kind)}" data-full="${esc(full)}">${esc(what)}</td>`
+      : `<td class="prompt">${esc(what)}</td>`;
+    return `<tr><td class="num">${money(t.cost)}</td><td>${esc(t.kind)}</td>` +
+      `<td>${esc(skill)}</td><td class="num">${compactTokens(t.peakContext)}</td>` +
+      whatCell + `</tr>`;
+  }).join('\n');
 }
 
 // What filled the context, per tool — count of results, est tokens, share bar.

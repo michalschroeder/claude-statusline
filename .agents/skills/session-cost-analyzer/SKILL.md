@@ -126,8 +126,10 @@ Both print JSON to stdout. `--config-dir <path>` points at a non-default `~/.cla
      node ${CLAUDE_SKILL_DIR}/scripts/analyze.js <prefix> > /tmp/detail.json
      # Read /tmp/detail.json's `turns` (sort by cost, take ~10). Dispatch 1-2 Haiku
      # subagents, each given a batch of turns (turnIndex + kind + tool tally + prompt),
-     # asking for a JSON map { "<turnIndex>": "<=10-word phrase", ... }. Write the merged
-     # map to /tmp/summaries.json, then:
+     # asking for a JSON map { "<turnIndex>": "<summary>", ... }. Each summary is a
+     # descriptive 1-2 sentence phrase (~30-45 words) saying concretely WHAT the turn did
+     # and which files/tools/areas it touched — not a terse label. Write the merged map to
+     # /tmp/summaries.json, then:
      node ${CLAUDE_SKILL_DIR}/scripts/apply-summaries.js --summaries /tmp/summaries.json < /tmp/detail.json \
        | node ${CLAUDE_SKILL_DIR}/scripts/render-report.js --out ./session-cost-<shortid>.html
      ```

@@ -248,8 +248,8 @@
     padding:7px 11px 10px; }
   .prompt { font-family:var(--font-body); color:#333; }
   p.prompt[style] { font-size:13px !important; }
-  /* Cells carrying a hover tooltip (full raw prompt on truncated/relabelled rows). */
-  td.prompt[title] { cursor:help; }
+  /* Cells wired to the styled .tip card (full user message on hover). */
+  td.turn-tip { cursor:help; }
 
   /* Footer band: white, 1px black top rule, small Times print. */
   footer { font-family:var(--font-body); color:#333; font-size:15px; border-top:1px solid var(--frame);
@@ -477,7 +477,7 @@
   <strong>peak ctx</strong> is how full the conversation was while that work was running. The same
   task costs several times more when the conversation is already large than when it is small, which
   is why a short message late in a session can cost more than a big one asked at the start.</p>
-  <table><thead><tr><th scope="col" class="num" data-sort="num" data-sum="money">cost</th><th scope="col" data-sort="text">kind</th><th scope="col" class="num" data-sort="num">peak ctx</th><th scope="col">prompt</th></tr></thead>
+  <table id="turns-table"><thead><tr><th scope="col" class="num" data-sort="num" data-sum="money">cost</th><th scope="col" data-sort="text">kind</th><th scope="col" data-sort="text">skill</th><th scope="col" class="num" data-sort="num">peak ctx</th><th scope="col">what</th></tr></thead>
   <tbody>{{TOP_TURNS_ROWS}}</tbody></table>
 
   <h2 id="tips" class="tint-olive">Spending less next time</h2>
@@ -580,6 +580,15 @@
       return '+' + d.grow + ' (' + d.from + ' → ' + d.to + ') · ' + d.steps + ' steps · ' + d.cost +
         ' · ' + d.kind + ': ' + d.prompt;
     });
+
+  // TOP TURNS: reuse the same styled card to show the full user message on the rows that
+  // carry one (skill/orchestration rows are left untagged in the renderer → no tooltip).
+  wire('#turns-table', null, 'turn-tip',
+    function (d) {
+      return '<div class="tip-h">' + esc(d.kind) + ' message</div>' +
+        '<div class="tip-b">' + esc(d.full) + '</div>';
+    },
+    function (d) { return d.full || ''; });
 })();
 
 // Sortable columns + a totals footer. Pure progressive enhancement over the
