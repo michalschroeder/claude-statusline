@@ -308,23 +308,25 @@
 
   <div class="primer">
     <div class="formula">cost ≈ context size × steps</div>
-    <p>Every time the model takes a step — writing a reply, running a tool — it re-reads the
-    whole conversation so far. So a session's price is driven less by what you asked than by
-    how much was already in the conversation when you asked it: a one-line question at hour
-    three can cost more than a big task at minute one. Each section below answers one
-    question about this session; the note under each heading says how to read it.</p>
+    <p>Every time the model does something, like writing a reply or running a tool, it first
+    re-reads the whole conversation up to that point. So the cost of a session depends less on
+    what you asked and more on how much had already piled up by the time you asked it. A quick
+    question late in a long chat can cost more than a big task right at the start. Each section
+    below answers one question about this session, and the note under each heading tells you
+    how to read it.</p>
   </div>
 
   <h2 id="context" class="tint-olive">Context window over time</h2>
-  <p class="explain">The shape of the whole session: one bar per step, left to right in time.
-  Bar height is how full the conversation was at that moment — and since every step re-reads
-  everything below it, <strong>taller bars mean pricier steps</strong>. Sage bars are comfortable
-  (under 100k), peach is getting heavy, salmon is above the dashed 200k line — the zone the "spent
-  above 200k" card adds up. Blue ticks under the axis mark where your prompts landed; a bar
-  suddenly dropping back to near-zero is a /compact or context clear doing its job. The healthy
-  shape is a sawtooth — climb, compact, climb; a single long ramp that stays salmon means every
-  late step paid the maximum re-read tax. Hover any bar for that step's size, cost, and the
-  prompt it was serving.</p>
+  <p class="explain">One bar per step, left to right in time order. The height of a bar is how
+  full the conversation was at that moment, measured in tokens (roughly, pieces of words).
+  Because every step re-reads everything before it, <strong>taller bars cost more</strong>.
+  Sage bars are a comfortable size (under 100k tokens). Peach is getting heavy. Salmon is past
+  the dashed 200k line, which is the expensive zone the "spent above 200k" card adds up. The
+  blue ticks under the bottom line show where your messages landed. When a bar suddenly drops
+  back to almost nothing, that is a /compact or a context clear emptying the conversation. The
+  healthy pattern is a zig-zag: fill up, clear, fill up again. One long climb that stays salmon
+  means every later step was paying the highest re-reading cost. Hover over any bar to see that
+  step's size, cost, and the message it was working on.</p>
   {{CONTEXT_TIMELINE}}
   <div class="ctx-legend">
     <span><i class="c-low"></i>under 100k</span>
@@ -338,14 +340,15 @@
   <div id="ctx-readout">hover a bar to inspect a step</div>
 
   <h3>The same growth, grouped by turn — who added what</h3>
-  <p class="explain">The step chart above repeats one prompt across many bars; this bar collapses
-  each turn into a single block. Reading left to right is the context filling up: the dim block
-  at the start is the session's fixed overhead (system prompt, tool definitions, project
-  context — there before you typed anything), and every colored block is one turn, sized by
-  <strong>how much it added to the context</strong> — what it read, ran, and wrote that every
-  later step then re-read. Wide blocks are the turns that made the session heavy; a white dashed
-  divider is a /compact or context clear wiping the slate. Hover a block for the prompt, how far
-  it pushed the context (from → to), and what its turn cost.</p>
+  <p class="explain">The chart above uses many bars for a single message. This one is simpler:
+  each message you sent gets one block. Read it left to right as the conversation filling up. The
+  grey block at the start is the fixed setup that is always there before you type anything (the
+  system instructions, the list of available tools, and the project background). Each colored
+  block after it is one of your messages, and its width is <strong>how much that message added to
+  the conversation</strong>: everything it read, ran, or wrote that every later step then had to
+  re-read. Wide blocks are the messages that made the session expensive. A white dashed line is a
+  /compact or context clear wiping it back down. Hover over a block to see the message, how far it
+  pushed the conversation (from one size to the next), and what that turn cost.</p>
   {{CONTEXT_GROWTH_BAR}}
   <div class="ctx-legend">
     <span><i class="c-dim"></i>session overhead</span>
@@ -359,94 +362,100 @@
   <div class="pair">
     <section>
       <h2 id="where" class="tint-sage">Where it went</h2>
-      <p class="explain">Your total, split the way the API bills it. <strong>cache read</strong> is the
-      model re-reading the conversation on every step — usually the biggest slice and the reason long
-      sessions get expensive. <strong>output</strong> is everything the model wrote, including its
-      private reasoning. <strong>cache write</strong> is saving new material so later steps can re-read
-      it cheaply. <strong>input</strong> is fresh, uncached text — usually tiny.</p>
+      <p class="explain">Your total cost, split into the four things you actually pay for.
+      <strong>cache read</strong> is the model re-reading the conversation at every step. This is
+      usually the biggest slice, and the main reason long sessions get expensive.
+      <strong>output</strong> is everything the model wrote back, including the private thinking you
+      never see. <strong>cache write</strong> is the cost of saving new material once, so that later
+      steps can re-read it more cheaply. <strong>input</strong> is brand-new text that has not been
+      saved yet, and it is usually tiny.</p>
       <table><thead><tr><th scope="col">component</th><th scope="col" class="num">cost</th><th scope="col">share</th></tr></thead>
       <tbody>{{WHERE_IT_WENT_ROWS}}</tbody></table>
     </section>
     <section>
-      <h2 id="consumers" class="tint-salmon">What filled the context — by tool</h2>
-      <p class="explain">What took up space in the conversation, grouped by where it came from.
-      <strong>carried cost</strong> is the re-read tax: once a file read or command output lands in the
-      conversation, the model re-reads it on every later step until the session ends or context is
-      compacted. A big row here is a good candidate to push into a subagent next time — the subagent
-      reads it in its own small context and reports back a summary.</p>
+      <h2 id="consumers" class="tint-salmon">What filled the context, by tool</h2>
+      <p class="explain">What took up room in the conversation, grouped by where it came from.
+      <strong>carried cost</strong> is the repeat charge for keeping it around: once a file or a
+      command's output lands in the conversation, the model re-reads it at every later step until the
+      session ends or the conversation is cleared. A big row here is a good thing to hand off to a
+      helper (a subagent) next time. The helper reads it in its own separate conversation and sends
+      back only a short summary, so the bulky original never weighs down your main chat.</p>
       <table><thead><tr><th scope="col">tool</th><th scope="col" class="num">results</th><th scope="col" class="num">est tokens</th><th scope="col" class="num">carried cost</th><th scope="col">share</th></tr></thead>
       <tbody>{{CONSUMER_TOOL_ROWS}}</tbody></table>
     </section>
   </div>
 
   <h2 class="tint-peach">Top context consumers</h2>
-  <p class="explain">The same space, item by item: the exact file, command, or prompt.
-  <strong>×3</strong> after a tool name means the same target landed three times — a file re-read
-  three times pays its size three times, plus the re-read tax each time. The
-  <strong>assistant-*</strong> rows are the model's own words: its visible replies
-  (assistant-text), its private reasoning (assistant-thinking), and the arguments it typed into
-  tool calls like Edit payloads and Bash commands (assistant-tool-calls). When those rows sit at
-  the top, the cost driver was the model's own verbosity, not what it read.</p>
+  <p class="explain">The same space again, but broken down item by item: the exact file, command,
+  or message. A <strong>×3</strong> after a tool name means the same thing landed three times. A
+  file that gets read three times costs its full size three times over, plus the repeat charge for
+  keeping each copy around. The <strong>assistant-*</strong> rows are the model's own words: its
+  visible replies (assistant-text), its private thinking (assistant-thinking), and the text it
+  typed into its tools, such as the contents of an edit or a command it ran (assistant-tool-calls).
+  When those rows are near the top, the cost came mostly from how much the model itself wrote, not
+  from what it read.</p>
   <table><thead><tr><th scope="col" class="num">est tokens</th><th scope="col">share</th><th scope="col" class="num">carried cost</th><th scope="col">tool</th><th scope="col">target (file · command · prompt)</th></tr></thead>
   <tbody>{{CONSUMER_ROWS}}</tbody></table>
   <p class="prompt" style="font-size:12px">{{CONSUMERS_NOTE}}</p>
 
-  <h2 id="thinking" class="think">Thinking — what the reasoning cost</h2>
-  <p class="explain">Before most replies and tool calls, the model reasons privately. Those tokens
-  are billed at the output rate — the priciest tier — but the text itself is never saved anywhere,
-  so no tool can show it; <strong>interleaved</strong> is exactly that invisible share. The table
-  shows which of your prompts set off the most reasoning. Many steps under one prompt usually
-  means a debugging loop: every test run or log that comes back triggers a fresh round of
-  thinking. The lever is fewer, bigger steps — batching commands, pushing retry loops into a
-  subagent — not "think less".</p>
+  <h2 id="thinking" class="think">Thinking: what the reasoning cost</h2>
+  <p class="explain">Before most replies and tool actions, the model thinks privately. That thinking
+  is charged at the output rate, the most expensive rate, but the text is never saved anywhere, so
+  no tool can show it to you. The <strong>interleaved</strong> figure is exactly that hidden
+  thinking. The table shows which of your messages set off the most reasoning. A lot of steps under
+  one message usually means a debugging loop: every test run or error that comes back sets off
+  another round of thinking. The fix is fewer, bigger steps, for example running several commands at
+  once or handing a repetitive retry loop to a helper. It is not about making the model "think
+  less".</p>
   <p class="prompt" style="font-size:12px">{{THINKING_SUMMARY}}</p>
   <table><thead><tr><th scope="col" class="num">tokens</th><th scope="col">share</th><th scope="col" class="num">steps</th><th scope="col">prompt that drove the reasoning</th></tr></thead>
   <tbody>{{THINKING_TURN_ROWS}}</tbody></table>
 
   <h2 class="think">Biggest reasoning bursts</h2>
-  <p class="explain">The single steps where the model thought hardest. <strong>trigger</strong> is
-  what had just landed in the conversation — the tool output or prompt it was reacting to;
-  <strong>next action</strong> is what it decided to do. A big burst before a state-changing move
-  (switching worktrees, a large edit) is normal deliberation. Repeated bursts after the same
-  command suggest the model kept re-deriving the same conclusion — a sign the loop could have
-  been a subagent.</p>
+  <p class="explain">The individual steps where the model thought the hardest.
+  <strong>trigger</strong> is what had just landed in the conversation, the tool result or message
+  it was reacting to. <strong>next action</strong> is what it decided to do next. A big burst right
+  before an important action, like making a large edit, is just the model taking time to plan, which
+  is normal. But repeated bursts after the same command usually mean the model kept working out the
+  same answer over and over, a sign that loop would have been better handed to a helper.</p>
   <table><thead><tr><th scope="col" class="num">tokens</th><th scope="col" class="num">step</th><th scope="col">trigger (what landed in context right before)</th><th scope="col">next action</th></tr></thead>
   <tbody>{{THINKING_STEP_ROWS}}</tbody></table>
 
   <div class="trio">
     <section>
       <h2 id="skill" class="tint-lime">By skill</h2>
-      <p class="explain">What each skill you invoked cost — counting only the turns the skill's own
-      instructions drove. A skill that shapes the whole session (a workflow or review skill) truly
-      costs more than this shows: its instructions also sit in the conversation as a
-      <strong>user-prompt</strong> row in the consumer table above, taxing every later step.</p>
+      <p class="explain">What each skill you used cost, counting only the steps the skill's own
+      instructions set in motion. A skill that shapes the whole session (like a workflow or a review
+      skill) really costs more than this number shows. Its instructions also stay in the
+      conversation, listed as a <strong>user-prompt</strong> row in the table above, adding to the
+      cost of every later step.</p>
       <table><thead><tr><th scope="col">skill</th><th scope="col" class="num">dispatches</th><th scope="col" class="num">steps</th><th scope="col" class="num">cost</th></tr></thead>
       <tbody>{{SKILL_ROWS}}</tbody></table>
     </section>
     <section>
       <h2 id="model" class="tint-sky">By model</h2>
-      <p class="explain">Sessions can mix models — e.g. a cheaper one for quick steps. Costs are
-      recomputed from raw token counts × public per-token prices, so they can differ from the app's
-      reported figure.</p>
+      <p class="explain">A single session can use more than one model, for example a cheaper one
+      for quick steps. These costs are worked out from the raw token counts and the public price per
+      token, so they may not exactly match the figure the app shows you.</p>
       <table><thead><tr><th scope="col">model</th><th scope="col" class="num">cost</th></tr></thead>
       <tbody>{{BY_MODEL_ROWS}}</tbody></table>
     </section>
     <section>
       <h2 id="subagents" class="tint-steel">Subagents</h2>
-      <p class="explain">Side tasks the session delegated. Each runs in its own fresh, small context
-      and returns only a summary, so they're usually a few cents. If this list is short and the main
-      session was expensive, the lever is moving more exploration into subagents — not trimming the
-      ones you have.</p>
+      <p class="explain">Smaller side jobs the session handed off to helpers. Each helper works in
+      its own short, separate conversation and sends back only a summary, so they usually cost just a
+      few cents. If this list is short but the main session was expensive, the way to save money is to
+      hand off more of the exploring to helpers, not to cut back on the ones you already have.</p>
       <table><thead><tr><th scope="col">task</th><th scope="col" class="num">cost</th></tr></thead>
       <tbody>{{SUBAGENT_ROWS}}</tbody></table>
     </section>
   </div>
 
   <h2 id="turns" class="tint-salmon">Top turns</h2>
-  <p class="explain">Your prompts, ranked by the cost of the work each one set off.
-  <strong>peak ctx</strong> is how full the conversation was while that work ran — the same task
-  costs several times more at 150k context than at 20k, which is why a short prompt late in a
-  session can out-cost a big one asked early.</p>
+  <p class="explain">Your messages, ranked by how much the work each one set off ended up costing.
+  <strong>peak ctx</strong> is how full the conversation was while that work was running. The same
+  task costs several times more when the conversation is already large than when it is small, which
+  is why a short message late in a session can cost more than a big one asked at the start.</p>
   <table><thead><tr><th scope="col" class="num">cost</th><th scope="col">kind</th><th scope="col" class="num">peak ctx</th><th scope="col">prompt</th></tr></thead>
   <tbody>{{TOP_TURNS_ROWS}}</tbody></table>
 
