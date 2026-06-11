@@ -7,9 +7,12 @@
 //
 //   node scripts/analyze.js <prefix> | node scripts/render-report.js [--out <path>]
 //
-// Without --out the file is written to ./session-cost-<first8-of-session>.html in the
-// cwd; the final path is printed to stdout. Self-contained — no deps outside this folder.
+// Without --out the file is written into a fresh mktemp dir as
+// <tmp>/session-cost-<xxxxxx>/session-cost-<first8-of-session>.html, so report
+// generation never litters the user's working directory; the final path is printed to
+// stdout. Self-contained — no deps outside this folder.
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 const TEMPLATE = path.join(__dirname, '..', 'assets', 'report-template.html');
@@ -448,7 +451,10 @@ async function main() {
   }
   const template = fs.readFileSync(TEMPLATE, 'utf8');
   const html = render(detail, template);
-  const out = opts.out || `./session-cost-${String(detail.session).slice(0, 8)}.html`;
+  const id = String(detail.session).slice(0, 8);
+  // Default: a unique mktemp dir, so re-runs never clobber and the report stays out of
+  // the user's repo. An explicit --out still writes exactly where asked.
+  const out = opts.out || path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'session-cost-')), `session-cost-${id}.html`);
   fs.writeFileSync(out, html);
   process.stdout.write(out + '\n');
 }
