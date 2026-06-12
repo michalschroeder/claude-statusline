@@ -259,6 +259,40 @@ test('render: payload without assistantOutput → placeholder, no crash', () => 
   assert.ok(!/\{\{[A-Z_]+\}\}/.test(html));
 });
 
+test('render: savings tips are session-specific, quantified, and ranked by $ impact', () => {
+  const html = render(detail, TEMPLATE);
+  const tips = (html.match(/<ol class="tips">([\s\S]*?)<\/ol>/) || [])[1] || '';
+  // all three levers fire on this fixture
+  assert.match(tips, /Keep the main conversation short/);
+  assert.match(tips, /Group independent commands into one step/);
+  assert.match(tips, /Hand heavy exploring to a helper/);
+  // quantified from THIS session's numbers
+  assert.match(tips, /\$0\.88 \(19% of the bill\) went to 4 calls running above 200k context/);
+  assert.match(tips, /you cleared context 2× here already/);
+  assert.match(tips, /Reasoning cost \$3\.43 \(76%\) and ran on 148\/155 steps/);
+  assert.match(tips, /carried about \$1\.40 of re-read cost/);
+  assert.match(tips, /Read led/); // heaviest real-tool consumer (1.1 > Bash 0.3)
+  // ranked by impact: thinking 3.43 > offload 1.40 > compact 0.88
+  assert.ok(tips.indexOf('Group independent') < tips.indexOf('Hand heavy exploring'));
+  assert.ok(tips.indexOf('Hand heavy exploring') < tips.indexOf('Keep the main conversation'));
+});
+
+test('render: a lean session falls back to the generic tip, never an empty list', () => {
+  const lean = {
+    ...detail, totalCost: 0.05,
+    summary: {
+      ...detail.summary,
+      highContextCost: { thresholdTokens: 200000, calls: 0, cost: 0 },
+      contextResets: 0,
+      assistantOutput: null,
+      contextConsumers: { note: '', totalEstTokens: 0, byTool: [], top: [] },
+    },
+  };
+  const html = render(lean, TEMPLATE);
+  assert.match(html, /This session was already lean/);
+  assert.ok(!/\{\{[A-Z_]+\}\}/.test(html));
+});
+
 test('render: context timeline draws one bar per MAIN step, threshold tiers, escaped', () => {
   const html = render(detail, TEMPLATE);
   assert.match(html, /<svg class="ctx-chart"/);

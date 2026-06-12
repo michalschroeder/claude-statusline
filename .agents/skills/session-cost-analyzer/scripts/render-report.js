@@ -386,6 +386,64 @@ function subagentRows(byAgent) {
     `<td class="num">${money(a.cost)}</td></tr>`).join('\n');
 }
 
+// Session-specific savings tips. Quantify each lever from THIS session's numbers,
+// keep only the ones that actually moved the bill (≥ a floor), and rank by dollar
+// impact. Pure transform over the summary — no LLM, always on (no --summarize). Falls
+// back to one generic note when nothing dominated (a cheap/lean session).
+const READ_TOOL = /^(Read|Bash|Grep|Glob|WebFetch|WebSearch|ToolSearch|NotebookRead|mcp__)/;
+function tipsRows(detail) {
+  const s = detail.summary || {};
+  const total = Number(detail.totalCost) || 0;
+  const pct = (c) => (total > 0 ? Math.round((c / total) * 100) : 0);
+  const floor = Math.max(0.25, total * 0.02);
+  const tips = [];
+
+  // Lever 1 — context backlog re-read above the panic threshold (the /compact lever).
+  const hc = s.highContextCost || {};
+  if ((hc.cost || 0) > 0 && (hc.calls || 0) > 0) {
+    const resets = s.contextResets || 0;
+    tips.push({ impact: hc.cost, head: 'Keep the main conversation short',
+      body: `${money(hc.cost)} (${pct(hc.cost)}% of the bill) went to ${hc.calls} calls running above ` +
+        `${compactTokens(hc.thresholdTokens || 200000)} context, where every step re-reads the whole backlog. ` +
+        `Run /compact or start a fresh session when you switch tasks` +
+        (resets ? ` (you cleared context ${resets}× here already, just later than ideal).` : '.') });
+  }
+
+  // Lever 2 — reasoning billed on every step (the batch-commands lever).
+  const ao = s.assistantOutput;
+  const th = ao && ao.thinking;
+  const thCost = ao && ao.byKind && ao.byKind.thinking ? ao.byKind.thinking.cost : 0;
+  if (th && (thCost || 0) > 0 && (th.mainSteps || 0) >= 30) {
+    tips.push({ impact: thCost, head: 'Group independent commands into one step',
+      body: `Reasoning cost ${money(thCost)} (${pct(thCost)}%) and ran on ${th.stepsWithThinking}/${th.mainSteps} ` +
+        `steps — each extra step sets off another paid round of thinking. Batch commands that don't depend on ` +
+        `each other so the model reasons once instead of once per command.` });
+  }
+
+  // Lever 3 — bulky tool results (logs/files/searches) carried in the main context.
+  const carried = ((s.contextConsumers && s.contextConsumers.top) || [])
+    .filter((c) => !c.synthetic && READ_TOOL.test(c.tool));
+  const carriedCost = carried.reduce((a, c) => a + (Number(c.carriedCost) || 0), 0);
+  if (carriedCost > 0) {
+    const lead = carried.slice().sort((a, b) => (b.carriedCost || 0) - (a.carriedCost || 0))[0];
+    // humanize long MCP tool ids (mcp__datadog__search_logs → "datadog search_logs") so the
+    // label reads cleanly and can wrap at the space instead of overflowing the tip card.
+    const leadName = lead ? lead.tool.replace(/^mcp__/, '').replace(/__/g, ' ') : '';
+    tips.push({ impact: carriedCost, head: 'Hand heavy exploring to a helper',
+      body: `Tool results (logs, files, searches${lead ? ` — ${esc(leadName)} led` : ''}) carried about ` +
+        `${money(carriedCost)} of re-read cost as they sat in the main context. A subagent reads them in its ` +
+        `own conversation and returns just the summary, so the bulk never piles up in your chat.` });
+  }
+
+  const ranked = tips.filter((t) => t.impact >= floor).sort((a, b) => b.impact - a.impact).slice(0, 3);
+  if (!ranked.length) {
+    return '<li><strong>This session was already lean.</strong> No single area dominated the cost. ' +
+      'The usual levers still apply: keep the main conversation short, batch independent commands, and ' +
+      'offload heavy exploring to subagents.</li>';
+  }
+  return ranked.map((t) => `<li><strong>${esc(t.head)}.</strong> ${t.body}</li>`).join('\n');
+}
+
 // ---- fill ---------------------------------------------------------------------
 
 // Single pass over the ORIGINAL template: a {{TOKEN}} that appears inside an
@@ -426,6 +484,7 @@ function render(detail, template) {
     BY_MODEL_ROWS: byModelRows(detail.byModel),
     TOP_TURNS_ROWS: topTurnsRows(detail.turns, 10),
     SUBAGENT_ROWS: subagentRows(detail.byAgent),
+    TIPS_ROWS: tipsRows(detail),
   });
 }
 

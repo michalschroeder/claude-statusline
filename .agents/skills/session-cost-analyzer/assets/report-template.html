@@ -26,6 +26,8 @@
     BY_MODEL_ROWS       one <tr> per byModel entry
     TOP_TURNS_ROWS      one <tr> per top turn (cost, kind, peakContext, prompt)
     SUBAGENT_ROWS       one <tr> per byAgent entry (task, cost) — omit table if none
+    TIPS_ROWS           one <li> per session-specific savings lever (quantified from this session's
+                        numbers, ranked by $ impact; falls back to one generic "already lean" note)
 
   All explanatory copy is static template text by design: the report must stay
   readable when shared or printed, so explanations are always visible (no tooltips)
@@ -181,7 +183,7 @@
   ol.tips { counter-reset:tip; list-style:none; padding:0; margin:0 0 8px;
     display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:14px; align-items:start; }
   ol.tips li { counter-increment:tip; position:relative; padding:44px 18px 18px; color:var(--ink);
-    font-family:var(--font-body); font-size:20px; line-height:1.5;
+    font-family:var(--font-body); font-size:20px; line-height:1.5; overflow-wrap:anywhere;
     background:var(--t-lime); border:1px solid var(--frame); }
   ol.tips li::before { content:counter(tip); position:absolute; left:0; top:0; width:32px; height:32px;
     display:flex; align-items:center; justify-content:center; font-family:var(--font-head);
@@ -481,17 +483,8 @@
   <tbody>{{TOP_TURNS_ROWS}}</tbody></table>
 
   <h2 id="tips" class="tint-olive">Spending less next time</h2>
-  <p class="explain">Three things you can do, starting with the one that saves the most:</p>
-  <ol class="tips">
-    <li><strong>Keep the main conversation short.</strong> Run /compact, or start a fresh session,
-    when you move on to a new task. Everything left in the conversation gets re-read at every later
-    step. The "spent above 200k" card shows how much that would have saved here.</li>
-    <li><strong>Hand heavy exploring and retry loops to helpers.</strong> A helper reads everything
-    in its own separate conversation and sends back just a summary, so the bulky parts never pile up
-    in your main chat.</li>
-    <li><strong>Group commands that do not depend on each other into a single step.</strong> Every
-    extra step re-reads the whole conversation and sets off another round of paid thinking.</li>
-  </ol>
+  <p class="explain">Drawn from where this session's money actually went, costliest lever first:</p>
+  <ol class="tips">{{TIPS_ROWS}}</ol>
 
   <footer>Costs are calculated from the raw token counts using public LiteLLM prices, not the
   figure Claude reports. Numbers marked "est" are estimates (about 4 characters per token). The
