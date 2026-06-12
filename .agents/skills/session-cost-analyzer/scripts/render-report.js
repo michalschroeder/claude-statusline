@@ -7,12 +7,10 @@
 //
 //   node scripts/analyze.js <prefix> | node scripts/render-report.js [--out <path>]
 //
-// Without --out the file is written into a fresh mktemp dir as
-// <tmp>/session-cost-<xxxxxx>/session-cost-<first8-of-session>.html, so report
-// generation never litters the user's working directory; the final path is printed to
-// stdout. Self-contained — no deps outside this folder.
+// Without --out the file is written into the current working directory as
+// session-cost-<first8-of-session>.html (one file per session id); the final path is
+// printed to stdout. Self-contained — no deps outside this folder.
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 
 const TEMPLATE = path.join(__dirname, '..', 'assets', 'report-template.html');
@@ -91,13 +89,13 @@ function tipCell(what, full, tipHead) {
     : `<td class="prompt">${esc(what)}</td>`;
 }
 
-// Cell text: a Haiku summary (set only when --summarize ran) wins with a generous
-// cap; else the truncated raw text.
+// Cell text: a model-written summary (set when summaries were merged) wins with a
+// generous cap; else the truncated raw text.
 function whatText(summary, full) {
   return summary && summary.trim() ? truncate(summary, 600) : truncate(full, 110);
 }
 
-// The WHAT column. A Haiku summary (turn.summary, set only when --summarize ran) wins —
+// The WHAT column. A model-written summary (turn.summary, set when merged) wins —
 // now a descriptive sentence, so it gets a generous cap. Otherwise: skill rows go blank
 // (the skill name has its own column), subagent-return turns get a fixed label, and
 // genuine user turns keep their own (truncated) words.
@@ -147,7 +145,7 @@ function consumerRows(cc, limit) {
     const pct = Math.round((Number(c.estTokens) || 0) / total * 100);
     // synthetic rows aggregate the whole session — their count isn't a repeat count
     const tool = c.count > 1 && !c.synthetic ? `${c.tool} ×${c.count}` : c.tool;
-    // The cell shows a Haiku summary (c.summary, set only when --summarize ran) or the
+    // The cell shows a model-written summary (c.summary, when merged) or the
     // truncated raw target; the exact file/command/prompt stays one hover away.
     const full = c.target || '';
     const what = whatText(c.summary, full);
@@ -172,8 +170,8 @@ function thinkingSummary(ao) {
 }
 
 // Which prompts drove the reasoning — one row per thinking.byTurn entry.
-// byTurn rows carry the same turnIndex as turns[], so when --summarize ran we
-// join on it and reuse that turn's Haiku summary (and full prompt) here instead
+// byTurn rows carry the same turnIndex as turns[], so when summaries are merged we
+// join on it and reuse that turn's summary (and full prompt) here instead
 // of re-summarizing. Same hover contract as the other tables.
 function thinkingTurnRows(ao, limit, turns) {
   const th = ao && ao.thinking;
@@ -377,11 +375,10 @@ function subagentRows(byAgent) {
 }
 
 // "Spending less next time" — a 1–5 session grade plus verdict-tagged cards, each split into
-// WHAT happened / WHY it cost / HOW to act. When the --summarize flow ran, the model's
-// assessment (summary.aiAssessment) is preferred — it reasons over the whole report and grades
-// the driving habits. Otherwise we synthesize a deterministic assessment: a heuristic grade
-// from how much of THIS bill was avoidable, and one card per dollar-lever that actually moved
-// the bill (≥ a floor), or a single "already lean" good card. Pure transform — no LLM in here.
+// WHAT happened / WHY it cost / HOW to act. The grade is always AI-written: the analyzer
+// workflow runs a strong-model draft + adversarial critic over EVALUATION.md and the report,
+// and merges the result into summary.aiAssessment. This renderer just formats it (pure
+// transform — no LLM in here); with no aiAssessment present the section renders empty.
 
 const GRADE = {
   1: { word: 'Very poor' }, 2: { word: 'Poor' }, 3: { word: 'Fair' },
@@ -394,6 +391,9 @@ const clampRating = (v) => {
 };
 
 // → { rating: 1–5|null, headline, cards:[{verdict,title,what,why,how}] }.
+// The assessment is always AI-written (the analyzer workflow grades every session via subagents
+// and merges the result into summary.aiAssessment). When it's absent — only a raw manual
+// `render-report.js < detail.json` with no merge step — the grade section renders empty.
 function buildAssessment(detail) {
   const s = detail.summary || {};
   const ai = s.aiAssessment;
@@ -404,74 +404,7 @@ function buildAssessment(detail) {
     }));
     return { rating: clampRating(ai.rating), headline: String(ai.headline || ''), cards };
   }
-  return deterministicAssessment(detail);
-}
-
-// Heuristic grade + lever cards from the session's own numbers (the no-`--summarize` path).
-function deterministicAssessment(detail) {
-  const s = detail.summary || {};
-  const total = Number(detail.totalCost) || 0;
-  const pct = (c) => (total > 0 ? Math.round((c / total) * 100) : 0);
-  const floor = Math.max(0.25, total * 0.02);
-  const cards = [];
-
-  // Lever 1 — context backlog re-read above the panic threshold (the /compact lever).
-  const hc = s.highContextCost || {};
-  if ((hc.cost || 0) > 0 && (hc.calls || 0) > 0) {
-    const resets = s.contextResets || 0;
-    cards.push({ impact: hc.cost, verdict: 'bad', title: 'Keep the main conversation short',
-      what: `${money(hc.cost)} (${pct(hc.cost)}% of the bill) went to ${hc.calls} calls running above ` +
-        `${compactTokens(hc.thresholdTokens || 200000)} context.`,
-      why: 'Past that point every step re-reads the whole backlog, so each turn pays again for all the text still in the window.',
-      how: `Run /compact or start a fresh session when you switch tasks` +
-        (resets ? ` (you cleared context ${resets}× here already, just later than ideal).` : '.') });
-  }
-
-  // Lever 2 — reasoning billed on every step (the batch-commands lever).
-  const ao = s.assistantOutput;
-  const th = ao && ao.thinking;
-  const thCost = ao && ao.byKind && ao.byKind.thinking ? ao.byKind.thinking.cost : 0;
-  if (th && (thCost || 0) > 0 && (th.mainSteps || 0) >= 30) {
-    cards.push({ impact: thCost, verdict: 'warn', title: 'Group independent commands into one step',
-      what: `Reasoning cost ${money(thCost)} (${pct(thCost)}%) and ran on ${th.stepsWithThinking}/${th.mainSteps} steps.`,
-      why: 'Each extra step sets off another paid round of thinking, billed as output (~5× input) before the model acts.',
-      how: "Batch commands that don't depend on each other so the model reasons once instead of once per command." });
-  }
-
-  // Lever 3 — bulky tool results (logs/files/searches) carried in the main context.
-  // Tool results = everything that isn't a synthetic rollup or a user prompt.
-  const carried = ((s.contextConsumers && s.contextConsumers.top) || [])
-    .filter((c) => !c.synthetic && c.tool !== 'user-prompt');
-  const carriedCost = carried.reduce((a, c) => a + (Number(c.carriedCost) || 0), 0);
-  if (carriedCost > 0) {
-    const lead = carried.reduce((a, c) => ((c.carriedCost || 0) > (a.carriedCost || 0) ? c : a));
-    // humanize long MCP tool ids (mcp__datadog__search_logs → "datadog search_logs") so the
-    // label reads cleanly and can wrap at the space instead of overflowing the card.
-    const leadName = lead ? lead.tool.replace(/^mcp__/, '').replace(/__/g, ' ') : '';
-    cards.push({ impact: carriedCost, verdict: 'warn', title: 'Hand heavy exploring to a helper',
-      what: `Tool results (logs, files, searches${lead ? ` — ${leadName} led` : ''}) carried about ` +
-        `${money(carriedCost)} of re-read cost sitting in the main context.`,
-      why: 'Anything left in the conversation is re-read on every later step, so a big result keeps charging long after you used it.',
-      how: 'A subagent reads them in its own conversation and returns just the summary, so the bulk never piles up in your chat.' });
-  }
-
-  const ranked = cards.filter((c) => c.impact >= floor).sort((a, b) => b.impact - a.impact).slice(0, 3);
-  // Avoidable share of the bill drives the grade (clamped — the levers can overlap and sum >total).
-  const avoidable = ranked.reduce((a, c) => a + c.impact, 0);
-  const waste = total > 0 ? Math.min(1, avoidable / total) : 0;
-  const rating = waste < 0.05 ? 5 : waste < 0.15 ? 4 : waste < 0.30 ? 3 : waste < 0.50 ? 2 : 1;
-
-  if (!ranked.length) {
-    return { rating: 5, headline: 'Lean session — almost nothing was spent on avoidable overhead.',
-      cards: [{ verdict: 'good', title: 'This session was already lean',
-        what: 'No single area dominated the cost; context stayed small relative to the work done.',
-        why: 'Little was spent re-reading idle backlog, which is what usually drives the bill up.',
-        how: 'Keep doing it: short conversations, batched commands, and heavy exploring offloaded to subagents.' }] };
-  }
-  const headline = rating >= 4 ? `Mostly efficient — about ${pct(avoidable)}% of the bill was avoidable.`
-    : rating === 3 ? `Fair — about ${pct(avoidable)}% of the bill went to avoidable re-reading and reasoning.`
-    : `Costly — about ${pct(avoidable)}% of the bill was avoidable re-reading and reasoning.`;
-  return { rating, headline, cards: ranked };
+  return { rating: null, headline: '', cards: [] };
 }
 
 // The 1–5 grade badge that sits at the very top of the report. Empty when unrated.
@@ -595,9 +528,10 @@ async function main() {
   const template = fs.readFileSync(TEMPLATE, 'utf8');
   const html = render(detail, template);
   const id = String(detail.session).slice(0, 8);
-  // Default: a unique mktemp dir, so re-runs never clobber and the report stays out of
-  // the user's repo. An explicit --out still writes exactly where asked.
-  const out = opts.out || path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'session-cost-')), `session-cost-${id}.html`);
+  // Default: the current working directory (one file per session id, so re-running a session
+  // overwrites its own report rather than piling up). An explicit --out still writes exactly
+  // where asked.
+  const out = opts.out || path.join(process.cwd(), `session-cost-${id}.html`);
   fs.writeFileSync(out, html);
   process.stdout.write(out + '\n');
 }

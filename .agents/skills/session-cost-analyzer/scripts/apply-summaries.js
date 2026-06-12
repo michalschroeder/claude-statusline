@@ -1,17 +1,15 @@
 #!/usr/bin/env node
 'use strict';
-// Pure merge helper for the optional Haiku summaries. Reads an analyze.js DETAIL payload
+// Pure merge helper for the model-written summaries. Reads an analyze.js DETAIL payload
 // on stdin and a summaries map, and writes the payload back with summary fields filled in,
 // so render-report.js shows a "what this is" one-liner instead of the raw prompt/target.
 // No network, no model call — the summaries are produced upstream by the skill agent
-// dispatching cheap Haiku subagents (see SKILL.md), keeping this stage deterministic and
-// testable. Three report sections take model output:
+// dispatching subagents (see SKILL.md). Three report sections take model output:
 //   • TOP TURNS               → keyed by each turn's `turnIndex` (stable, unlike prompt text)
 //   • Top context consumers   → keyed by 0-based index into summary.contextConsumers.top
 //   • Spending less next time  → an AI assessment of the whole session: a 1–5 `rating`, a
 //                               `headline`, and `cards` ({verdict good/bad/warn, title, what,
-//                               why, how}), stored at summary.aiAssessment for the renderer to
-//                               prefer over its deterministic fallback.
+//                               why, how}), stored at summary.aiAssessment for the renderer.
 //
 // Pipeline:
 //   node scripts/analyze.js <prefix> > detail.json
@@ -27,8 +25,8 @@
 //   flat        : { "<turnIndex>": "…" }  (or [{turnIndex,summary}])  → applied to turns only
 //   (A legacy `tips` LIST of { head, body } / strings is still accepted → what-only cards.)
 //
-// Unknown keys are ignored; un-summarized rows keep their deterministic label, and an absent
-// `tips` leaves the renderer's deterministic assessment in place. A bad/absent map → the
+// Unknown keys are ignored; un-summarized rows keep their raw label, and an absent
+// `tips` leaves the assessment section empty (no fallback grade). A bad/absent map → the
 // payload passes through unchanged, so the report always renders.
 const fs = require('fs');
 

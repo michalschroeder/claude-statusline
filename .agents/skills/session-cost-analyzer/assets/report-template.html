@@ -17,18 +17,18 @@
     CONTEXT_GROWTH_BAR inline SVG — horizontal bar, one segment per turn, width = context growth
     WHERE_IT_WENT_ROWS  one <tr> per components entry: <td>label</td><td>$cost</td><td><bar></td>
     CONSUMER_TOOL_ROWS  one <tr> per summary.contextConsumers.byTool entry (tool, count, est tokens, carried cost, share)
-    CONSUMER_ROWS       one <tr> per summary.contextConsumers.top entry (est tokens, share, carried cost, tool, target — target cell shows the Haiku summary with the raw target on hover when one was applied)
+    CONSUMER_ROWS       one <tr> per summary.contextConsumers.top entry (est tokens, share, carried cost, tool, target — target cell shows the model-written summary with the raw target on hover when one was applied)
     CONSUMERS_NOTE      summary.contextConsumers.note (estimate disclaimer)
     THINKING_SUMMARY    summary.assistantOutput.thinking headline (tokens, cost, stored vs unstored, peak step)
-    THINKING_TURN_ROWS  one <tr> per summary.assistantOutput.thinking.byTurn entry (tokens, share, steps, prompt); the prompt cell reuses the matching turn's Haiku summary when --summarize ran, raw message on hover
+    THINKING_TURN_ROWS  one <tr> per summary.assistantOutput.thinking.byTurn entry (tokens, share, steps, prompt); the prompt cell reuses the matching turn's model-written summary when merged, raw message on hover
     THINKING_STEP_ROWS  one <tr> per summary.assistantOutput.thinking.topSteps entry (tokens, step, trigger, next action)
     SKILL_ROWS          one <tr> per summary.bySkill entry (skill, turns, steps, cost)
     BY_MODEL_ROWS       one <tr> per byModel entry
     TOP_TURNS_ROWS      one <tr> per top turn (cost, kind, skill, peak ctx, what)
     SUBAGENT_ROWS       one <tr> per byAgent entry (task, cost) — placeholder row if none
     RATING_BADGE        the 1–5 session grade badge (colored by rating); empty when unrated
-    ASSESS_CARDS        one verdict-tinted .acard per finding (WHAT/WHY/HOW blocks); the model's
-                        assessment under --summarize, else deterministic dollar-levers
+    ASSESS_CARDS        one verdict-tinted .acard per finding (WHAT/WHY/HOW blocks) from the
+                        model's assessment; empty placeholder when none was merged
 
   All explanatory copy is static template text by design: the report must stay
   readable when shared or printed, so explanations are always visible (no tooltips)
@@ -193,15 +193,18 @@
   .grade-1{--gcol:var(--red)} .grade-2{--gcol:#e6915d} .grade-3{--gcol:#d6a40c}
   .grade-4{--gcol:#7a9a3e} .grade-5{--gcol:#4f7a2f}
 
-  /* Assessment cards: flat tinted panels, equal height, capped at 4 per row, each split into
-     WHAT / WHY / HOW blocks. Verdict drives the tint (good=green, warn=amber, bad=salmon). */
+  /* Assessment cards: equal height, capped at 4 per row, each split into WHAT / WHY / HOW blocks.
+     Verdict drives a 3-level tint (good=green, warn=amber, bad=salmon): a strong colored left
+     spine + saturated header band + soft readable body wash of the same hue. */
   .assess { display:grid; gap:14px; margin:0 0 8px; align-items:stretch;
     grid-template-columns:repeat(auto-fit,minmax(max(240px,calc((100% - 42px)/4)),1fr)); }
   .acard { display:flex; flex-direction:column; border:1px solid var(--frame);
-    background:var(--acol,var(--t-sage)); overflow-wrap:anywhere; }
-  .acard-good{--acol:#bcd49f} .acard-warn{--acol:#e9d08a} .acard-bad{--acol:#e0a892}
+    border-left:5px solid var(--acol); background:var(--abg,var(--t-sage)); overflow-wrap:anywhere; }
+  .acard-good{--acol:#6f9438;--ahdr:#bcd49f;--abg:#eaf2dd}
+  .acard-warn{--acol:#cf9b0a;--ahdr:#e9d08a;--abg:#f7eecb}
+  .acard-bad {--acol:#c2603c;--ahdr:#e0a892;--abg:#f4ded2}
   .acard-title { font-family:var(--font-head); font-weight:700; text-transform:uppercase; font-size:15px;
-    letter-spacing:.02em; color:var(--ink); padding:11px 16px; background:rgba(255,255,255,.32);
+    letter-spacing:.02em; color:var(--ink); padding:11px 16px; background:var(--ahdr,rgba(255,255,255,.32));
     border-bottom:1px solid var(--frame); }
   .ablk { padding:10px 16px; border-bottom:1px dashed rgba(0,0,0,.28); }
   .ablk:last-child { border-bottom:0; }

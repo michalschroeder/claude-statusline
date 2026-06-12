@@ -1,9 +1,8 @@
 # Session evaluation rubric
 
 How to rate a Claude Code session 1–5 and write its assessment cards. Distilled from
-Anthropic's cost / context-engineering docs and the June 2026 community playbooks. This file
-is the persisted reference the `--summarize` assessment subagent reads before grading; it is
-self-contained so it works for any session, on any machine.
+Anthropic's cost / context-engineering docs and the June 2026 community playbooks. This is the
+self-contained rubric the assessment subagent reads before grading.
 
 **Scope.** This rubric judges *how efficiently a session was driven* — context discipline,
 scoping, delegation, model choice, planning. It deliberately ignores plan selection and
@@ -74,6 +73,13 @@ hedge them in cards ("~30–40%", "community-reported") rather than stating as g
   session — less per-turn re-read, better locality, independent compaction.
 - **Spec-first for big features**: interview → write SPEC.md → fresh session to implement.
   Precision in the spec pays off more than watching the implementation.
+- **Review in a fresh session.** Code review and cleanup (`/code-review`, `/simplify`) belong in
+  a *separate* session from the one that wrote the code. Both pull their own diff from git, so
+  they need none of the implementation history. Running them inline re-reads the whole bloated
+  implementation window on every review step, and a reviewer primed by the author's own reasoning
+  rationalizes choices instead of challenging them. Implement → commit → `/clear` (or fresh
+  session) → review. (Even inline, the finder subagents get clean windows; it's the orchestrator's
+  synthesis that stays contaminated.)
 
 **Delegation (subagents) — "one of the most powerful tools"**
 - A subagent reads many files in *its own* window and returns only a summary, so bulk never
@@ -138,6 +144,8 @@ hedge them in cards ("~30–40%", "community-reported") rather than stating as g
 - **Plan-then-execute** for multi-file/uncertain work; verification targets given up front.
 - **Cache protected** — no needless mid-session model/effort/CLAUDE.md churn.
 - **Batched commands** — independent commands grouped into one step.
+- **Review done in a fresh session** off the committed diff, not stacked on the implementation
+  context.
 
 ## 5. What hurts (penalize these)
 
@@ -152,6 +160,9 @@ hedge them in cards ("~30–40%", "community-reported") rather than stating as g
 - **Cache churn** — frequent model/effort/CLAUDE.md changes inflating `cache_creation`.
 - **Bloated always-on context** — oversized CLAUDE.md (>~200 lines) or many unused MCP servers
   taxing every turn before the user even types.
+- **Review piled on the implementation context** — `/code-review` / `/simplify` run in the same
+  session that built the feature, re-reading the whole implementation window instead of starting
+  fresh from the committed diff.
 
 ---
 
@@ -194,3 +205,24 @@ Produce **3–6 cards**, each a `{verdict, title, what, why, how}` object:
 Be specific and quantified, not generic. Name the costly skill and its dollar figure; point at
 the concrete file/command that dominated context; say which prompt drove the reasoning; pick the
 *highest-value* lever for the fix (usually a smaller context before a cosmetic tweak).
+
+### Voice — write so a non-expert can act on it
+
+The reader may not know Claude Code's cost internals. Write every card, **especially `how`**, in
+plain, concrete language a newcomer can act on without a glossary.
+
+- **No bare jargon.** Don't write "batch your steps", "gate thinking", "the cache_read prefix",
+  "fan-out", "step multiplication" and stop there. Either avoid the term or, the first time you use
+  it, say in plain words what it means. "Batch" → *"make all your edits first, then run the test
+  command once at the end instead of after every edit."* "Gate thinking" → *"turn off extended
+  thinking for simple steps — drop `/effort` to low, or don't enable thinking — so the model stops
+  reasoning when it's just posting a reply or re-running a check."*
+- **`how` is a recipe, not a label.** Spell out the concrete action: the command to type
+  (`/compact`, `/clear`, `/effort low`, `--model sonnet`), the habit to change, what to do
+  differently *and when*. The reader should be able to do it next session without guessing. Tie the
+  saving to the action ("…**this** is what recovers the ~$0.29"), not leave it floating.
+- **Plain words over jargon** throughout `what`/`why` too: "re-reading the whole conversation each
+  step" beats "cache_read dominance"; "the window got large and stayed large" beats "context held
+  above the soft cap". Keep the precise numbers; lose the insider vocabulary.
+- **One idea per sentence.** Short sentences. If a card needs two actions, give them as two plain
+  steps, not one dense clause.

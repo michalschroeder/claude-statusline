@@ -5,11 +5,11 @@ description: >-
   model, turn, and subagent, and produce an HTML report. Use when the user asks where a
   session's cost or tokens went, why a session was costly, to analyze or audit token or
   dollar spend, to list recent sessions by cost, or mentions session cost, /compact
-  savings, or context growth. Args: `[<session-id-prefix> | list] [--summarize]
+  savings, or context growth. Args: `[<session-id-prefix> | list]
   [--config-dir <path>] [--out <path>] [--last N] [--since YYYY-MM-DD]`. Examples:
-  `/session-cost-analyzer 848c5b25`, `/session-cost-analyzer 848c5b25 --summarize`,
+  `/session-cost-analyzer 848c5b25`,
   `/session-cost-analyzer list --last 20 --config-dir ~/.claude-lendable`.
-argument-hint: "[<session-id-prefix> | list] [--summarize] [--config-dir <path>] [--out <path>] [--last N] [--since YYYY-MM-DD]"
+argument-hint: "[<session-id-prefix> | list] [--config-dir <path>] [--out <path>] [--last N] [--since YYYY-MM-DD]"
 ---
 
 # Session Cost Analyzer
@@ -18,16 +18,15 @@ Drives `scripts/analyze.js` (self-contained, JSON-only) to explain a session's c
 
 ## Location — read first
 
-The scripts are **bundled inside this skill** (pure Node stdlib, no install, no project
-files). They do **NOT** live in the user's repo — do not look for them there, and do not
-`cd` into the user's project expecting to find them.
+The scripts are **bundled inside this skill** (pure Node stdlib, no install) — they do **NOT**
+live in the user's repo, so don't `cd` there expecting to find them.
 
-Every command below references the scripts via **`${CLAUDE_SKILL_DIR}`** — the documented
-Claude Code substitution that expands to this skill's own directory (works from any working
-directory, for personal/project/plugin installs alike). It is already expanded to an absolute
-path in the text you are reading, so run the commands verbatim — no manual substitution.
-Without `--out` the report is written into a fresh mktemp dir (never the user's working
-directory); the renderer prints the absolute path it wrote — relay that to the user.
+Every command below references the scripts via **`${CLAUDE_SKILL_DIR}`** — the Claude Code
+substitution that expands to this skill's directory (works from any working directory). It is
+already expanded to an absolute path in the text you are reading, so run the commands verbatim.
+Without `--out` the report is written into the current working directory as
+`session-cost-<shortid>.html`; the renderer prints the absolute path it wrote — relay that to
+the user.
 
 (Fallback: if a command ever shows a literal, unexpanded `${CLAUDE_SKILL_DIR}` or resolves to
 an empty path, substitute the absolute path from the `Base directory for this skill: …` line
@@ -42,36 +41,22 @@ these tokens **before** running the workflow; they map deterministically to the 
 |---|---|
 | `<session-id-prefix>` | Analyze that session (detail report). Omit → ask which (step 1). |
 | `list` | List recent sessions by cost instead of a detail report. |
-| `--summarize` | Opt in to **model-written report copy** (the subagent flow in step 5): the TOP TURNS prompt cell, the TOP CONTEXT CONSUMERS target cell, and the **"Spending less next time" assessment** (a strong model grading the session 1–5 against `EVALUATION.md`, then an adversarial critic pass, returning verdict-tagged WHAT/WHY/HOW cards). The THINKING "prompt that drove the reasoning" cell reuses the matching turn's summary automatically (no extra batch). Absent → deterministic relabel + tooltip and deterministic, dollar-ranked tips. Alias: `--haiku`. |
 | `--config-dir <path>` | Non-default transcript root (e.g. `~/.claude-lendable`). Passed straight to `analyze.js`. |
-| `--out <path>` | Report output path. Default: a fresh mktemp dir, `<tmp>/session-cost-<rand>/session-cost-<shortid>.html` (keeps it out of the user's repo). |
+| `--out <path>` | Report output path. Default: `./session-cost-<shortid>.html` in the current working directory. |
 | `--last N` / `--since YYYY-MM-DD` | `list`-mode filters. |
 
-The summarize step (Haiku per-row labels + strong-model assessment) is gated **only** by
-`--summarize` (or its aliases) — treat its presence/absence as the on/off switch, don't infer
-it from prose. Unknown flags: ignore.
+A **detail report always** includes the model-written copy (step 5): the top-turns and
+context-consumer cells, and the "Spending less next time" assessment — no opt-in flag, the
+subagent flow runs every time. (`list` mode produces no detail, so step 5 doesn't apply there.)
+Unknown flags: ignore.
 
 ### Examples
 
 ```bash
-/session-cost-analyzer 848c5b25                # detail report, deterministic labels
-/session-cost-analyzer 848c5b25 --summarize    # + Haiku "what each turn did" summaries
+/session-cost-analyzer 848c5b25                # detail report (always model-written)
 /session-cost-analyzer list --last 20          # rank recent sessions by cost
-/session-cost-analyzer 848c5b25 --config-dir ~/.claude-lendable --summarize
+/session-cost-analyzer 848c5b25 --config-dir ~/.claude-lendable
 ```
-
-## Quick start
-
-```bash
-# List recent sessions (newest first) with their recomputed cost:
-node ${CLAUDE_SKILL_DIR}/scripts/analyze.js list --last 10
-
-# Full cost breakdown for one session (id or unambiguous prefix):
-node ${CLAUDE_SKILL_DIR}/scripts/analyze.js <session-id-prefix>
-```
-
-Both print JSON to stdout. `--config-dir <path>` points at a non-default `~/.claude`.
-`list` also takes `--since YYYY-MM-DD` and `--last N`.
 
 ## Workflow
 
@@ -100,40 +85,24 @@ Both print JSON to stdout. `--config-dir <path>` points at a non-default `~/.cla
 
 4. **Interpret** with the cost model in [REFERENCE.md](REFERENCE.md).
 
-5. **Report.**
+5. **Report (always model-written copy).**
    - Narrate the cost story inline (where the money went, the biggest lever).
-   - Generate the HTML report deterministically — pipe the detail JSON into the bundled
-     renderer rather than hand-building rows (it formats money/duration/tokens, draws the
-     proportion bars, ranks the top turns, and HTML-escapes every prompt/title/label):
-
-     ```bash
-     node ${CLAUDE_SKILL_DIR}/scripts/render-report.js < /tmp/detail.json
-     ```
-
-     It prints the absolute path it wrote (a fresh mktemp dir). Pass `--out <path>` if the
-     user names one. Tell the
-     user the file path. The report opens with an interactive context-window timeline (one
-     SVG bar per step, colored by the 200k threshold, hover for per-step size/cost/prompt).
-     (`assets/report-template.html` holds the styling if you need to tweak it.)
-
-     By default the TOP TURNS prompt cell is cleaned deterministically (skill dispatches →
-     their skill name, `<task-notification>` returns → `↩ subagent results`, user turns
-     keep their words) with the full raw prompt on hover. **No extra step needed** — this is
-     the path when `--summarize` is absent.
-
-   - **`--summarize` → model-written report copy.** Run this step **iff** the flag (or an
-     alias) was passed; otherwise skip it. It fills three things from the model instead of
-     deterministic defaults: the TOP TURNS prompt cell ("what this turn accomplished"), the
-     TOP CONTEXT CONSUMERS target cell ("what this file/command/prompt was"), and the
-     **"Spending less next time" assessment** (a 1–5 grade of the whole session plus
-     verdict-tagged WHAT/WHY/HOW cards). The THINKING "prompt that drove the reasoning" cell picks up the same turn
-     summary by turnIndex, so terse prompts like "do it"/"add it" become descriptive
-     there too — no extra batch. Don't shell out to a model — dispatch **subagents** (the
-     Agent tool), then merge their output with the pure helper. Dispatch **four**: one each for
-     the turns and consumer batches (`model: haiku` is fine — the work is mechanical labelling),
-     and **two for the assessment**, a draft pass then an adversarial critic pass, both on a
-     **strong model** (Opus) — the grade is a holistic judgment and the critic is what makes it
-     defensible. Each subagent handles its whole batch in a single call (never one per row):
+   - Three things come from the model: the TOP TURNS prompt cell ("what this turn
+     accomplished"), the TOP CONTEXT CONSUMERS target cell ("what this file/command/prompt was"),
+     and the **"Spending less next time" assessment** (a 1–5 grade plus verdict-tagged
+     WHAT/WHY/HOW cards). The THINKING "prompt that drove the reasoning" cell reuses the same turn
+     summary by turnIndex, so terse prompts like "do it" become descriptive there too — no extra
+     batch. Don't shell out to a model — dispatch **subagents** (the Agent tool) and merge their
+     output through the helpers into the renderer. Dispatch **four**: one each for the turns and
+     consumer batches (`model: haiku` — mechanical labelling), and **two for the assessment**, a
+     draft pass then an adversarial critic pass, both on a **strong model** (Opus). Each subagent
+     handles its whole batch in a single call (never one per row). The renderer formats
+     money/duration/tokens, draws the proportion bars, ranks the top turns, HTML-escapes every
+     prompt/title/label, prints the absolute path it wrote (`./session-cost-<shortid>.html` in the
+     current working directory — pass `--out <path>` if the user names one; tell the user the
+     path), and opens with an interactive context-window timeline (one SVG bar per step, colored by
+     the 200k threshold, hover for per-step size/cost/prompt). (`assets/report-template.html` holds
+     the styling if you need to tweak it.)
 
      ```bash
      # From /tmp/detail.json (written in step 2) gather the batches:
@@ -160,14 +129,20 @@ Both print JSON to stdout. `--config-dir <path>` points at a non-default `~/.cla
      #          - why:  why it cost (or saved) — tie to a rubric §1 mechanism (cache re-read,
      #            step multiplication, thinking-as-output, context rot).
      #          - how:  the fix (name the rubric §2 lever) on bad/warn cards; on a "good" card,
-     #            what to KEEP doing.
+     #            what to KEEP doing. Write it as a concrete recipe (the command to type, the habit
+     #            to change, and when) — NOT a jargon label. See EVALUATION.md §7 "Voice".
      #        Name the costly skill + its $, the file/command that dominated context, the prompt
-     #        that drove the reasoning. Be specific and quantified, not generic advice.
+     #        that drove the reasoning. Be specific and quantified, not generic advice. PLAIN
+     #        LANGUAGE: the reader may not know Claude Code internals — no bare jargon ("batch",
+     #        "gate thinking", "cache_read"); explain any term the first time, prefer plain words
+     #        ("re-reading the whole conversation each step" over "cache_read dominance").
      #     2. CRITIC (adversarial). Hand a SECOND strong-model subagent the rubric, the detail
      #        JSON, AND the draft. Tell it to REFUTE the draft: is the 1-5 grade defensible
      #        against the avoidable-share anchor (don't drift to a soft "3")? What real lever did
      #        the draft miss, overstate, or misattribute (e.g. blaming a terse prompt for what
-     #        was really context size)? Are the numbers right? It returns the FINAL corrected
+     #        was really context size)? Are the numbers right? ALSO rewrite any card a non-expert
+     #        couldn't act on: strip jargon, and make each `how` a concrete recipe (command to type
+     #        + when), per EVALUATION.md §7 "Voice". It returns the FINAL corrected
      #        { rating, headline, cards } in the same shape — this is what gets merged.
      # Merge into ONE /tmp/summaries.json, namespaced by section (tips = the critic's final):
      #   { "turns":     { "<turnIndex>": "<summary>", ... },
@@ -181,13 +156,11 @@ Both print JSON to stdout. `--config-dir <path>` points at a non-default `~/.cla
        | node ${CLAUDE_SKILL_DIR}/scripts/render-report.js
      ```
 
-     `apply-summaries.js` is pure (turns key by `turnIndex`, consumers key by their index
-     in `summary.contextConsumers.top`, tips → `summary.aiAssessment`; it ignores
-     unknown/missing keys and passes the payload through unchanged on any error) so the report
-     always renders. The renderer prefers the model's `summary`/`aiAssessment` when present and
-     falls back to the deterministic label/levers, keeping the raw prompt/target one hover
-     away. Without `--summarize` the assessment is still populated — a heuristic grade plus
-     deterministic levers ranked by this session's dollar impact — so the report is never empty.
+     `apply-summaries.js` merges the JSON in (turns by `turnIndex`, consumers by their index in
+     `summary.contextConsumers.top`, tips → `summary.aiAssessment`) and the renderer fills the
+     cells from it, keeping the raw prompt/target one hover away. The assessment is AI-only:
+     **always run the four subagents above** — if `aiAssessment` is missing, the grade section
+     renders empty.
 
 ## Notes
 

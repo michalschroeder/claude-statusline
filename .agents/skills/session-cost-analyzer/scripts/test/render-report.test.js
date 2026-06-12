@@ -142,7 +142,7 @@ test('render: context consumers name the concrete target, escaped', () => {
   assert.match(html, /estimates, not billed/i); // disclaimer note rendered
 });
 
-test('render: long un-summarized consumer target gets a hover tooltip (no --summarize)', () => {
+test('render: long un-summarized consumer target gets a hover tooltip', () => {
   const longTarget = 'Base directory for this skill: ' + '/very/long/path'.repeat(12);
   const withLong = {
     ...detail,
@@ -224,7 +224,7 @@ test('render: thinking turn reuses the matching turn Haiku summary, full prompt 
   assert.match(html, /Approved the migration plan and told the agent to execute it/);
 });
 
-test('render: long un-summarized thinking prompt gets a hover tooltip (no --summarize)', () => {
+test('render: long un-summarized thinking prompt gets a hover tooltip', () => {
   const long = 'Base directory for this skill: /home/ms/.claude/skills/write-a-skill # Writing Skills ## Process 1. and so on for a very long expansion that exceeds the cell width';
   const noSum = {
     ...detail,
@@ -283,48 +283,33 @@ test('render: payload without assistantOutput → placeholder, no crash', () => 
 // Everything between the assessment grid and the footer (the .acard panels live here).
 const assessOf = (html) => (html.split('class="assess"')[1] || '').split('<footer')[0];
 
-test('render: deterministic assessment grades the session and quantifies each lever', () => {
+test('render: no aiAssessment → assessment section renders empty, no grade badge', () => {
+  // The assessment is always AI-written; a payload with no summary.aiAssessment (e.g. a raw
+  // render-report.js run with no merge step) shows no grade and a placeholder card.
   const html = render(detail, TEMPLATE);
-  // grade badge at the top: this hot fixture is mostly avoidable → rating 1 / Very poor
-  assert.match(html, /class="grade grade-1"/);
-  assert.match(html, /<span class="grade-num">1<\/span>/);
-  assert.match(html, /Very poor/);
-  const tips = assessOf(html);
-  // all three levers fire on this fixture
-  assert.match(tips, /Keep the main conversation short/);
-  assert.match(tips, /Group independent commands into one step/);
-  assert.match(tips, /Hand heavy exploring to a helper/);
-  // quantified from THIS session's numbers (now in WHAT / HOW blocks)
-  assert.match(tips, /\$0\.88 \(19% of the bill\) went to 4 calls running above 200k context/);
-  assert.match(tips, /you cleared context 2× here already/);
-  assert.match(tips, /Reasoning cost \$3\.43 \(76%\) and ran on 148\/155 steps/);
-  assert.match(tips, /carried about \$1\.40 of re-read cost/);
-  assert.match(tips, /Read led/); // heaviest real-tool consumer (1.1 > Bash 0.3)
-  // WHAT/WHY/HOW block labels are present
-  assert.match(tips, /class="alabel">What</);
-  assert.match(tips, /class="alabel">How to fix</);
-  // ranked by impact: thinking 3.43 > offload 1.40 > compact 0.88
-  assert.ok(tips.indexOf('Group independent') < tips.indexOf('Hand heavy exploring'));
-  assert.ok(tips.indexOf('Hand heavy exploring') < tips.indexOf('Keep the main conversation'));
+  assert.ok(!/class="grade grade-\d"/.test(html), 'no grade badge without an AI assessment');
+  assert.match(assessOf(html), /No assessment available/);
+  assert.ok(!/\{\{[A-Z_]+\}\}/.test(html), 'no unfilled slots');
 });
 
-test('render: markup in lever values is escaped at the sink', () => {
+test('render: markup in AI assessment values is escaped at the sink', () => {
   const evil = {
     ...detail,
     summary: {
       ...detail.summary,
-      contextConsumers: {
-        ...detail.summary.contextConsumers,
-        top: [{ tool: 'mcp__evil__<img src=x>', target: 'x', count: 1, estTokens: 38000, carriedCost: 1.1 }],
-      },
+      aiAssessment: { rating: 2, headline: '<b>hot</b>',
+        cards: [{ verdict: 'bad', title: 'x<img src=x>', what: '<script>alert(1)</script>' }] },
     },
   };
-  const tips = assessOf(render(evil, TEMPLATE));
-  assert.match(tips, /evil &lt;img src=x&gt; led/); // lead tool name escaped, not live HTML
-  assert.ok(!tips.includes('<img'));
+  const html = render(evil, TEMPLATE);
+  const tips = assessOf(html);
+  assert.match(tips, /x&lt;img src=x&gt;/);              // card title escaped, not live HTML
+  assert.match(tips, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+  assert.match(html, /&lt;b&gt;hot&lt;\/b&gt;/);          // headline escaped in the badge
+  assert.ok(!tips.includes('<img') && !tips.includes('<script'));
 });
 
-test('render: AI assessment (summary.aiAssessment) is preferred over deterministic levers', () => {
+test('render: AI assessment (summary.aiAssessment) drives the grade and cards', () => {
   const withAi = {
     ...detail,
     summary: {
@@ -348,24 +333,6 @@ test('render: AI assessment (summary.aiAssessment) is preferred over determinist
   assert.match(tips, /class="acard acard-bad"/);
   assert.match(tips, /writing-phpunit-tests drove \$0\.84/);
   assert.match(tips, /class="alabel">Keep it up</);   // HOW relabelled on the good card
-  // deterministic levers are suppressed when the model assessment is present
-  assert.ok(!/Keep the main conversation short/.test(tips));
-});
-
-test('render: a lean session falls back to the generic tip, never an empty list', () => {
-  const lean = {
-    ...detail, totalCost: 0.05,
-    summary: {
-      ...detail.summary,
-      highContextCost: { thresholdTokens: 200000, calls: 0, cost: 0 },
-      contextResets: 0,
-      assistantOutput: null,
-      contextConsumers: { note: '', totalEstTokens: 0, byTool: [], top: [] },
-    },
-  };
-  const html = render(lean, TEMPLATE);
-  assert.match(html, /This session was already lean/);
-  assert.ok(!/\{\{[A-Z_]+\}\}/.test(html));
 });
 
 test('render: context timeline draws one bar per MAIN step, threshold tiers, escaped', () => {
