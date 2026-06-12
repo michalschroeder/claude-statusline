@@ -24,10 +24,11 @@
     THINKING_STEP_ROWS  one <tr> per summary.assistantOutput.thinking.topSteps entry (tokens, step, trigger, next action)
     SKILL_ROWS          one <tr> per summary.bySkill entry (skill, turns, steps, cost)
     BY_MODEL_ROWS       one <tr> per byModel entry
-    TOP_TURNS_ROWS      one <tr> per top turn (cost, kind, peakContext, prompt)
-    SUBAGENT_ROWS       one <tr> per byAgent entry (task, cost) — omit table if none
-    TIPS_ROWS           one <li> per session-specific savings lever (quantified from this session's
-                        numbers, ranked by $ impact; falls back to one generic "already lean" note)
+    TOP_TURNS_ROWS      one <tr> per top turn (cost, kind, skill, peak ctx, what)
+    SUBAGENT_ROWS       one <tr> per byAgent entry (task, cost) — placeholder row if none
+    RATING_BADGE        the 1–5 session grade badge (colored by rating); empty when unrated
+    ASSESS_CARDS        one verdict-tinted .acard per finding (WHAT/WHY/HOW blocks); the model's
+                        assessment under --summarize, else deterministic dollar-levers
 
   All explanatory copy is static template text by design: the report must stay
   readable when shared or printed, so explanations are always visible (no tooltips)
@@ -165,31 +166,48 @@
     margin:0 0 18px; }
   .explain strong { color:var(--ink); font-weight:bold; }
 
-  /* Side-by-side compact sections so small breakdowns fill the width (stack when narrow). */
-  .pair { display:grid; grid-template-columns:repeat(auto-fit,minmax(440px,1fr)); gap:0 40px; align-items:start; }
-  .pair > section { min-width:0; }
-  .pair > section table { max-width:none; }
-  .pair h2 { margin-top:24px; }
-
-  /* By skill / by model / subagents sit three-up across the width so no panel
-     leaves a tall empty gutter beside it; they collapse to one column when narrow. */
-  .trio { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:0 40px; align-items:start; }
-  .trio section { min-width:0; }
-  .trio table { max-width:none; }
-  .trio h2 { margin-top:24px; }
+  /* Side-by-side section grids: .pair (two wide panels) and .trio (three compact
+     panels) share the scaffold, differing only in the minmax floor via --minw. */
+  .pair, .trio { display:grid; grid-template-columns:repeat(auto-fit,minmax(var(--minw,300px),1fr));
+    gap:0 40px; align-items:start; }
+  .pair { --minw:440px; }
+  .pair > section, .trio section { min-width:0; }
+  .pair > section table, .trio table { max-width:none; }
+  .pair h2, .trio h2 { margin-top:24px; }
   @media (max-width:760px) { .trio { grid-template-columns:1fr; } }
 
-  /* Spending-less levers as flat lime ribbon-cards, each tagged with a black sticker number. */
-  ol.tips { counter-reset:tip; list-style:none; padding:0; margin:0 0 8px;
-    display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:14px; align-items:start; }
-  ol.tips li { counter-increment:tip; position:relative; padding:44px 18px 18px; color:var(--ink);
-    font-family:var(--font-body); font-size:20px; line-height:1.5; overflow-wrap:anywhere;
-    background:var(--t-lime); border:1px solid var(--frame); }
-  ol.tips li::before { content:counter(tip); position:absolute; left:0; top:0; width:32px; height:32px;
-    display:flex; align-items:center; justify-content:center; font-family:var(--font-head);
-    font-weight:700; font-size:15px; color:var(--canvas); background:var(--frame); }
-  ol.tips strong { display:block; font-family:var(--font-head); font-weight:700; text-transform:uppercase;
-    font-size:15px; color:var(--ink); margin-bottom:5px; }
+  /* Session grade badge — colored score block + word + 5-pip meter, sits at the very top. */
+  .grade { display:flex; align-items:stretch; border:1px solid var(--frame); background:var(--canvas);
+    margin:0 0 22px; }
+  .grade-score { display:flex; align-items:baseline; justify-content:center; gap:3px; min-width:132px;
+    padding:14px 24px; background:var(--gcol,#bbb); border-right:1px solid var(--frame); }
+  .grade-num { font-family:var(--font-display); font-weight:900; font-size:60px; line-height:1; color:#fff; }
+  .grade-max { font-family:var(--font-head); font-weight:700; font-size:20px; color:#fff; opacity:.85; }
+  .grade-meta { display:flex; flex-direction:column; justify-content:center; gap:7px; padding:14px 22px; }
+  .grade-word { font-family:var(--font-display); font-weight:900; text-transform:uppercase; font-size:26px;
+    line-height:1; color:var(--ink); }
+  .grade-pips { display:flex; gap:5px; }
+  .grade-pips .pip { width:28px; height:13px; border:1px solid var(--frame); background:var(--canvas); }
+  .grade-pips .pip.on { background:var(--gcol,#888); }
+  .grade-line { font-family:var(--font-body); font-size:21px; line-height:1.4; color:#222; }
+  .grade-1{--gcol:var(--red)} .grade-2{--gcol:#e6915d} .grade-3{--gcol:#d6a40c}
+  .grade-4{--gcol:#7a9a3e} .grade-5{--gcol:#4f7a2f}
+
+  /* Assessment cards: flat tinted panels, equal height, capped at 4 per row, each split into
+     WHAT / WHY / HOW blocks. Verdict drives the tint (good=green, warn=amber, bad=salmon). */
+  .assess { display:grid; gap:14px; margin:0 0 8px; align-items:stretch;
+    grid-template-columns:repeat(auto-fit,minmax(max(240px,calc((100% - 42px)/4)),1fr)); }
+  .acard { display:flex; flex-direction:column; border:1px solid var(--frame);
+    background:var(--acol,var(--t-sage)); overflow-wrap:anywhere; }
+  .acard-good{--acol:#bcd49f} .acard-warn{--acol:#e9d08a} .acard-bad{--acol:#e0a892}
+  .acard-title { font-family:var(--font-head); font-weight:700; text-transform:uppercase; font-size:15px;
+    letter-spacing:.02em; color:var(--ink); padding:11px 16px; background:rgba(255,255,255,.32);
+    border-bottom:1px solid var(--frame); }
+  .ablk { padding:10px 16px; border-bottom:1px dashed rgba(0,0,0,.28); }
+  .ablk:last-child { border-bottom:0; }
+  .alabel { display:block; font-family:var(--font-head); font-weight:700; text-transform:uppercase;
+    font-size:12px; letter-spacing:.04em; color:var(--ink); opacity:.65; margin-bottom:3px; }
+  .atext { font-family:var(--font-body); font-size:19px; line-height:1.45; color:var(--ink); }
 
   /* Catalog data tables: full 1px black HTML-3.2 grid, black header bar, Times body, zebra stripe. */
   table { width:100%; border-collapse:collapse; background:var(--canvas);
@@ -298,6 +316,7 @@
   </header>
 
   <div class="wrap">
+  {{RATING_BADGE}}
   <nav class="toc" aria-label="Report sections">
     <span class="toc-cost">{{TOTAL_COST}}</span>
     <a href="#context">Context</a>
@@ -370,7 +389,7 @@
   system instructions, the list of available tools, and the project background). Each colored
   block after it is one of your messages, and its width is <strong>how much that message added to
   the conversation</strong>: everything it read, ran, or wrote that every later step then had to
-  re-read. Wide blocks are the messages that made the session expensive. A white dashed line is a
+  re-read. Wide blocks are the messages that made the session expensive. A black dashed line is a
   /compact or context clear wiping it back down. Hover over a block to see the message, how far it
   pushed the conversation (from one size to the next), and what that turn cost.</p>
   {{CONTEXT_GROWTH_BAR}}
@@ -418,7 +437,7 @@
   typed into its tools, such as the contents of an edit or a command it ran (assistant-tool-calls).
   When those rows are near the top, the cost came mostly from how much the model itself wrote, not
   from what it read.</p>
-  <table id="consumers-table"><thead><tr><th scope="col" class="num" data-sort="num" data-sum="tokens">est tokens</th><th scope="col">share</th><th scope="col" class="num" data-sort="num" data-sum="money">carried cost</th><th scope="col" data-sort="text">tool</th><th scope="col">target (file · command · prompt)</th></tr></thead>
+  <table id="consumers-table" data-total-label="Total (shown)"><thead><tr><th scope="col" class="num" data-sort="num" data-sum="tokens">est tokens</th><th scope="col">share</th><th scope="col" class="num" data-sort="num" data-sum="money">carried cost</th><th scope="col" data-sort="text">tool</th><th scope="col">target (file · command · prompt)</th></tr></thead>
   <tbody>{{CONSUMER_ROWS}}</tbody></table>
   <p class="note">{{CONSUMERS_NOTE}}</p>
 
@@ -432,7 +451,7 @@
   once or handing a repetitive retry loop to a helper. It is not about making the model "think
   less".</p>
   <p class="note">{{THINKING_SUMMARY}}</p>
-  <table id="thinking-turns-table"><thead><tr><th scope="col" class="num" data-sort="num" data-sum="tokens">tokens</th><th scope="col">share</th><th scope="col" class="num" data-sort="num" data-sum="int">steps</th><th scope="col">prompt that drove the reasoning</th></tr></thead>
+  <table id="thinking-turns-table" data-total-label="Total (shown)"><thead><tr><th scope="col" class="num" data-sort="num" data-sum="tokens">tokens</th><th scope="col">share</th><th scope="col" class="num" data-sort="num" data-sum="int">steps</th><th scope="col">prompt that drove the reasoning</th></tr></thead>
   <tbody>{{THINKING_TURN_ROWS}}</tbody></table>
 
   <h2 class="think">Biggest reasoning bursts</h2>
@@ -442,7 +461,7 @@
   before an important action, like making a large edit, is just the model taking time to plan, which
   is normal. But repeated bursts after the same command usually mean the model kept working out the
   same answer over and over, a sign that loop would have been better handed to a helper.</p>
-  <table><thead><tr><th scope="col" class="num" data-sort="num" data-sum="tokens">tokens</th><th scope="col" class="num" data-sort="num">step</th><th scope="col">trigger (what landed in context right before)</th><th scope="col">next action</th></tr></thead>
+  <table data-total-label="Total (shown)"><thead><tr><th scope="col" class="num" data-sort="num" data-sum="tokens">tokens</th><th scope="col" class="num" data-sort="num">step</th><th scope="col">trigger (what landed in context right before)</th><th scope="col">next action</th></tr></thead>
   <tbody>{{THINKING_STEP_ROWS}}</tbody></table>
 
   <div class="trio">
@@ -480,7 +499,7 @@
   <strong>peak ctx</strong> is how full the conversation was while that work was running. The same
   task costs several times more when the conversation is already large than when it is small, which
   is why a short message late in a session can cost more than a big one asked at the start.</p>
-  <table id="turns-table"><thead><tr><th scope="col" class="num" data-sort="num" data-sum="money">cost</th><th scope="col" data-sort="text">kind</th><th scope="col" data-sort="text">skill</th><th scope="col" class="num" data-sort="num">peak ctx</th><th scope="col">what</th></tr></thead>
+  <table id="turns-table" data-total-label="Total (shown)"><thead><tr><th scope="col" class="num" data-sort="num" data-sum="money">cost</th><th scope="col" data-sort="text">kind</th><th scope="col" data-sort="text">skill</th><th scope="col" class="num" data-sort="num">peak ctx</th><th scope="col">what</th></tr></thead>
   <tbody>{{TOP_TURNS_ROWS}}</tbody></table>
 
   <h2 id="tips" class="tint-olive">Spending less next time</h2>
@@ -494,7 +513,7 @@
   large context, because what you paid for was re-reading the window it ran in, not the words you
   typed. So treat each card as a place to look, confirm it against the tables above, and act on the
   structural lever (a smaller context) before the cosmetic one (longer prompts).</p>
-  <ol class="tips">{{TIPS_ROWS}}</ol>
+  <div class="assess">{{ASSESS_CARDS}}</div>
 
   <footer>Costs are calculated from the raw token counts using public LiteLLM prices, not the
   figure Claude reports. Numbers marked "est" are estimates (about 4 characters per token). The
@@ -541,8 +560,9 @@
     var chart = document.querySelector(chartSel);
     var out = document.getElementById(outId);
     if (!chart) { if (out) out.remove(); return; }
-    // Drop the native <title>s so the browser's slow grey popup can't compete.
-    chart.querySelectorAll('title').forEach(function (t) { t.remove(); });
+    // Drop the native <title>s only where the styled tip takes over — elements
+    // outside targetClass (reset lines, ctx turns, dividers) keep theirs.
+    chart.querySelectorAll('.' + targetClass + ' title').forEach(function (t) { t.remove(); });
     var idle = out ? out.textContent : '';
     function hide() {
       tip.classList.remove('show');
@@ -550,6 +570,7 @@
       if (out) out.textContent = idle;
     }
     chart.addEventListener('mouseover', function (e) {
+      track(e); // seed position — mouseover can fire without a prior mousemove
       var el = e.target.closest ? e.target.closest('.' + targetClass) : null;
       if (!el) { if (hideOnGap) hide(); return; }
       tip.innerHTML = html(el.dataset);
@@ -658,7 +679,7 @@
         ths.forEach(function (th, i) {
           var td = tr.insertCell();
           if (sums[i]) { td.className = 'num'; td.textContent = fmtSum(sums[i], totals[i]); }
-          else if (i === labelIdx) { td.textContent = 'Total'; }
+          else if (i === labelIdx) { td.textContent = table.getAttribute('data-total-label') || 'Total'; }
         });
       }
     }

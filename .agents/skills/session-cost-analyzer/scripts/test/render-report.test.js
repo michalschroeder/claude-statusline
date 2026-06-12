@@ -244,6 +244,27 @@ test('render: long un-summarized thinking prompt gets a hover tooltip (no --summ
   assert.match(html, /class="prompt has-tip"[^>]*data-full="Base directory for this skill: \/home\/ms/);
 });
 
+test('render: skill-kind thinking turn gets a plain cell — no tooltip, no data-full', () => {
+  const expansion = 'Base directory for this skill: /skills/x # giant expansion blob';
+  const skillTurn = {
+    ...detail,
+    turns: [{ turnIndex: 5, prompt: expansion, kind: 'skill', cost: 1.0, peakContext: 100000 }],
+    summary: {
+      ...detail.summary,
+      assistantOutput: {
+        ...detail.summary.assistantOutput,
+        thinking: {
+          ...detail.summary.assistantOutput.thinking,
+          byTurn: [{ turnIndex: 5, prompt: expansion, kind: 'skill', steps: 7, thinkingTokens: 10000 }],
+        },
+      },
+    },
+  };
+  const html = render(skillTurn, TEMPLATE);
+  assert.ok(!/data-tip-h="skill message"/.test(html), 'skill thinking row has no tooltip');
+  assert.ok(!/data-full="Base directory for this skill: \/skills\/x/.test(html), 'expansion not embedded');
+});
+
 test('render: by-skill rows + placeholder when absent', () => {
   const html = render(detail, TEMPLATE);
   assert.match(html, /writing-phpunit-tests/);
@@ -259,41 +280,74 @@ test('render: payload without assistantOutput → placeholder, no crash', () => 
   assert.ok(!/\{\{[A-Z_]+\}\}/.test(html));
 });
 
-test('render: savings tips are session-specific, quantified, and ranked by $ impact', () => {
+// Everything between the assessment grid and the footer (the .acard panels live here).
+const assessOf = (html) => (html.split('class="assess"')[1] || '').split('<footer')[0];
+
+test('render: deterministic assessment grades the session and quantifies each lever', () => {
   const html = render(detail, TEMPLATE);
-  const tips = (html.match(/<ol class="tips">([\s\S]*?)<\/ol>/) || [])[1] || '';
+  // grade badge at the top: this hot fixture is mostly avoidable → rating 1 / Very poor
+  assert.match(html, /class="grade grade-1"/);
+  assert.match(html, /<span class="grade-num">1<\/span>/);
+  assert.match(html, /Very poor/);
+  const tips = assessOf(html);
   // all three levers fire on this fixture
   assert.match(tips, /Keep the main conversation short/);
   assert.match(tips, /Group independent commands into one step/);
   assert.match(tips, /Hand heavy exploring to a helper/);
-  // quantified from THIS session's numbers
+  // quantified from THIS session's numbers (now in WHAT / HOW blocks)
   assert.match(tips, /\$0\.88 \(19% of the bill\) went to 4 calls running above 200k context/);
   assert.match(tips, /you cleared context 2× here already/);
   assert.match(tips, /Reasoning cost \$3\.43 \(76%\) and ran on 148\/155 steps/);
   assert.match(tips, /carried about \$1\.40 of re-read cost/);
   assert.match(tips, /Read led/); // heaviest real-tool consumer (1.1 > Bash 0.3)
+  // WHAT/WHY/HOW block labels are present
+  assert.match(tips, /class="alabel">What</);
+  assert.match(tips, /class="alabel">How to fix</);
   // ranked by impact: thinking 3.43 > offload 1.40 > compact 0.88
   assert.ok(tips.indexOf('Group independent') < tips.indexOf('Hand heavy exploring'));
   assert.ok(tips.indexOf('Hand heavy exploring') < tips.indexOf('Keep the main conversation'));
 });
 
-test('render: AI assessment (summary.aiTips) is preferred over the deterministic levers', () => {
+test('render: markup in lever values is escaped at the sink', () => {
+  const evil = {
+    ...detail,
+    summary: {
+      ...detail.summary,
+      contextConsumers: {
+        ...detail.summary.contextConsumers,
+        top: [{ tool: 'mcp__evil__<img src=x>', target: 'x', count: 1, estTokens: 38000, carriedCost: 1.1 }],
+      },
+    },
+  };
+  const tips = assessOf(render(evil, TEMPLATE));
+  assert.match(tips, /evil &lt;img src=x&gt; led/); // lead tool name escaped, not live HTML
+  assert.ok(!tips.includes('<img'));
+});
+
+test('render: AI assessment (summary.aiAssessment) is preferred over deterministic levers', () => {
   const withAi = {
     ...detail,
     summary: {
       ...detail.summary,
-      aiTips: [
-        { head: 'Session grade: C', body: 'Strong work but the context ran hot for most of it.' },
-        { head: 'Costliest skill', body: 'writing-phpunit-tests drove $0.84 over a long retry loop.' },
-        'A bare-string tip is rendered as a body-only card.',
-      ],
+      aiAssessment: {
+        rating: 3,
+        headline: 'Strong work but the context ran hot for most of it.',
+        cards: [
+          { verdict: 'good', title: 'Offloaded heavy reads', what: 'Subagents did the digging.',
+            why: 'Bulk never piled up in the main window.', how: 'Keep delegating exploration.' },
+          { verdict: 'bad', title: 'Costliest skill', what: 'writing-phpunit-tests drove $0.84 over a long retry loop.' },
+        ],
+      },
     },
   };
   const html = render(withAi, TEMPLATE);
-  const tips = (html.match(/<ol class="tips">([\s\S]*?)<\/ol>/) || [])[1] || '';
-  assert.match(tips, /<strong>Session grade: C\.<\/strong> Strong work but the context ran hot/);
+  assert.match(html, /class="grade grade-3"/);   // model rating drives the badge
+  assert.match(html, /Strong work but the context ran hot/);
+  const tips = assessOf(html);
+  assert.match(tips, /class="acard acard-good"/);
+  assert.match(tips, /class="acard acard-bad"/);
   assert.match(tips, /writing-phpunit-tests drove \$0\.84/);
-  assert.match(tips, /<li>A bare-string tip is rendered as a body-only card\.<\/li>/);
+  assert.match(tips, /class="alabel">Keep it up</);   // HOW relabelled on the good card
   // deterministic levers are suppressed when the model assessment is present
   assert.ok(!/Keep the main conversation short/.test(tips));
 });
@@ -324,6 +378,22 @@ test('render: context timeline draws one bar per MAIN step, threshold tiers, esc
   assert.match(html, /class="ctx-turn /);       // turn-start tick
   assert.ok(!html.includes('<img src=x'), 'raw prompt leaked into svg');
   assert.match(html, /evil &lt;img src=x onerror=alert\(1\)&gt; prompt/);
+});
+
+test('render: chart thresholds come from the payload, not hardcoded constants', () => {
+  const moved = {
+    ...detail,
+    summary: {
+      ...detail.summary,
+      highContextCost: { ...detail.summary.highContextCost, thresholdTokens: 150000 },
+      contextResetDropTokens: 50000,
+    },
+  };
+  const html = render(moved, TEMPLATE);
+  assert.match(html, />150k<\/text>/);            // gridline follows payload threshold
+  assert.match(html, />50k<\/text>/);             // reset-drop gridline follows payload
+  assert.ok(!/>200k<\/text>/.test(html));         // default gridline gone
+  assert.match(html, /class="ctx-bar c-high"/);   // 210k bar still red above 150k
 });
 
 test('render: growth bar groups steps by turn, leads with session overhead', () => {

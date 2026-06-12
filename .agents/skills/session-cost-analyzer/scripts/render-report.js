@@ -7,9 +7,12 @@
 //
 //   node scripts/analyze.js <prefix> | node scripts/render-report.js [--out <path>]
 //
-// Without --out the file is written to ./session-cost-<first8-of-session>.html in the
-// cwd; the final path is printed to stdout. Self-contained — no deps outside this folder.
+// Without --out the file is written into a fresh mktemp dir as
+// <tmp>/session-cost-<xxxxxx>/session-cost-<first8-of-session>.html, so report
+// generation never litters the user's working directory; the final path is printed to
+// stdout. Self-contained — no deps outside this folder.
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 const TEMPLATE = path.join(__dirname, '..', 'assets', 'report-template.html');
@@ -88,6 +91,12 @@ function tipCell(what, full, tipHead) {
     : `<td class="prompt">${esc(what)}</td>`;
 }
 
+// Cell text: a Haiku summary (set only when --summarize ran) wins with a generous
+// cap; else the truncated raw text.
+function whatText(summary, full) {
+  return summary && summary.trim() ? truncate(summary, 600) : truncate(full, 110);
+}
+
 // The WHAT column. A Haiku summary (turn.summary, set only when --summarize ran) wins —
 // now a descriptive sentence, so it gets a generous cap. Otherwise: skill rows go blank
 // (the skill name has its own column), subagent-return turns get a fixed label, and
@@ -109,7 +118,7 @@ function topTurnsRows(turns, limit) {
     // boilerplate: full='' → no tooltip, no giant native popup.
     const full = t.kind === 'user' ? truncate(t.prompt, 600) : '';
     return `<tr><td class="num">${money(t.cost)}</td><td>${esc(t.kind)}</td>` +
-      `<td>${esc(t.kind === 'skill' ? t.skill || '' : '')}</td><td class="num">${compactTokens(t.peakContext)}</td>` +
+      `<td>${esc(t.skill || '')}</td><td class="num">${compactTokens(t.peakContext)}</td>` +
       tipCell(what, full, `${t.kind} message`) + `</tr>`;
   }).join('\n');
 }
@@ -141,7 +150,7 @@ function consumerRows(cc, limit) {
     // The cell shows a Haiku summary (c.summary, set only when --summarize ran) or the
     // truncated raw target; the exact file/command/prompt stays one hover away.
     const full = c.target || '';
-    const what = c.summary && c.summary.trim() ? truncate(c.summary, 600) : truncate(full, 110);
+    const what = whatText(c.summary, full);
     return `<tr><td class="num">${compactTokens(c.estTokens)}</td>` +
       `<td><div class="bar" style="width:${pct}%"></div></td>` +
       `<td class="num">${money(c.carriedCost)}</td><td>${esc(tool)}</td>` +
@@ -175,9 +184,10 @@ function thinkingTurnRows(ao, limit, turns) {
   return rows.map((t) => {
     const pct = Math.round((Number(t.thinkingTokens) || 0) / total * 100);
     const match = byIndex.get(t.turnIndex) || {};
-    const full = match.prompt || t.prompt || '';
-    const what = match.summary && match.summary.trim()
-      ? truncate(match.summary, 600) : truncate(full, 110);
+    const fullText = match.prompt || t.prompt || '';
+    const what = whatText(match.summary, fullText);
+    // Tooltip only for real user turns — skill expansions etc. are boilerplate (same policy as topTurnsRows).
+    const full = t.kind === 'user' ? truncate(fullText, 600) : '';
     return `<tr><td class="num">${compactTokens(t.thinkingTokens)}</td>` +
       `<td><div class="bar" style="width:${pct}%"></div></td>` +
       `<td class="num">${esc(t.steps)}</td>` +
@@ -206,9 +216,9 @@ function skillRows(bySkill) {
     `<td class="num">${esc(s.steps)}</td><td class="num">${money(s.cost)}</td></tr>`).join('\n');
 }
 
-// Chart thresholds, mirroring the data layer (lib/session-detail.js): the
-// analyzer publishes them as summary.highContextCost.thresholdTokens and uses
-// RESET_DROP for summary.contextResets — keep these in lockstep.
+// Chart-threshold fallbacks, mirroring the data layer (lib/session-detail.js).
+// render() prefers the payload's own summary.highContextCost.thresholdTokens and
+// summary.contextResetDropTokens; these defaults only cover older payloads.
 const HIGH_CONTEXT = 200000;
 const RESET_DROP = 100000;
 // Context size at one step = the call's cacheRead (re-read accumulated context).
@@ -217,7 +227,7 @@ const RESET_DROP = 100000;
 const ctxOf = (c) => (c.tokens && c.tokens.cacheRead) || 0;
 // Chart colors are CSS classes defined once in the template's <style> (next to
 // the legend swatches, so chart and legend can't diverge).
-const tierClass = (v) => (v >= HIGH_CONTEXT ? 'c-high' : v >= RESET_DROP ? 'c-mid' : 'c-low');
+const tierClass = (v, highCtx, resetDrop) => (v >= highCtx ? 'c-high' : v >= resetDrop ? 'c-mid' : 'c-low');
 const KIND_CLASS = {
   user: 'c-user', skill: 'c-skill', 'subagent-orchestration': 'c-orch',
   'session-start': 'c-start', overhead: 'c-dim',
@@ -225,11 +235,11 @@ const KIND_CLASS = {
 
 // Context-window timeline: one SVG bar per main-session step (subagents run in
 // their own context and are excluded). Height = context size at that step,
-// colored by the HIGH_CONTEXT tier. Turn-start ticks under the axis, dashed
-// reset line on a context drop > RESET_DROP. Bars carry data-* attributes for
+// colored by the high-context tier. Turn-start ticks under the axis, dashed
+// reset line on a context drop > resetDrop. Bars carry data-* attributes for
 // the template's hover readout plus a native <title> tooltip; everything
 // user-derived is escaped.
-function contextTimeline(calls, turns) {
+function contextTimeline(calls, turns, highCtx = HIGH_CONTEXT, resetDrop = RESET_DROP) {
   const main = (calls || []).filter((c) => c.isMain);
   if (!main.length) return '<p class="prompt">no per-call data in this payload — re-run analyze.js to regenerate</p>';
   const W = 860, H = 210, padL = 44, padR = 6, padT = 10, padB = 22;
@@ -238,7 +248,7 @@ function contextTimeline(calls, turns) {
   // Keep a fixed minimum ceiling above 200k so the red danger zone is always a
   // real visible band (not a sliver) even when a session never gets there; tall
   // sessions still scale to their own peak.
-  const yMax = Math.max(peak * 1.05, HIGH_CONTEXT * 1.3);
+  const yMax = Math.max(peak * 1.05, highCtx * 1.3);
   const xAt = (i) => padL + (i + 0.1) * (chartW / main.length);
   const yAt = (v) => padT + chartH * (1 - v / yMax);
   const barW = Math.max((chartW / main.length) * 0.8, 0.8);
@@ -249,17 +259,16 @@ function contextTimeline(calls, turns) {
   // Faint severity zones painted behind everything: green 0–100k, amber 100–200k,
   // red above 200k. They make all three tier colors legible even on a low session,
   // so the bar colors always read against a constant backdrop.
-  const zoneX = padL, zoneW = (W - padR - padL).toFixed(1);
   const band = (cls, topV, botV) => {
-    const y0 = yAt(topV), y1 = botV == null ? baseY : yAt(botV);
-    parts.push(`<rect class="ctx-zone ${cls}" x="${zoneX}" y="${y0.toFixed(1)}" width="${zoneW}" height="${(y1 - y0).toFixed(1)}"/>`);
+    const y0 = yAt(topV), y1 = yAt(botV);
+    parts.push(`<rect class="ctx-zone ${cls}" x="${padL}" y="${y0.toFixed(1)}" width="${chartW.toFixed(1)}" height="${(y1 - y0).toFixed(1)}"/>`);
   };
-  band('zone-high', yMax, HIGH_CONTEXT);
-  band('zone-mid', HIGH_CONTEXT, RESET_DROP);
-  band('zone-low', RESET_DROP, 0);
-  for (const g of [RESET_DROP, HIGH_CONTEXT]) {
+  band('zone-high', yMax, highCtx);
+  band('zone-mid', highCtx, resetDrop);
+  band('zone-low', resetDrop, 0);
+  for (const g of [resetDrop, highCtx]) {
     const gy = yAt(g).toFixed(1);
-    const warn = g === HIGH_CONTEXT;
+    const warn = g === highCtx;
     parts.push(`<line x1="${padL}" y1="${gy}" x2="${W - padR}" y2="${gy}" class="${warn ? 'grid-warn' : 'grid'}" stroke-dasharray="4 4"/>`);
     parts.push(`<text x="2" y="${(Number(gy) + 3).toFixed(1)}" class="ctx-axis">${g / 1000}k</text>`);
   }
@@ -268,7 +277,7 @@ function contextTimeline(calls, turns) {
     const v = ctxOf(c);
     const xv = xAt(i).toFixed(1);
     const step = i + 1; // main-session step ordinal (matches summary.mainSteps / thinking seq)
-    if (i > 0 && prevCtx - v > RESET_DROP) {
+    if (i > 0 && prevCtx - v > resetDrop) {
       parts.push(`<line x1="${xv}" y1="${padT}" x2="${xv}" y2="${baseY}" class="reset-line" stroke-dasharray="2 3"><title>context dropped ${esc(compactTokens(prevCtx))} → ${esc(compactTokens(v))} — /compact, context clear, or a cache rebuild</title></line>`);
     }
     if (c.prompt && c.turnIndex !== prevTurn) {
@@ -277,7 +286,7 @@ function contextTimeline(calls, turns) {
       prevTurn = c.turnIndex;
     }
     const h = Math.max(baseY - yAt(v), 0.5);
-    parts.push(`<rect class="ctx-bar ${tierClass(v)}" x="${xv}" y="${yAt(v).toFixed(1)}" width="${barW.toFixed(2)}" height="${h.toFixed(1)}"` +
+    parts.push(`<rect class="ctx-bar ${tierClass(v, highCtx, resetDrop)}" x="${xv}" y="${yAt(v).toFixed(1)}" width="${barW.toFixed(2)}" height="${h.toFixed(1)}"` +
       ` data-step="${esc(step)}" data-ctx="${esc(compactTokens(v))}" data-cost="${esc(money(c.cost))}" data-prompt="${esc(truncate(c.prompt || '', 110))}">` +
       `<title>step ${esc(step)} · ${esc(compactTokens(v))} context · ${esc(money(c.cost))}</title></rect>`);
     prevCtx = v;
@@ -290,8 +299,8 @@ function contextTimeline(calls, turns) {
 // prompt collapse into ONE segment, whose width is how much the context grew while
 // that turn ran (next turn's starting context − this turn's). A dim leading segment
 // is the session's fixed overhead (everything in context before the first reply).
-// Zero-growth turns are skipped; a drop > RESET_DROP renders as a dashed reset divider.
-function contextGrowthBar(calls, turns) {
+// Zero-growth turns are skipped; a drop > resetDrop renders as a dashed reset divider.
+function contextGrowthBar(calls, turns, resetDrop = RESET_DROP, baselineTokens = null) {
   const main = (calls || []).filter((c) => c.isMain);
   if (!main.length) return '<p class="prompt">no per-call data in this payload — re-run analyze.js to regenerate</p>';
   const groups = [];
@@ -305,11 +314,13 @@ function contextGrowthBar(calls, turns) {
   }
   const kindOf = new Map((turns || []).map((t) => [t.turnIndex, t.kind]));
   // Leading segment = the session baseline (system prompt + tool defs + project
-  // context), sized as the first call's cacheRead + cacheWrite + fresh input — the
-  // SAME baseline the session-overhead consumer row reports, so a cold-cache first
-  // call (cacheRead 0, big cacheWrite) doesn't dump the baseline onto turn 1.
+  // context) — summary.sessionBaselineTokens, published by the data layer with the
+  // SAME formula as the session-overhead consumer row. Local derivation only covers
+  // payloads predating the field.
   const f = main[0].tokens || {};
-  const baseline = (f.cacheRead || 0) + (f.cacheWrite || 0) + (f.input || 0);
+  const baseline = baselineTokens != null
+    ? baselineTokens
+    : (f.cacheRead || 0) + (f.cacheWrite || 0) + (f.input || 0);
   // Growth attributed to a turn = the next turn's starting context − its own
   // (everything the turn read + wrote that later steps re-read). Negative = a reset.
   const items = [{ seg: { label: 'session start — system prompt, tool definitions, project context', from: 0, to: baseline, grow: baseline, steps: 0, cost: 0, kind: 'overhead' } }];
@@ -317,7 +328,7 @@ function contextGrowthBar(calls, turns) {
     const g = groups[i];
     const nextStart = i + 1 < groups.length ? groups[i + 1].start : g.end;
     const grow = nextStart - g.start;
-    if (grow < -RESET_DROP) { items.push({ reset: -grow }); continue; }
+    if (grow < -resetDrop) { items.push({ reset: -grow }); continue; }
     if (grow <= 0) continue;
     items.push({ seg: { label: g.prompt, from: g.start, to: g.start + grow, grow, steps: g.steps, cost: g.cost, kind: kindOf.get(g.turnIndex) || 'user' } });
   }
@@ -365,38 +376,54 @@ function subagentRows(byAgent) {
     `<td class="num">${money(a.cost)}</td></tr>`).join('\n');
 }
 
-// "Spending less next time" cards. When the --summarize flow ran, the model's session
-// assessment (summary.aiTips: rating, biggest cost drivers, user gaps, problematic skills)
-// is preferred — it reasons over the whole report. Otherwise we fall back to deterministic
-// levers quantified from THIS session's numbers, ranked by dollar impact and kept only when
-// they actually moved the bill (≥ a floor). Pure transform either way — no LLM in here.
-const READ_TOOL = /^(Read|Bash|Grep|Glob|WebFetch|WebSearch|ToolSearch|NotebookRead|mcp__)/;
-function tipsRows(detail) {
+// "Spending less next time" — a 1–5 session grade plus verdict-tagged cards, each split into
+// WHAT happened / WHY it cost / HOW to act. When the --summarize flow ran, the model's
+// assessment (summary.aiAssessment) is preferred — it reasons over the whole report and grades
+// the driving habits. Otherwise we synthesize a deterministic assessment: a heuristic grade
+// from how much of THIS bill was avoidable, and one card per dollar-lever that actually moved
+// the bill (≥ a floor), or a single "already lean" good card. Pure transform — no LLM in here.
+
+const GRADE = {
+  1: { word: 'Very poor' }, 2: { word: 'Poor' }, 3: { word: 'Fair' },
+  4: { word: 'Good' }, 5: { word: 'Excellent' },
+};
+const normVerdict = (v) => (v === 'good' || v === 'bad' ? v : 'warn');
+const clampRating = (v) => {
+  const n = Math.round(Number(v));
+  return Number.isFinite(n) && n >= 1 && n <= 5 ? n : null;
+};
+
+// → { rating: 1–5|null, headline, cards:[{verdict,title,what,why,how}] }.
+function buildAssessment(detail) {
   const s = detail.summary || {};
-  // AI assessment wins when present (applied upstream by apply-summaries.js). Entries are
-  // normally { head, body } objects; tolerate a bare string (→ body-only card) defensively.
-  const ai = (Array.isArray(s.aiTips) ? s.aiTips : [])
-    .map((t) => (typeof t === 'string' ? { head: '', body: t } : t))
-    .filter((t) => t && (t.head || t.body));
-  if (ai.length) {
-    return ai.map((t) => {
-      const head = String(t.head || '').replace(/[.\s]+$/, '');
-      return `<li>${head ? `<strong>${esc(head)}.</strong> ` : ''}${esc(t.body || '')}</li>`;
-    }).join('\n');
+  const ai = s.aiAssessment;
+  if (ai && typeof ai === 'object' && (Array.isArray(ai.cards) && ai.cards.length || ai.rating != null)) {
+    const cards = (Array.isArray(ai.cards) ? ai.cards : []).map((c) => ({
+      verdict: normVerdict(c.verdict), title: String(c.title || ''),
+      what: String(c.what || ''), why: String(c.why || ''), how: String(c.how || ''),
+    }));
+    return { rating: clampRating(ai.rating), headline: String(ai.headline || ''), cards };
   }
+  return deterministicAssessment(detail);
+}
+
+// Heuristic grade + lever cards from the session's own numbers (the no-`--summarize` path).
+function deterministicAssessment(detail) {
+  const s = detail.summary || {};
   const total = Number(detail.totalCost) || 0;
   const pct = (c) => (total > 0 ? Math.round((c / total) * 100) : 0);
   const floor = Math.max(0.25, total * 0.02);
-  const tips = [];
+  const cards = [];
 
   // Lever 1 — context backlog re-read above the panic threshold (the /compact lever).
   const hc = s.highContextCost || {};
   if ((hc.cost || 0) > 0 && (hc.calls || 0) > 0) {
     const resets = s.contextResets || 0;
-    tips.push({ impact: hc.cost, head: 'Keep the main conversation short',
-      body: `${money(hc.cost)} (${pct(hc.cost)}% of the bill) went to ${hc.calls} calls running above ` +
-        `${compactTokens(hc.thresholdTokens || 200000)} context, where every step re-reads the whole backlog. ` +
-        `Run /compact or start a fresh session when you switch tasks` +
+    cards.push({ impact: hc.cost, verdict: 'bad', title: 'Keep the main conversation short',
+      what: `${money(hc.cost)} (${pct(hc.cost)}% of the bill) went to ${hc.calls} calls running above ` +
+        `${compactTokens(hc.thresholdTokens || 200000)} context.`,
+      why: 'Past that point every step re-reads the whole backlog, so each turn pays again for all the text still in the window.',
+      how: `Run /compact or start a fresh session when you switch tasks` +
         (resets ? ` (you cleared context ${resets}× here already, just later than ideal).` : '.') });
   }
 
@@ -405,34 +432,79 @@ function tipsRows(detail) {
   const th = ao && ao.thinking;
   const thCost = ao && ao.byKind && ao.byKind.thinking ? ao.byKind.thinking.cost : 0;
   if (th && (thCost || 0) > 0 && (th.mainSteps || 0) >= 30) {
-    tips.push({ impact: thCost, head: 'Group independent commands into one step',
-      body: `Reasoning cost ${money(thCost)} (${pct(thCost)}%) and ran on ${th.stepsWithThinking}/${th.mainSteps} ` +
-        `steps — each extra step sets off another paid round of thinking. Batch commands that don't depend on ` +
-        `each other so the model reasons once instead of once per command.` });
+    cards.push({ impact: thCost, verdict: 'warn', title: 'Group independent commands into one step',
+      what: `Reasoning cost ${money(thCost)} (${pct(thCost)}%) and ran on ${th.stepsWithThinking}/${th.mainSteps} steps.`,
+      why: 'Each extra step sets off another paid round of thinking, billed as output (~5× input) before the model acts.',
+      how: "Batch commands that don't depend on each other so the model reasons once instead of once per command." });
   }
 
   // Lever 3 — bulky tool results (logs/files/searches) carried in the main context.
+  // Tool results = everything that isn't a synthetic rollup or a user prompt.
   const carried = ((s.contextConsumers && s.contextConsumers.top) || [])
-    .filter((c) => !c.synthetic && READ_TOOL.test(c.tool));
+    .filter((c) => !c.synthetic && c.tool !== 'user-prompt');
   const carriedCost = carried.reduce((a, c) => a + (Number(c.carriedCost) || 0), 0);
   if (carriedCost > 0) {
     const lead = carried.reduce((a, c) => ((c.carriedCost || 0) > (a.carriedCost || 0) ? c : a));
     // humanize long MCP tool ids (mcp__datadog__search_logs → "datadog search_logs") so the
-    // label reads cleanly and can wrap at the space instead of overflowing the tip card.
+    // label reads cleanly and can wrap at the space instead of overflowing the card.
     const leadName = lead ? lead.tool.replace(/^mcp__/, '').replace(/__/g, ' ') : '';
-    tips.push({ impact: carriedCost, head: 'Hand heavy exploring to a helper',
-      body: `Tool results (logs, files, searches${lead ? ` — ${esc(leadName)} led` : ''}) carried about ` +
-        `${money(carriedCost)} of re-read cost as they sat in the main context. A subagent reads them in its ` +
-        `own conversation and returns just the summary, so the bulk never piles up in your chat.` });
+    cards.push({ impact: carriedCost, verdict: 'warn', title: 'Hand heavy exploring to a helper',
+      what: `Tool results (logs, files, searches${lead ? ` — ${leadName} led` : ''}) carried about ` +
+        `${money(carriedCost)} of re-read cost sitting in the main context.`,
+      why: 'Anything left in the conversation is re-read on every later step, so a big result keeps charging long after you used it.',
+      how: 'A subagent reads them in its own conversation and returns just the summary, so the bulk never piles up in your chat.' });
   }
 
-  const ranked = tips.filter((t) => t.impact >= floor).sort((a, b) => b.impact - a.impact).slice(0, 3);
+  const ranked = cards.filter((c) => c.impact >= floor).sort((a, b) => b.impact - a.impact).slice(0, 3);
+  // Avoidable share of the bill drives the grade (clamped — the levers can overlap and sum >total).
+  const avoidable = ranked.reduce((a, c) => a + c.impact, 0);
+  const waste = total > 0 ? Math.min(1, avoidable / total) : 0;
+  const rating = waste < 0.05 ? 5 : waste < 0.15 ? 4 : waste < 0.30 ? 3 : waste < 0.50 ? 2 : 1;
+
   if (!ranked.length) {
-    return '<li><strong>This session was already lean.</strong> No single area dominated the cost. ' +
-      'The usual levers still apply: keep the main conversation short, batch independent commands, and ' +
-      'offload heavy exploring to subagents.</li>';
+    return { rating: 5, headline: 'Lean session — almost nothing was spent on avoidable overhead.',
+      cards: [{ verdict: 'good', title: 'This session was already lean',
+        what: 'No single area dominated the cost; context stayed small relative to the work done.',
+        why: 'Little was spent re-reading idle backlog, which is what usually drives the bill up.',
+        how: 'Keep doing it: short conversations, batched commands, and heavy exploring offloaded to subagents.' }] };
   }
-  return ranked.map((t) => `<li><strong>${esc(t.head)}.</strong> ${t.body}</li>`).join('\n');
+  const headline = rating >= 4 ? `Mostly efficient — about ${pct(avoidable)}% of the bill was avoidable.`
+    : rating === 3 ? `Fair — about ${pct(avoidable)}% of the bill went to avoidable re-reading and reasoning.`
+    : `Costly — about ${pct(avoidable)}% of the bill was avoidable re-reading and reasoning.`;
+  return { rating, headline, cards: ranked };
+}
+
+// The 1–5 grade badge that sits at the very top of the report. Empty when unrated.
+function ratingBadge(a) {
+  const r = clampRating(a.rating);
+  if (r == null) return '';
+  const word = (GRADE[r] || GRADE[3]).word;
+  const pips = Array.from({ length: 5 }, (_, i) =>
+    `<span class="pip${i < r ? ' on' : ''}"></span>`).join('');
+  return `<div class="grade grade-${r}">
+    <div class="grade-score"><span class="grade-num">${r}</span><span class="grade-max">/5</span></div>
+    <div class="grade-meta"><div class="grade-word">${esc(word)}</div>
+      <div class="grade-pips">${pips}</div>` +
+    (a.headline ? `<div class="grade-line">${esc(a.headline)}</div>` : '') +
+    `</div></div>`;
+}
+
+// The assessment cards: each a colored panel with WHAT / WHY / HOW blocks. The HOW block is
+// "Keep it up" on a good card (reinforce) and "How to fix" on a bad/warn card; omitted if empty.
+function assessmentCards(a) {
+  if (!a.cards.length) {
+    return '<div class="acard acard-good"><div class="ablk"><span class="atext">No assessment ' +
+      'available for this session.</span></div></div>';
+  }
+  const blk = (label, text) => text
+    ? `<div class="ablk"><span class="alabel">${label}</span><span class="atext">${esc(text)}</span></div>` : '';
+  return a.cards.map((c) => {
+    const howLabel = c.verdict === 'good' ? 'Keep it up' : 'How to fix';
+    const body = blk('What', c.what) + blk('Why', c.why) + blk(howLabel, c.how);
+    return `<div class="acard acard-${normVerdict(c.verdict)}">` +
+      (c.title ? `<div class="acard-title">${esc(c.title)}</div>` : '') +
+      (body || '<div class="ablk"><span class="atext"></span></div>') + `</div>`;
+  }).join('\n');
 }
 
 // ---- fill ---------------------------------------------------------------------
@@ -449,6 +521,11 @@ function render(detail, template) {
   const s = detail.summary || {};
   const hc = s.highContextCost || {};
   const cg = s.contextGrowth || {};
+  // Thresholds come from the payload so chart and cards can't disagree;
+  // module constants only cover payloads predating the fields.
+  const highCtx = hc.thresholdTokens || HIGH_CONTEXT;
+  const resetDrop = s.contextResetDropTokens || RESET_DROP;
+  const assess = buildAssessment(detail);
   return fillSlots(template, {
     SESSION_ID: esc(detail.session),
     TITLE: esc(detail.title || '—'),
@@ -462,8 +539,8 @@ function render(detail, template) {
     HIGH_CTX_CALLS: esc(hc.calls || 0),
     CONTEXT_RESETS: esc(s.contextResets || 0),
     PEAK_CONTEXT: compactTokens(cg.peakContext),
-    CONTEXT_TIMELINE: contextTimeline(detail.calls, detail.turns),
-    CONTEXT_GROWTH_BAR: contextGrowthBar(detail.calls, detail.turns),
+    CONTEXT_TIMELINE: contextTimeline(detail.calls, detail.turns, highCtx, resetDrop),
+    CONTEXT_GROWTH_BAR: contextGrowthBar(detail.calls, detail.turns, resetDrop, s.sessionBaselineTokens),
     WHERE_IT_WENT_ROWS: whereItWentRows(detail.components || {}, detail.totalCost),
     CONSUMER_TOOL_ROWS: consumerToolRows(s.contextConsumers),
     CONSUMER_ROWS: consumerRows(s.contextConsumers, 20),
@@ -475,7 +552,8 @@ function render(detail, template) {
     BY_MODEL_ROWS: byModelRows(detail.byModel),
     TOP_TURNS_ROWS: topTurnsRows(detail.turns, 10),
     SUBAGENT_ROWS: subagentRows(detail.byAgent),
-    TIPS_ROWS: tipsRows(detail),
+    RATING_BADGE: ratingBadge(assess),
+    ASSESS_CARDS: assessmentCards(assess),
   });
 }
 
@@ -516,7 +594,10 @@ async function main() {
   }
   const template = fs.readFileSync(TEMPLATE, 'utf8');
   const html = render(detail, template);
-  const out = opts.out || `./session-cost-${String(detail.session).slice(0, 8)}.html`;
+  const id = String(detail.session).slice(0, 8);
+  // Default: a unique mktemp dir, so re-runs never clobber and the report stays out of
+  // the user's repo. An explicit --out still writes exactly where asked.
+  const out = opts.out || path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'session-cost-')), `session-cost-${id}.html`);
   fs.writeFileSync(out, html);
   process.stdout.write(out + '\n');
 }

@@ -8,10 +8,10 @@
 // testable. Three report sections take model output:
 //   • TOP TURNS               → keyed by each turn's `turnIndex` (stable, unlike prompt text)
 //   • Top context consumers   → keyed by 0-based index into summary.contextConsumers.top
-//   • Spending less next time  → an AI assessment of the whole session (a list of tips:
-//                               rating, biggest cost drivers, user gaps, problematic skills),
-//                               stored at summary.aiTips for the renderer to prefer over its
-//                               deterministic fallback.
+//   • Spending less next time  → an AI assessment of the whole session: a 1–5 `rating`, a
+//                               `headline`, and `cards` ({verdict good/bad/warn, title, what,
+//                               why, how}), stored at summary.aiAssessment for the renderer to
+//                               prefer over its deterministic fallback.
 //
 // Pipeline:
 //   node scripts/analyze.js <prefix> > detail.json
@@ -19,15 +19,21 @@
 //   node scripts/apply-summaries.js --summaries summaries.json < detail.json \
 //     | node scripts/render-report.js --out ./session-cost-<id>.html
 //
-// summaries.json shapes (turn/consumer keys are integers, values short phrases; tips is a list):
+// summaries.json shapes (turn/consumer keys are integers, values short phrases):
 //   namespaced : { "turns": { "<turnIndex>": "…" }, "consumers": { "<index>": "…" },
-//                  "tips": [ { "head": "…", "body": "…" }, … ]  (plain strings also accepted) }
+//                  "tips": { "rating": 3, "headline": "…",
+//                            "cards": [ { "verdict": "bad", "title": "…", "what": "…",
+//                                        "why": "…", "how": "…" }, … ] } }
 //   flat        : { "<turnIndex>": "…" }  (or [{turnIndex,summary}])  → applied to turns only
+//   (A legacy `tips` LIST of { head, body } / strings is still accepted → what-only cards.)
 //
 // Unknown keys are ignored; un-summarized rows keep their deterministic label, and an absent
-// `tips` list leaves the renderer's deterministic tips in place. A bad/absent map → the
+// `tips` leaves the renderer's deterministic assessment in place. A bad/absent map → the
 // payload passes through unchanged, so the report always renders.
 const fs = require('fs');
+
+// Whitespace-collapsed trimmed string; non-string → ''.
+const clean = (v) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : '');
 
 function parseArgs(argv) {
   const opts = { summaries: undefined };
@@ -56,7 +62,7 @@ function toMap(parsed) {
   const m = new Map();
   const put = (k, v) => {
     const idx = Number(k);
-    const s = typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : '';
+    const s = clean(v);
     if (Number.isFinite(idx) && s) m.set(idx, s);
   };
   if (Array.isArray(parsed)) for (const r of parsed) { if (r) put(r.turnIndex, r.summary); }
@@ -64,24 +70,50 @@ function toMap(parsed) {
   return m;
 }
 
-// Normalize the AI session assessment into a list of { head, body } cards. Accepts either
-// objects ({head|title, body|text|detail}) or plain strings (→ body only). Trims, drops
-// empties, caps length/count so a runaway model response can't blow up the report.
-function toTips(parsed) {
-  if (!Array.isArray(parsed)) return [];
-  const clean = (v) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : '');
-  const out = [];
-  for (const t of parsed) {
-    if (typeof t === 'string') {
-      const body = clean(t).slice(0, 600);
-      if (body) out.push({ head: '', body });
-    } else if (t && typeof t === 'object') {
-      const head = clean(t.head || t.title || '').replace(/[.\s]+$/, '').slice(0, 80);
-      const body = clean(t.body || t.text || t.detail || '').slice(0, 600);
-      if (head || body) out.push({ head, body });
+// One of good/bad/warn (default warn); maps common synonyms a model might emit.
+function normVerdict(v) {
+  const s = clean(v).toLowerCase();
+  if (s === 'good' || s === 'positive' || s === 'win' || s === 'strength') return 'good';
+  if (s === 'bad' || s === 'negative' || s === 'problem' || s === 'issue') return 'bad';
+  return 'warn';
+}
+
+// Integer 1–5, else null.
+function toRating(v) {
+  const n = Math.round(Number(v));
+  return Number.isFinite(n) && n >= 1 && n <= 5 ? n : null;
+}
+
+// Normalize the AI session assessment into { rating, headline, cards:[{verdict,title,what,why,how}] }.
+// Accepts the rich object { rating, headline, cards:[…] } or a legacy list of { head, body }
+// cards / bare strings (→ verdict-less what-only cards). Trims, drops empties, caps length/count
+// so a runaway model response can't blow up the report. Returns null when nothing usable.
+function toAssessment(parsed) {
+  let rating = null, headline = '', rawCards = [];
+  if (Array.isArray(parsed)) {
+    rawCards = parsed;
+  } else if (parsed && typeof parsed === 'object') {
+    rating = toRating(parsed.rating);
+    headline = clean(parsed.headline || parsed.summary || '').slice(0, 160);
+    rawCards = Array.isArray(parsed.cards) ? parsed.cards : [];
+  } else {
+    return null;
+  }
+  const cards = [];
+  for (const c of rawCards) {
+    if (typeof c === 'string') {
+      const what = clean(c).slice(0, 600);
+      if (what) cards.push({ verdict: 'warn', title: '', what, why: '', how: '' });
+    } else if (c && typeof c === 'object') {
+      const verdict = normVerdict(c.verdict);
+      const title = clean(c.title || c.head || '').replace(/[.\s]+$/, '').slice(0, 80);
+      const what = clean(c.what || c.body || c.text || c.detail || '').slice(0, 600);
+      const why = clean(c.why).slice(0, 600);
+      const how = clean(c.how).slice(0, 600);
+      if (title || what || why || how) cards.push({ verdict, title, what, why, how });
     }
   }
-  return out.slice(0, 6);
+  return cards.length || rating != null ? { rating, headline, cards: cards.slice(0, 8) } : null;
 }
 
 // Split the file into per-section maps. Namespaced shape ({turns,consumers,tips}) routes each
@@ -89,8 +121,8 @@ function toTips(parsed) {
 function extractMaps(parsed) {
   const ns = parsed && !Array.isArray(parsed) && typeof parsed === 'object'
     && (parsed.turns !== undefined || parsed.consumers !== undefined || parsed.tips !== undefined);
-  if (ns) return { turns: toMap(parsed.turns), consumers: toMap(parsed.consumers), tips: toTips(parsed.tips) };
-  return { turns: toMap(parsed), consumers: new Map(), tips: [] };
+  if (ns) return { turns: toMap(parsed.turns), consumers: toMap(parsed.consumers), assessment: toAssessment(parsed.tips) };
+  return { turns: toMap(parsed), consumers: new Map(), assessment: null };
 }
 
 async function main() {
@@ -99,10 +131,17 @@ async function main() {
   let payload;
   try { payload = JSON.parse(raw); } catch { process.stdout.write(raw); return; } // passthrough non-JSON
 
-  let maps = { turns: new Map(), consumers: new Map(), tips: [] };
+  let maps = { turns: new Map(), consumers: new Map(), assessment: null };
   if (opts.summaries !== undefined) {
     try { maps = extractMaps(JSON.parse(fs.readFileSync(opts.summaries, 'utf8'))); }
     catch (e) { process.stderr.write(`apply-summaries.js: could not read summaries (${e.message}) — passing through\n`); }
+  }
+
+  // Nothing to apply → byte-true passthrough, skip restringifying a multi-MB payload.
+  if (maps.turns.size + maps.consumers.size + (maps.assessment ? 1 : 0) === 0) {
+    process.stderr.write('apply-summaries: applied 0 turn + 0 consumer summaries + 0 assessment\n');
+    process.stdout.write(raw);
+    return;
   }
 
   let applied = 0;
@@ -118,13 +157,13 @@ async function main() {
       if (c && maps.consumers.has(i)) { c.summary = maps.consumers.get(i); appliedCc++; }
     });
   }
-  let appliedTips = 0;
-  if (maps.tips && maps.tips.length) {
+  let appliedCards = 0;
+  if (maps.assessment) {
     payload.summary = payload.summary || {};
-    payload.summary.aiTips = maps.tips;
-    appliedTips = maps.tips.length;
+    payload.summary.aiAssessment = maps.assessment;
+    appliedCards = maps.assessment.cards.length;
   }
-  process.stderr.write(`apply-summaries: applied ${applied} turn + ${appliedCc} consumer summaries + ${appliedTips} tips\n`);
+  process.stderr.write(`apply-summaries: applied ${applied} turn + ${appliedCc} consumer summaries + ${maps.assessment ? 1 : 0} assessment (${appliedCards} cards)\n`);
   process.stdout.write(JSON.stringify(payload, null, 2) + '\n');
 }
 

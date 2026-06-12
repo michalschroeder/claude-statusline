@@ -25,8 +25,9 @@ files). They do **NOT** live in the user's repo — do not look for them there, 
 Every command below references the scripts via **`${CLAUDE_SKILL_DIR}`** — the documented
 Claude Code substitution that expands to this skill's own directory (works from any working
 directory, for personal/project/plugin installs alike). It is already expanded to an absolute
-path in the text you are reading, so run the commands verbatim — no manual substitution. The
-report's `--out` still writes to the user's current directory by default.
+path in the text you are reading, so run the commands verbatim — no manual substitution.
+Without `--out` the report is written into a fresh mktemp dir (never the user's working
+directory); the renderer prints the absolute path it wrote — relay that to the user.
 
 (Fallback: if a command ever shows a literal, unexpanded `${CLAUDE_SKILL_DIR}` or resolves to
 an empty path, substitute the absolute path from the `Base directory for this skill: …` line
@@ -41,13 +42,14 @@ these tokens **before** running the workflow; they map deterministically to the 
 |---|---|
 | `<session-id-prefix>` | Analyze that session (detail report). Omit → ask which (step 1). |
 | `list` | List recent sessions by cost instead of a detail report. |
-| `--summarize` | Opt in to **model-written report copy** (the subagent flow in step 5): the TOP TURNS prompt cell, the TOP CONTEXT CONSUMERS target cell, and the **"Spending less next time" assessment** (a model rating the session and naming its real issues / costly skills). The THINKING "prompt that drove the reasoning" cell reuses the matching turn's summary automatically (no extra batch). Absent → deterministic relabel + tooltip and deterministic, dollar-ranked tips. Alias: `--haiku`. |
+| `--summarize` | Opt in to **model-written report copy** (the subagent flow in step 5): the TOP TURNS prompt cell, the TOP CONTEXT CONSUMERS target cell, and the **"Spending less next time" assessment** (a strong model grading the session 1–5 against `EVALUATION.md`, then an adversarial critic pass, returning verdict-tagged WHAT/WHY/HOW cards). The THINKING "prompt that drove the reasoning" cell reuses the matching turn's summary automatically (no extra batch). Absent → deterministic relabel + tooltip and deterministic, dollar-ranked tips. Alias: `--haiku`. |
 | `--config-dir <path>` | Non-default transcript root (e.g. `~/.claude-lendable`). Passed straight to `analyze.js`. |
-| `--out <path>` | Report output path. Default `./session-cost-<shortid>.html`. |
+| `--out <path>` | Report output path. Default: a fresh mktemp dir, `<tmp>/session-cost-<rand>/session-cost-<shortid>.html` (keeps it out of the user's repo). |
 | `--last N` / `--since YYYY-MM-DD` | `list`-mode filters. |
 
-The Haiku step is gated **only** by `--summarize` (or its aliases) — treat its
-presence/absence as the on/off switch, don't infer it from prose. Unknown flags: ignore.
+The summarize step (Haiku per-row labels + strong-model assessment) is gated **only** by
+`--summarize` (or its aliases) — treat its presence/absence as the on/off switch, don't infer
+it from prose. Unknown flags: ignore.
 
 ### Examples
 
@@ -78,8 +80,10 @@ Both print JSON to stdout. `--config-dir <path>` points at a non-default `~/.cla
    - Otherwise run `node ${CLAUDE_SKILL_DIR}/scripts/analyze.js list --last 10`, summarize the sessions
      inline (`title · $cost · age`), and ask which one to analyze.
 
-2. **Pull the detail.** Run `node ${CLAUDE_SKILL_DIR}/scripts/analyze.js <prefix>` and parse the JSON.
-   Read the `legend` field first — it states the cost model.
+2. **Pull the detail.** Run
+   `node ${CLAUDE_SKILL_DIR}/scripts/analyze.js <prefix> > /tmp/detail.json` once, then read
+   and parse that file. Step 5 reuses it — don't re-run `analyze.js` (each run re-parses the
+   whole transcript tree). Read the `legend` field first — it states the cost model.
 
 3. **Read the precomputed rollups, do NOT hand-aggregate `calls[]`.**
    Use `summary.contextGrowth`, `summary.byTurnKind`, `summary.toolTally`,
@@ -103,10 +107,11 @@ Both print JSON to stdout. `--config-dir <path>` points at a non-default `~/.cla
      proportion bars, ranks the top turns, and HTML-escapes every prompt/title/label):
 
      ```bash
-     node ${CLAUDE_SKILL_DIR}/scripts/analyze.js <prefix> | node ${CLAUDE_SKILL_DIR}/scripts/render-report.js --out ./session-cost-<shortid>.html
+     node ${CLAUDE_SKILL_DIR}/scripts/render-report.js < /tmp/detail.json
      ```
 
-     It prints the path it wrote. Pass a different `--out` if the user names one. Tell the
+     It prints the absolute path it wrote (a fresh mktemp dir). Pass `--out <path>` if the
+     user names one. Tell the
      user the file path. The report opens with an interactive context-window timeline (one
      SVG bar per step, colored by the 200k threshold, hover for per-step size/cost/prompt).
      (`assets/report-template.html` holds the styling if you need to tweak it.)
@@ -120,47 +125,69 @@ Both print JSON to stdout. `--config-dir <path>` points at a non-default `~/.cla
      alias) was passed; otherwise skip it. It fills three things from the model instead of
      deterministic defaults: the TOP TURNS prompt cell ("what this turn accomplished"), the
      TOP CONTEXT CONSUMERS target cell ("what this file/command/prompt was"), and the
-     **"Spending less next time" assessment** (a rating of the whole session plus its real
-     issues). The THINKING "prompt that drove the reasoning" cell picks up the same turn
+     **"Spending less next time" assessment** (a 1–5 grade of the whole session plus
+     verdict-tagged WHAT/WHY/HOW cards). The THINKING "prompt that drove the reasoning" cell picks up the same turn
      summary by turnIndex, so terse prompts like "do it"/"add it" become descriptive
      there too — no extra batch. Don't shell out to a model — dispatch **subagents** (the
-     Agent tool; `model: haiku` is fine for the per-row labels, use a stronger model for the
-     assessment if you want sharper findings), then merge their output with the pure helper:
+     Agent tool), then merge their output with the pure helper. Dispatch **four**: one each for
+     the turns and consumer batches (`model: haiku` is fine — the work is mechanical labelling),
+     and **two for the assessment**, a draft pass then an adversarial critic pass, both on a
+     **strong model** (Opus) — the grade is a holistic judgment and the critic is what makes it
+     defensible. Each subagent handles its whole batch in a single call (never one per row):
 
      ```bash
-     node ${CLAUDE_SKILL_DIR}/scripts/analyze.js <prefix> > /tmp/detail.json
-     # From /tmp/detail.json gather three batches:
-     #   • turns: sort `turns` by cost, take ~10 — give each subagent turnIndex + kind +
-     #     tool tally + prompt.
+     # From /tmp/detail.json (written in step 2) gather the batches:
+     #   • turns: sort `turns` by cost, take ~10 — hand ONE subagent ALL of them (each row's
+     #     turnIndex + kind + tool tally + prompt); it returns the whole
+     #     { "<turnIndex>": "<summary>", ... } map.
      #   • consumers: from `summary.contextConsumers.top` take the top ~10 NON-synthetic
      #     rows (skip rows with `synthetic: true` — those are already-labelled rollups)
-     #     — give each subagent its index in `top` + tool + target.
-     #     Ask for a descriptive 1-2 sentence phrase (~30-45 words) saying concretely WHAT
-     #     the item is/did — not a terse label.
-     #   • tips (the assessment): hand ONE subagent the whole detail JSON — especially
-     #     `summary` (totalCost, byTurnKind, bySkill, highContextCost, contextResets,
-     #     contextConsumers, assistantOutput.thinking) and the costliest `turns`/`topPrompts`.
-     #     Ask it to RATE the session and surface the real issues, each as a {head, body}
-     #     card (3-6 of them): an overall grade, the biggest cost drivers, gaps in how the
-     #     user drove it (context kept too long, repeated re-reads, no /compact, work that
-     #     should have gone to a subagent), and any skill that burned outsized cost/tokens
-     #     (name it + its $). Be specific and quantified, not generic advice.
-     # Merge into ONE /tmp/summaries.json, namespaced by section:
+     #     — hand ONE subagent ALL of them (each row's index in `top` + tool + target); it
+     #     returns the whole { "<index>": "<summary>", ... } map.
+     #     Ask for a descriptive 1-2 sentence phrase (~30-45 words) per row saying concretely
+     #     WHAT the item is/did — not a terse label.
+     #   • tips (the assessment) — TWO strong-model passes:
+     #     1. DRAFT. Hand the subagent the rubric EVALUATION.md
+     #        (${CLAUDE_SKILL_DIR}/EVALUATION.md — it defines what a 1-5 grade means and what to
+     #        reward/penalize) AND the whole detail JSON — especially `summary` (totalCost,
+     #        byTurnKind, bySkill, highContextCost, contextResets, contextConsumers,
+     #        assistantOutput.thinking) and the costliest `turns`/`topPrompts`. Ask it to GRADE
+     #        the session 1-5 per the rubric and return { rating, headline, cards }, 3-6 cards
+     #        each { verdict, title, what, why, how }:
+     #          - verdict: "good" (done well), "bad" (a real cost problem), or "warn" (watch it).
+     #            Include ≥1 "good" card when earned — it's a review, not just a scolding.
+     #          - what: what happened, quantified from the session's numbers.
+     #          - why:  why it cost (or saved) — tie to a rubric §1 mechanism (cache re-read,
+     #            step multiplication, thinking-as-output, context rot).
+     #          - how:  the fix (name the rubric §2 lever) on bad/warn cards; on a "good" card,
+     #            what to KEEP doing.
+     #        Name the costly skill + its $, the file/command that dominated context, the prompt
+     #        that drove the reasoning. Be specific and quantified, not generic advice.
+     #     2. CRITIC (adversarial). Hand a SECOND strong-model subagent the rubric, the detail
+     #        JSON, AND the draft. Tell it to REFUTE the draft: is the 1-5 grade defensible
+     #        against the avoidable-share anchor (don't drift to a soft "3")? What real lever did
+     #        the draft miss, overstate, or misattribute (e.g. blaming a terse prompt for what
+     #        was really context size)? Are the numbers right? It returns the FINAL corrected
+     #        { rating, headline, cards } in the same shape — this is what gets merged.
+     # Merge into ONE /tmp/summaries.json, namespaced by section (tips = the critic's final):
      #   { "turns":     { "<turnIndex>": "<summary>", ... },
      #     "consumers": { "<index>":     "<summary>", ... },
-     #     "tips":      [ { "head": "Session grade: B-", "body": "…" }, ... ] }
-     # (A flat { "<turnIndex>": ... } map is still accepted but applies to turns only.)
+     #     "tips":      { "rating": 2, "headline": "Context ran hot for most of it.",
+     #                    "cards": [ { "verdict": "bad", "title": "Kept context huge",
+     #                                 "what": "…", "why": "…", "how": "…" }, ... ] } }
+     # (A flat { "<turnIndex>": ... } map is still accepted but applies to turns only; a legacy
+     #  `tips` LIST of { head, body } cards is also accepted → what-only warn cards, no grade.)
      node ${CLAUDE_SKILL_DIR}/scripts/apply-summaries.js --summaries /tmp/summaries.json < /tmp/detail.json \
-       | node ${CLAUDE_SKILL_DIR}/scripts/render-report.js --out ./session-cost-<shortid>.html
+       | node ${CLAUDE_SKILL_DIR}/scripts/render-report.js
      ```
 
      `apply-summaries.js` is pure (turns key by `turnIndex`, consumers key by their index
-     in `summary.contextConsumers.top`, tips → `summary.aiTips`; it ignores unknown/missing
-     keys and passes the payload through unchanged on any error) so the report always
-     renders. The renderer prefers the model's `summary`/`aiTips` when present and falls back
-     to the deterministic label/levers, keeping the raw prompt/target one hover away. Without
-     `--summarize` the assessment is still populated — by deterministic levers ranked by this
-     session's dollar impact — so the report is never empty.
+     in `summary.contextConsumers.top`, tips → `summary.aiAssessment`; it ignores
+     unknown/missing keys and passes the payload through unchanged on any error) so the report
+     always renders. The renderer prefers the model's `summary`/`aiAssessment` when present and
+     falls back to the deterministic label/levers, keeping the raw prompt/target one hover
+     away. Without `--summarize` the assessment is still populated — a heuristic grade plus
+     deterministic levers ranked by this session's dollar impact — so the report is never empty.
 
 ## Notes
 
