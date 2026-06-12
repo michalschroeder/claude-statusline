@@ -5,22 +5,28 @@
 // so render-report.js shows a "what this is" one-liner instead of the raw prompt/target.
 // No network, no model call — the summaries are produced upstream by the skill agent
 // dispatching cheap Haiku subagents (see SKILL.md), keeping this stage deterministic and
-// testable. Two report sections take summaries:
-//   • TOP TURNS              → keyed by each turn's `turnIndex` (stable, unlike prompt text)
-//   • Top context consumers  → keyed by 0-based index into summary.contextConsumers.top
+// testable. Three report sections take model output:
+//   • TOP TURNS               → keyed by each turn's `turnIndex` (stable, unlike prompt text)
+//   • Top context consumers   → keyed by 0-based index into summary.contextConsumers.top
+//   • Spending less next time  → an AI assessment of the whole session (a list of tips:
+//                               rating, biggest cost drivers, user gaps, problematic skills),
+//                               stored at summary.aiTips for the renderer to prefer over its
+//                               deterministic fallback.
 //
 // Pipeline:
 //   node scripts/analyze.js <prefix> > detail.json
-//   # agent dispatches Haiku subagents over detail.json → summaries.json
+//   # agent dispatches subagents over detail.json → summaries.json
 //   node scripts/apply-summaries.js --summaries summaries.json < detail.json \
 //     | node scripts/render-report.js --out ./session-cost-<id>.html
 //
-// summaries.json shapes (all keys are integers, all values short phrases):
-//   namespaced : { "turns": { "<turnIndex>": "…" }, "consumers": { "<index>": "…" } }
+// summaries.json shapes (turn/consumer keys are integers, values short phrases; tips is a list):
+//   namespaced : { "turns": { "<turnIndex>": "…" }, "consumers": { "<index>": "…" },
+//                  "tips": [ { "head": "…", "body": "…" }, … ]  (plain strings also accepted) }
 //   flat        : { "<turnIndex>": "…" }  (or [{turnIndex,summary}])  → applied to turns only
 //
-// Unknown keys are ignored; un-summarized rows keep their deterministic label. A
-// bad/absent map → the payload passes through unchanged, so the report always renders.
+// Unknown keys are ignored; un-summarized rows keep their deterministic label, and an absent
+// `tips` list leaves the renderer's deterministic tips in place. A bad/absent map → the
+// payload passes through unchanged, so the report always renders.
 const fs = require('fs');
 
 function parseArgs(argv) {
@@ -58,13 +64,33 @@ function toMap(parsed) {
   return m;
 }
 
-// Split the file into per-section maps. Namespaced shape ({turns,consumers}) routes each
+// Normalize the AI session assessment into a list of { head, body } cards. Accepts either
+// objects ({head|title, body|text|detail}) or plain strings (→ body only). Trims, drops
+// empties, caps length/count so a runaway model response can't blow up the report.
+function toTips(parsed) {
+  if (!Array.isArray(parsed)) return [];
+  const clean = (v) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : '');
+  const out = [];
+  for (const t of parsed) {
+    if (typeof t === 'string') {
+      const body = clean(t).slice(0, 600);
+      if (body) out.push({ head: '', body });
+    } else if (t && typeof t === 'object') {
+      const head = clean(t.head || t.title || '').replace(/[.\s]+$/, '').slice(0, 80);
+      const body = clean(t.body || t.text || t.detail || '').slice(0, 600);
+      if (head || body) out.push({ head, body });
+    }
+  }
+  return out.slice(0, 6);
+}
+
+// Split the file into per-section maps. Namespaced shape ({turns,consumers,tips}) routes each
 // section; any other shape is the legacy flat map → turns only (back-compat).
 function extractMaps(parsed) {
   const ns = parsed && !Array.isArray(parsed) && typeof parsed === 'object'
-    && (parsed.turns !== undefined || parsed.consumers !== undefined);
-  if (ns) return { turns: toMap(parsed.turns), consumers: toMap(parsed.consumers) };
-  return { turns: toMap(parsed), consumers: new Map() };
+    && (parsed.turns !== undefined || parsed.consumers !== undefined || parsed.tips !== undefined);
+  if (ns) return { turns: toMap(parsed.turns), consumers: toMap(parsed.consumers), tips: toTips(parsed.tips) };
+  return { turns: toMap(parsed), consumers: new Map(), tips: [] };
 }
 
 async function main() {
@@ -73,7 +99,7 @@ async function main() {
   let payload;
   try { payload = JSON.parse(raw); } catch { process.stdout.write(raw); return; } // passthrough non-JSON
 
-  let maps = { turns: new Map(), consumers: new Map() };
+  let maps = { turns: new Map(), consumers: new Map(), tips: [] };
   if (opts.summaries !== undefined) {
     try { maps = extractMaps(JSON.parse(fs.readFileSync(opts.summaries, 'utf8'))); }
     catch (e) { process.stderr.write(`apply-summaries.js: could not read summaries (${e.message}) — passing through\n`); }
@@ -92,7 +118,13 @@ async function main() {
       if (c && maps.consumers.has(i)) { c.summary = maps.consumers.get(i); appliedCc++; }
     });
   }
-  process.stderr.write(`apply-summaries: applied ${applied} turn + ${appliedCc} consumer summaries\n`);
+  let appliedTips = 0;
+  if (maps.tips && maps.tips.length) {
+    payload.summary = payload.summary || {};
+    payload.summary.aiTips = maps.tips;
+    appliedTips = maps.tips.length;
+  }
+  process.stderr.write(`apply-summaries: applied ${applied} turn + ${appliedCc} consumer summaries + ${appliedTips} tips\n`);
   process.stdout.write(JSON.stringify(payload, null, 2) + '\n');
 }
 

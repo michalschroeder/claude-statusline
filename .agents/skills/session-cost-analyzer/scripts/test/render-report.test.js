@@ -277,6 +277,27 @@ test('render: savings tips are session-specific, quantified, and ranked by $ imp
   assert.ok(tips.indexOf('Hand heavy exploring') < tips.indexOf('Keep the main conversation'));
 });
 
+test('render: AI assessment (summary.aiTips) is preferred over the deterministic levers', () => {
+  const withAi = {
+    ...detail,
+    summary: {
+      ...detail.summary,
+      aiTips: [
+        { head: 'Session grade: C', body: 'Strong work but the context ran hot for most of it.' },
+        { head: 'Costliest skill', body: 'writing-phpunit-tests drove $0.84 over a long retry loop.' },
+        'A bare-string tip is rendered as a body-only card.',
+      ],
+    },
+  };
+  const html = render(withAi, TEMPLATE);
+  const tips = (html.match(/<ol class="tips">([\s\S]*?)<\/ol>/) || [])[1] || '';
+  assert.match(tips, /<strong>Session grade: C\.<\/strong> Strong work but the context ran hot/);
+  assert.match(tips, /writing-phpunit-tests drove \$0\.84/);
+  assert.match(tips, /<li>A bare-string tip is rendered as a body-only card\.<\/li>/);
+  // deterministic levers are suppressed when the model assessment is present
+  assert.ok(!/Keep the main conversation short/.test(tips));
+});
+
 test('render: a lean session falls back to the generic tip, never an empty list', () => {
   const lean = {
     ...detail, totalCost: 0.05,

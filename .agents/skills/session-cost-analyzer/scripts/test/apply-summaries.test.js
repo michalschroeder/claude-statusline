@@ -77,6 +77,36 @@ test('apply-summaries: namespaced map fills turns and consumers independently', 
   } finally { fs.rmSync(f, { force: true }); }
 });
 
+test('apply-summaries: tips list lands at summary.aiTips, normalized and capped', async () => {
+  const f = path.join(os.tmpdir(), `sca-sum-tips-${process.pid}.json`);
+  fs.writeFileSync(f, JSON.stringify({
+    tips: [
+      { head: 'Session grade: B  ', body: '  Context ran hot   for most of it. ' },
+      { title: 'Costliest skill', text: 'write-a-skill drove most of the spend.' },
+      'plain string tip',
+      { head: '', body: '' },              // empty → dropped
+      42,                                   // non-object → dropped
+    ],
+  }));
+  try {
+    const out = JSON.parse(await run(JSON.stringify(payload()), ['--summaries', f]));
+    const tips = out.summary.aiTips;
+    assert.strictEqual(tips.length, 3);
+    assert.deepStrictEqual(tips[0], { head: 'Session grade: B', body: 'Context ran hot for most of it.' });
+    assert.deepStrictEqual(tips[1], { head: 'Costliest skill', body: 'write-a-skill drove most of the spend.' });
+    assert.deepStrictEqual(tips[2], { head: '', body: 'plain string tip' });
+  } finally { fs.rmSync(f, { force: true }); }
+});
+
+test('apply-summaries: no tips key → summary.aiTips is never added', async () => {
+  const f = path.join(os.tmpdir(), `sca-sum-notips-${process.pid}.json`);
+  fs.writeFileSync(f, JSON.stringify({ turns: { '1': 'x' } }));
+  try {
+    const out = JSON.parse(await run(JSON.stringify(payload()), ['--summaries', f]));
+    assert.ok(!('aiTips' in out.summary), 'aiTips absent when tips not provided');
+  } finally { fs.rmSync(f, { force: true }); }
+});
+
 test('apply-summaries: flat map (legacy) touches turns only, never consumers', async () => {
   await withTmp({ '1': 'Authored a skill', __n: 9 }, async (f) => {
     const out = JSON.parse(await run(JSON.stringify(payload()), ['--summaries', f]));

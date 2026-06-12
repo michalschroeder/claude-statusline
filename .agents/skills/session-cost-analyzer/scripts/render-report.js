@@ -386,13 +386,25 @@ function subagentRows(byAgent) {
     `<td class="num">${money(a.cost)}</td></tr>`).join('\n');
 }
 
-// Session-specific savings tips. Quantify each lever from THIS session's numbers,
-// keep only the ones that actually moved the bill (≥ a floor), and rank by dollar
-// impact. Pure transform over the summary — no LLM, always on (no --summarize). Falls
-// back to one generic note when nothing dominated (a cheap/lean session).
+// "Spending less next time" cards. When the --summarize flow ran, the model's session
+// assessment (summary.aiTips: rating, biggest cost drivers, user gaps, problematic skills)
+// is preferred — it reasons over the whole report. Otherwise we fall back to deterministic
+// levers quantified from THIS session's numbers, ranked by dollar impact and kept only when
+// they actually moved the bill (≥ a floor). Pure transform either way — no LLM in here.
 const READ_TOOL = /^(Read|Bash|Grep|Glob|WebFetch|WebSearch|ToolSearch|NotebookRead|mcp__)/;
 function tipsRows(detail) {
   const s = detail.summary || {};
+  // AI assessment wins when present (applied upstream by apply-summaries.js). Entries are
+  // normally { head, body } objects; tolerate a bare string (→ body-only card) defensively.
+  const ai = (Array.isArray(s.aiTips) ? s.aiTips : [])
+    .map((t) => (typeof t === 'string' ? { head: '', body: t } : t))
+    .filter((t) => t && (t.head || t.body));
+  if (ai.length) {
+    return ai.map((t) => {
+      const head = String(t.head || '').replace(/[.\s]+$/, '');
+      return `<li>${head ? `<strong>${esc(head)}.</strong> ` : ''}${esc(t.body || '')}</li>`;
+    }).join('\n');
+  }
   const total = Number(detail.totalCost) || 0;
   const pct = (c) => (total > 0 ? Math.round((c / total) * 100) : 0);
   const floor = Math.max(0.25, total * 0.02);

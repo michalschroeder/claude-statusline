@@ -41,7 +41,7 @@ these tokens **before** running the workflow; they map deterministically to the 
 |---|---|
 | `<session-id-prefix>` | Analyze that session (detail report). Omit → ask which (step 1). |
 | `list` | List recent sessions by cost instead of a detail report. |
-| `--summarize` | Opt in to **Haiku summaries** of opaque/raw text in the report — the TOP TURNS prompt cell and the TOP CONTEXT CONSUMERS target cell (the subagent flow in step 5). The THINKING "prompt that drove the reasoning" cell reuses the matching turn's summary automatically (no extra batch). Absent → deterministic relabel + tooltip only. Alias: `--haiku`. |
+| `--summarize` | Opt in to **model-written report copy** (the subagent flow in step 5): the TOP TURNS prompt cell, the TOP CONTEXT CONSUMERS target cell, and the **"Spending less next time" assessment** (a model rating the session and naming its real issues / costly skills). The THINKING "prompt that drove the reasoning" cell reuses the matching turn's summary automatically (no extra batch). Absent → deterministic relabel + tooltip and deterministic, dollar-ranked tips. Alias: `--haiku`. |
 | `--config-dir <path>` | Non-default transcript root (e.g. `~/.claude-lendable`). Passed straight to `analyze.js`. |
 | `--out <path>` | Report output path. Default `./session-cost-<shortid>.html`. |
 | `--last N` / `--since YYYY-MM-DD` | `list`-mode filters. |
@@ -116,39 +116,51 @@ Both print JSON to stdout. `--config-dir <path>` points at a non-default `~/.cla
      keep their words) with the full raw prompt on hover. **No extra step needed** — this is
      the path when `--summarize` is absent.
 
-   - **`--summarize` → Haiku summaries.** Run this step **iff** the flag (or an alias)
-     was passed; otherwise skip it. It rewrites two opaque cells into one-line "what this
-     is" phrases: the TOP TURNS prompt cell ("what this turn accomplished") and the TOP
-     CONTEXT CONSUMERS target cell ("what this file/command/prompt was"). The THINKING
-     "prompt that drove the reasoning" cell picks up the same turn summary by prompt match,
-     so terse prompts like "do it"/"add it" become descriptive there too — no extra batch.
-     Don't shell out
-     to a model — dispatch a couple of cheap Haiku **subagents** (the Agent tool with
-     `model: haiku`), then merge their output with the pure helper:
+   - **`--summarize` → model-written report copy.** Run this step **iff** the flag (or an
+     alias) was passed; otherwise skip it. It fills three things from the model instead of
+     deterministic defaults: the TOP TURNS prompt cell ("what this turn accomplished"), the
+     TOP CONTEXT CONSUMERS target cell ("what this file/command/prompt was"), and the
+     **"Spending less next time" assessment** (a rating of the whole session plus its real
+     issues). The THINKING "prompt that drove the reasoning" cell picks up the same turn
+     summary by prompt match, so terse prompts like "do it"/"add it" become descriptive
+     there too — no extra batch. Don't shell out to a model — dispatch **subagents** (the
+     Agent tool; `model: haiku` is fine for the per-row labels, use a stronger model for the
+     assessment if you want sharper findings), then merge their output with the pure helper:
 
      ```bash
      node ${CLAUDE_SKILL_DIR}/scripts/analyze.js <prefix> > /tmp/detail.json
-     # From /tmp/detail.json gather two batches:
-     #   • turns: sort `turns` by cost, take ~10 — give each Haiku turnIndex + kind +
+     # From /tmp/detail.json gather three batches:
+     #   • turns: sort `turns` by cost, take ~10 — give each subagent turnIndex + kind +
      #     tool tally + prompt.
      #   • consumers: from `summary.contextConsumers.top` take the top ~10 NON-synthetic
      #     rows (skip rows whose target starts with "(" — those are already-labelled
-     #     synthetic rows) — give each Haiku its index in `top` + tool + target.
-     # Dispatch 1-2 Haiku subagents; ask each for a descriptive 1-2 sentence phrase
-     # (~30-45 words) saying concretely WHAT the item is/did — not a terse label.
+     #     synthetic rows) — give each subagent its index in `top` + tool + target.
+     #     Ask for a descriptive 1-2 sentence phrase (~30-45 words) saying concretely WHAT
+     #     the item is/did — not a terse label.
+     #   • tips (the assessment): hand ONE subagent the whole detail JSON — especially
+     #     `summary` (totalCost, byTurnKind, bySkill, highContextCost, contextResets,
+     #     contextConsumers, assistantOutput.thinking) and the costliest `turns`/`topPrompts`.
+     #     Ask it to RATE the session and surface the real issues, each as a {head, body}
+     #     card (3-6 of them): an overall grade, the biggest cost drivers, gaps in how the
+     #     user drove it (context kept too long, repeated re-reads, no /compact, work that
+     #     should have gone to a subagent), and any skill that burned outsized cost/tokens
+     #     (name it + its $). Be specific and quantified, not generic advice.
      # Merge into ONE /tmp/summaries.json, namespaced by section:
      #   { "turns":     { "<turnIndex>": "<summary>", ... },
-     #     "consumers": { "<index>":     "<summary>", ... } }
+     #     "consumers": { "<index>":     "<summary>", ... },
+     #     "tips":      [ { "head": "Session grade: B-", "body": "…" }, ... ] }
      # (A flat { "<turnIndex>": ... } map is still accepted but applies to turns only.)
      node ${CLAUDE_SKILL_DIR}/scripts/apply-summaries.js --summaries /tmp/summaries.json < /tmp/detail.json \
        | node ${CLAUDE_SKILL_DIR}/scripts/render-report.js --out ./session-cost-<shortid>.html
      ```
 
      `apply-summaries.js` is pure (turns key by `turnIndex`, consumers key by their index
-     in `summary.contextConsumers.top`; it ignores unknown/missing keys and passes the
-     payload through unchanged on any error) so the report always renders. The renderer
-     prefers the `summary` field when present and falls back to the deterministic label,
-     keeping the raw prompt/target one hover away.
+     in `summary.contextConsumers.top`, tips → `summary.aiTips`; it ignores unknown/missing
+     keys and passes the payload through unchanged on any error) so the report always
+     renders. The renderer prefers the model's `summary`/`aiTips` when present and falls back
+     to the deterministic label/levers, keeping the raw prompt/target one hover away. Without
+     `--summarize` the assessment is still populated — by deterministic levers ranked by this
+     session's dollar impact — so the report is never empty.
 
 ## Notes
 
