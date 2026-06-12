@@ -100,7 +100,7 @@ test('render: rows are built from the arrays', () => {
 
 test('render: top-turns — skill column, summary, and styled tooltip only on user rows', () => {
   const d = { ...detail, turns: [
-    { turnIndex: 1, kind: 'skill', cost: 3.0, peakContext: 176000,
+    { turnIndex: 1, kind: 'skill', cost: 3.0, peakContext: 176000, skill: 'write-a-skill',
       prompt: 'Base directory for this skill: /home/u/.claude/skills/write-a-skill # Writing Skills ...' },
     { turnIndex: 2, kind: 'subagent-orchestration', cost: 2.0, peakContext: 239000,
       prompt: '<task-notification> <task-id>bjraq17xi</task-id> <tool-use-id>toolu_x</tool-use-id> done' },
@@ -119,9 +119,9 @@ test('render: top-turns — skill column, summary, and styled tooltip only on us
   assert.match(html, /Applied 6 edits and ran shell validation/);
   // user rows expose the full message via the styled tooltip (data-full), NOT native title=;
   // skill/orchestration rows do not
-  assert.match(html, /class="prompt turn-tip" data-kind="user" data-full="read log tags[^"]*"/);
+  assert.match(html, /class="prompt has-tip" data-tip-h="user message" data-full="read log tags[^"]*"/);
   assert.ok(!/title="Base directory/.test(html), 'no native title tooltip');
-  assert.ok(!/turn-tip[^>]*write-a-skill/.test(html), 'skill row has no tooltip');
+  assert.ok(!/has-tip[^>]*write-a-skill/.test(html), 'skill row has no tooltip');
   // the original user prompt is preserved even when a summary replaced it in the cell —
   // "do it" stays reachable on hover, not lost
   assert.match(html, /data-full="do it">Applied 6 edits and ran shell validation</);
@@ -154,7 +154,7 @@ test('render: long un-summarized consumer target gets a hover tooltip (no --summ
   };
   const html = render(withLong, TEMPLATE);
   // tagged for the tooltip, full target on data-full, even though no summary was applied
-  assert.match(html, /class="prompt cc-tip"[^>]*data-full="Base directory for this skill: \/very\/long/);
+  assert.match(html, /class="prompt has-tip"[^>]*data-full="Base directory for this skill: \/very\/long/);
   assert.ok(!html.includes(longTarget + '</td>'), 'visible cell text is truncated, not the full target');
 });
 
@@ -174,7 +174,7 @@ test('render: consumer summary replaces target, raw target stays on hover', () =
   };
   const html = render(withSummary, TEMPLATE);
   // summary text shown in the cell, tagged for the styled tooltip, raw target on data-full
-  assert.match(html, /class="prompt cc-tip"[^>]*data-tool="Read"[^>]*data-full="\/repo\/src\/&lt;huge&gt; &amp; &quot;big&quot;\.js"[^>]*>The oversized bundled renderer module</);
+  assert.match(html, /class="prompt has-tip"[^>]*data-tip-h="Read target"[^>]*data-full="\/repo\/src\/&lt;huge&gt; &amp; &quot;big&quot;\.js"[^>]*>The oversized bundled renderer module</);
   // un-summarized row stays a plain cell with the raw target, no tooltip
   assert.match(html, /<td class="prompt">git log --stat<\/td>/);
 });
@@ -214,13 +214,13 @@ test('render: thinking turn reuses the matching turn Haiku summary, full prompt 
         ...detail.summary.assistantOutput,
         thinking: {
           ...detail.summary.assistantOutput.thinking,
-          byTurn: [{ prompt: 'do it', kind: 'user', steps: 13, thinkingTokens: 17000 }],
+          byTurn: [{ turnIndex: 5, prompt: 'do it', kind: 'user', steps: 13, thinkingTokens: 17000 }],
         },
       },
     },
   };
   const html = render(withSummary, TEMPLATE);
-  assert.match(html, /class="prompt tt-tip"[^>]*data-kind="user"[^>]*data-full="do it"/);
+  assert.match(html, /class="prompt has-tip"[^>]*data-tip-h="user message"[^>]*data-full="do it"/);
   assert.match(html, /Approved the migration plan and told the agent to execute it/);
 });
 
@@ -235,13 +235,13 @@ test('render: long un-summarized thinking prompt gets a hover tooltip (no --summ
         ...detail.summary.assistantOutput,
         thinking: {
           ...detail.summary.assistantOutput.thinking,
-          byTurn: [{ prompt: long.slice(0, 200), kind: 'user', steps: 7, thinkingTokens: 10000 }],
+          byTurn: [{ turnIndex: 5, prompt: long.slice(0, 200), kind: 'user', steps: 7, thinkingTokens: 10000 }],
         },
       },
     },
   };
   const html = render(noSum, TEMPLATE);
-  assert.match(html, /class="prompt tt-tip"[^>]*data-full="Base directory for this skill: \/home\/ms/);
+  assert.match(html, /class="prompt has-tip"[^>]*data-full="Base directory for this skill: \/home\/ms/);
 });
 
 test('render: by-skill rows + placeholder when absent', () => {

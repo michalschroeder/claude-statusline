@@ -122,7 +122,7 @@ Both print JSON to stdout. `--config-dir <path>` points at a non-default `~/.cla
      TOP CONTEXT CONSUMERS target cell ("what this file/command/prompt was"), and the
      **"Spending less next time" assessment** (a rating of the whole session plus its real
      issues). The THINKING "prompt that drove the reasoning" cell picks up the same turn
-     summary by prompt match, so terse prompts like "do it"/"add it" become descriptive
+     summary by turnIndex, so terse prompts like "do it"/"add it" become descriptive
      there too — no extra batch. Don't shell out to a model — dispatch **subagents** (the
      Agent tool; `model: haiku` is fine for the per-row labels, use a stronger model for the
      assessment if you want sharper findings), then merge their output with the pure helper:
@@ -133,8 +133,8 @@ Both print JSON to stdout. `--config-dir <path>` points at a non-default `~/.cla
      #   • turns: sort `turns` by cost, take ~10 — give each subagent turnIndex + kind +
      #     tool tally + prompt.
      #   • consumers: from `summary.contextConsumers.top` take the top ~10 NON-synthetic
-     #     rows (skip rows whose target starts with "(" — those are already-labelled
-     #     synthetic rows) — give each subagent its index in `top` + tool + target.
+     #     rows (skip rows with `synthetic: true` — those are already-labelled rollups)
+     #     — give each subagent its index in `top` + tool + target.
      #     Ask for a descriptive 1-2 sentence phrase (~30-45 words) saying concretely WHAT
      #     the item is/did — not a terse label.
      #   • tips (the assessment): hand ONE subagent the whole detail JSON — especially

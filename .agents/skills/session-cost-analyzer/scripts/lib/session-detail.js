@@ -314,12 +314,16 @@ function buildDetail(mainFile, subagentFiles, pricing) {
   // execution order, which `turns` keeps (consumers re-sort by cost as needed).
   // tokens.cacheRead is the SUM across the turn's steps; avgContext/peakContext are
   // the actual per-step context size (cacheRead/step) — the honest growth signal.
-  const turns = [...byPrompt.values()].map((p) => ({
-    turnIndex: p.turnIndex, prompt: p.text, ts: p.ts, kind: turnKind(p.text), steps: p.calls, cost: p.cost,
-    tokens: { input: p.inp, cacheRead: p.ctx, cacheWrite: p.cw, output: p.out },
-    avgContext: Math.round(p.ctx / p.calls), peakContext: p.peakCtx,
-    tools: toolArr(p.tools),
-  }));
+  const turns = [...byPrompt.values()].map((p) => {
+    const kind = turnKind(p.text);
+    return {
+      turnIndex: p.turnIndex, prompt: p.text, ts: p.ts, kind, steps: p.calls, cost: p.cost,
+      skill: kind === 'skill' ? skillName(p.text) : null,
+      tokens: { input: p.inp, cacheRead: p.ctx, cacheWrite: p.cw, output: p.out },
+      avgContext: Math.round(p.ctx / p.calls), peakContext: p.peakCtx,
+      tools: toolArr(p.tools),
+    };
+  });
   const mainCalls = perCall.filter((c) => c.isMain);
   const summary = buildSummary(mainCalls, turns);
   // Blended cache-read $/token across the main session, for carried-cost estimates.
@@ -346,7 +350,7 @@ function buildDetail(mainFile, subagentFiles, pricing) {
   const bySkill = new Map();
   for (const t of turns) {
     if (t.kind !== 'skill') continue;
-    const name = skillName(t.prompt) || '(unknown)';
+    const name = t.skill || '(unknown)';
     const e = bySkill.get(name) || { skill: name, turns: 0, steps: 0, cost: 0, tokens: { input: 0, cacheRead: 0, cacheWrite: 0, output: 0 } };
     e.turns += 1; e.steps += t.steps; e.cost += t.cost;
     for (const k of Object.keys(e.tokens)) e.tokens[k] += t.tokens[k];
@@ -423,9 +427,11 @@ function buildAssistantOutput(mainCalls, mainIdx, triggerByIdx) {
         nextTools: c.tools.slice(0, 3),
       });
     }
-    const key = c.prompt || '(session start)';
-    const t = byTurn.get(key) || { prompt: key.slice(0, 200), kind: turnKind(key), steps: 0, thinkingTokens: 0 };
-    t.steps += 1; t.thinkingTokens += think; byTurn.set(key, t);
+    // Keyed by turnIndex (not prompt text) so repeated identical prompts stay
+    // distinct rows and consumers can join back to turns[] without text matching.
+    const prompt = c.prompt || '(session start)';
+    const t = byTurn.get(c.turnIndex) || { turnIndex: c.turnIndex, prompt: prompt.slice(0, 200), kind: turnKind(prompt), steps: 0, thinkingTokens: 0 };
+    t.steps += 1; t.thinkingTokens += think; byTurn.set(c.turnIndex, t);
   }
   if (!(kinds.text.tokens + kinds.thinking.tokens + kinds.toolCalls.tokens > 0)) return null;
   for (const k of Object.values(kinds)) k.tokens = Math.round(k.tokens);

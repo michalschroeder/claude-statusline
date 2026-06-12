@@ -249,9 +249,10 @@
   .tip .tip-b { font-family:var(--font-body); font-size:14.5px; line-height:1.4; color:#222;
     padding:7px 11px 10px; }
   .prompt { font-family:var(--font-body); color:#333; }
-  p.prompt[style] { font-size:13px !important; }
-  /* Cells wired to the styled .tip card (full user message on hover). */
-  td.turn-tip, td.cc-tip, td.tt-tip { cursor:help; }
+  /* Small-print notes under tables (estimate disclaimer, thinking headline). */
+  p.note { font-family:var(--font-body); color:#333; font-size:13px; }
+  /* Cells wired to the styled .tip card (full message/target on hover). */
+  td.has-tip { cursor:help; }
 
   /* Footer band: white, 1px black top rule, small Times print. */
   footer { font-family:var(--font-body); color:#333; font-size:15px; border-top:1px solid var(--frame);
@@ -419,7 +420,7 @@
   from what it read.</p>
   <table id="consumers-table"><thead><tr><th scope="col" class="num" data-sort="num" data-sum="tokens">est tokens</th><th scope="col">share</th><th scope="col" class="num" data-sort="num" data-sum="money">carried cost</th><th scope="col" data-sort="text">tool</th><th scope="col">target (file · command · prompt)</th></tr></thead>
   <tbody>{{CONSUMER_ROWS}}</tbody></table>
-  <p class="prompt" style="font-size:12px">{{CONSUMERS_NOTE}}</p>
+  <p class="note">{{CONSUMERS_NOTE}}</p>
 
   <h2 id="thinking" class="think">Thinking: what the reasoning cost</h2>
   <p class="explain">Before most replies and tool actions, the model thinks privately. That thinking
@@ -430,7 +431,7 @@
   another round of thinking. The fix is fewer, bigger steps, for example running several commands at
   once or handing a repetitive retry loop to a helper. It is not about making the model "think
   less".</p>
-  <p class="prompt" style="font-size:12px">{{THINKING_SUMMARY}}</p>
+  <p class="note">{{THINKING_SUMMARY}}</p>
   <table id="thinking-turns-table"><thead><tr><th scope="col" class="num" data-sort="num" data-sum="tokens">tokens</th><th scope="col">share</th><th scope="col" class="num" data-sort="num" data-sum="int">steps</th><th scope="col">prompt that drove the reasoning</th></tr></thead>
   <tbody>{{THINKING_TURN_ROWS}}</tbody></table>
 
@@ -588,33 +589,18 @@
         ' · ' + d.kind + ': ' + d.prompt;
     });
 
-  // TOP TURNS: reuse the same styled card to show the full user message on the rows that
-  // carry one (skill/orchestration rows are left untagged in the renderer → no tooltip).
-  wire('#turns-table', null, 'turn-tip',
-    function (d) {
-      return '<div class="tip-h">' + esc(d.kind) + ' message</div>' +
-        '<div class="tip-b">' + esc(d.full) + '</div>';
-    },
-    function (d) { return d.full || ''; }, true);
-
-  // Top context consumers: when a Haiku summary replaced the raw target, the same
-  // styled card surfaces the exact file/command/prompt behind it on hover.
-  wire('#consumers-table', null, 'cc-tip',
-    function (d) {
-      return '<div class="tip-h">' + esc(d.tool) + ' target</div>' +
-        '<div class="tip-b">' + esc(d.full) + '</div>';
-    },
-    function (d) { return d.full || ''; }, true);
-
-  // Thinking "prompt that drove the reasoning": reuses the matching turn's Haiku
-  // summary, so the same card surfaces the full user message ("do it", "add it", …)
-  // behind the summarized or truncated cell.
-  wire('#thinking-turns-table', null, 'tt-tip',
-    function (d) {
-      return '<div class="tip-h">' + esc(d.kind) + ' message</div>' +
-        '<div class="tip-b">' + esc(d.full) + '</div>';
-    },
-    function (d) { return d.full || ''; }, true);
+  // Summary cells (TOP TURNS, top context consumers, thinking by-turn): the renderer
+  // tags any cell showing a Haiku summary or a truncation with `has-tip`, carrying the
+  // card header (data-tip-h) and the full message/target (data-full) — one contract,
+  // one handler, regardless of table.
+  ['#turns-table', '#consumers-table', '#thinking-turns-table'].forEach(function (sel) {
+    wire(sel, null, 'has-tip',
+      function (d) {
+        return '<div class="tip-h">' + esc(d.tipH) + '</div>' +
+          '<div class="tip-b">' + esc(d.full) + '</div>';
+      },
+      function (d) { return d.full || ''; }, true);
+  });
 })();
 
 // Sortable columns + a totals footer. Pure progressive enhancement over the

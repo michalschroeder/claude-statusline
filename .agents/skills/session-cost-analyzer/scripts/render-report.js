@@ -78,13 +78,14 @@ function byModelRows(byModel) {
     `<tr><td>${esc(m.model)}</td><td class="num">${money(m.cost)}</td></tr>`).join('\n');
 }
 
-// Skill name from a skill-dispatch prompt. Mirrors lib/session-detail.js skillName()
-// — kept inline so the renderer stays a pure formatter with no lib import; cosmetic only.
-function skillNameOf(prompt) {
-  const base = /^Base directory for this skill:\s*(\S+)/.exec(prompt || '');
-  if (base) return base[1].replace(/\/+$/, '').split('/').pop();
-  const slash = /^\/(\S+)/.exec(prompt || '');
-  return slash ? slash[1] : null;
+// The shared summary-cell hover contract (TOP TURNS / consumers / thinking rows):
+// whenever the cell shows anything other than the full text — a Haiku summary or a
+// truncation — the full text stays one hover away on the styled .tip card. Cells
+// opt in via the `has-tip` class; data-tip-h is the card's header line.
+function tipCell(what, full, tipHead) {
+  return full && full !== what
+    ? `<td class="prompt has-tip" data-tip-h="${esc(tipHead)}" data-full="${esc(full)}">${esc(what)}</td>`
+    : `<td class="prompt">${esc(what)}</td>`;
 }
 
 // The WHAT column. A Haiku summary (turn.summary, set only when --summarize ran) wins —
@@ -102,21 +103,14 @@ function topTurnsRows(turns, limit) {
   const ranked = (turns || []).slice().sort((a, b) => b.cost - a.cost).slice(0, limit);
   if (!ranked.length) return '<tr><td colspan="5" class="prompt">—</td></tr>';
   return ranked.map((t) => {
-    const skill = t.kind === 'skill' ? (skillNameOf(t.prompt) || '') : '';
     const what = turnWhat(t);
-    // Styled hover tooltip (the report's `.tip` card, wired in the template) only where
-    // the raw message adds detail beyond the cell — i.e. real user turns. Skill expansions
-    // and <task-notification> blobs are boilerplate: no tooltip, no giant native popup.
+    // Tooltip only where the raw message adds detail beyond the cell — i.e. real user
+    // turns, even a short "do it". Skill expansions and <task-notification> blobs are
+    // boilerplate: full='' → no tooltip, no giant native popup.
     const full = t.kind === 'user' ? truncate(t.prompt, 600) : '';
-    // Preserve the user's original words: whenever the cell shows something other than the
-    // raw message (a Haiku summary, or a truncated prompt), expose the full message on hover
-    // — even a short "do it". Skill/orchestration rows have full='' (boilerplate) → no tooltip.
-    const whatCell = full && full !== what
-      ? `<td class="prompt turn-tip" data-kind="${esc(t.kind)}" data-full="${esc(full)}">${esc(what)}</td>`
-      : `<td class="prompt">${esc(what)}</td>`;
     return `<tr><td class="num">${money(t.cost)}</td><td>${esc(t.kind)}</td>` +
-      `<td>${esc(skill)}</td><td class="num">${compactTokens(t.peakContext)}</td>` +
-      whatCell + `</tr>`;
+      `<td>${esc(t.kind === 'skill' ? t.skill || '' : '')}</td><td class="num">${compactTokens(t.peakContext)}</td>` +
+      tipCell(what, full, `${t.kind} message`) + `</tr>`;
   }).join('\n');
 }
 
@@ -145,18 +139,13 @@ function consumerRows(cc, limit) {
     // synthetic rows aggregate the whole session — their count isn't a repeat count
     const tool = c.count > 1 && !c.synthetic ? `${c.tool} ×${c.count}` : c.tool;
     // The cell shows a Haiku summary (c.summary, set only when --summarize ran) or the
-    // truncated raw target. Same contract as TOP TURNS: whenever the cell shows anything
-    // other than the full target — a summary OR a truncation — expose the full target on
-    // hover, so the exact file/command/prompt is always one hover away.
+    // truncated raw target; the exact file/command/prompt stays one hover away.
     const full = c.target || '';
     const what = c.summary && c.summary.trim() ? truncate(c.summary, 600) : truncate(full, 110);
-    const targetCell = full && full !== what
-      ? `<td class="prompt cc-tip" data-tool="${esc(c.tool)}" data-full="${esc(full)}">${esc(what)}</td>`
-      : `<td class="prompt">${esc(what)}</td>`;
     return `<tr><td class="num">${compactTokens(c.estTokens)}</td>` +
       `<td><div class="bar" style="width:${pct}%"></div></td>` +
       `<td class="num">${money(c.carriedCost)}</td><td>${esc(tool)}</td>` +
-      targetCell + `</tr>`;
+      tipCell(what, full, `${c.tool} target`) + `</tr>`;
   }).join('\n');
 }
 
@@ -174,35 +163,25 @@ function thinkingSummary(ao) {
 }
 
 // Which prompts drove the reasoning — one row per thinking.byTurn entry.
-// These rows are keyed by the same user prompts as TOP TURNS, so when --summarize
-// ran we reuse that turn's Haiku summary here instead of re-summarizing: byTurn.prompt
-// is the first 200 chars of the turn prompt, so we match on that prefix and lift both
-// the summary and the full prompt. Same hover contract as the other tables — whenever
-// the cell shows anything but the full prompt (a summary OR a truncation), the raw
-// message stays one hover away.
+// byTurn rows carry the same turnIndex as turns[], so when --summarize ran we
+// join on it and reuse that turn's Haiku summary (and full prompt) here instead
+// of re-summarizing. Same hover contract as the other tables.
 function thinkingTurnRows(ao, limit, turns) {
   const th = ao && ao.thinking;
   const rows = ((th && th.byTurn) || []).slice(0, limit);
   if (!rows.length) return '<tr><td colspan="4" class="prompt">—</td></tr>';
   const total = Math.max(1, (th.storedTokens + th.unstoredTokens) || 0);
-  // prefix (byTurn key, ≤200 chars) → { summary, full } from the matching turn
-  const byPrompt = new Map();
-  for (const t of turns || []) {
-    if (t && t.prompt) byPrompt.set(t.prompt.slice(0, 200), { summary: t.summary, full: t.prompt });
-  }
+  const byIndex = new Map((turns || []).filter((t) => t && t.turnIndex != null).map((t) => [t.turnIndex, t]));
   return rows.map((t) => {
     const pct = Math.round((Number(t.thinkingTokens) || 0) / total * 100);
-    const match = byPrompt.get(t.prompt) || {};
-    const full = match.full || t.prompt || '';
+    const match = byIndex.get(t.turnIndex) || {};
+    const full = match.prompt || t.prompt || '';
     const what = match.summary && match.summary.trim()
       ? truncate(match.summary, 600) : truncate(full, 110);
-    const promptCell = full && full !== what
-      ? `<td class="prompt tt-tip" data-kind="${esc(t.kind)}" data-full="${esc(full)}">${esc(what)}</td>`
-      : `<td class="prompt">${esc(what)}</td>`;
     return `<tr><td class="num">${compactTokens(t.thinkingTokens)}</td>` +
       `<td><div class="bar" style="width:${pct}%"></div></td>` +
       `<td class="num">${esc(t.steps)}</td>` +
-      promptCell + `</tr>`;
+      tipCell(what, full, `${t.kind} message`) + `</tr>`;
   }).join('\n');
 }
 
@@ -437,7 +416,7 @@ function tipsRows(detail) {
     .filter((c) => !c.synthetic && READ_TOOL.test(c.tool));
   const carriedCost = carried.reduce((a, c) => a + (Number(c.carriedCost) || 0), 0);
   if (carriedCost > 0) {
-    const lead = carried.slice().sort((a, b) => (b.carriedCost || 0) - (a.carriedCost || 0))[0];
+    const lead = carried.reduce((a, c) => ((c.carriedCost || 0) > (a.carriedCost || 0) ? c : a));
     // humanize long MCP tool ids (mcp__datadog__search_logs → "datadog search_logs") so the
     // label reads cleanly and can wrap at the space instead of overflowing the tip card.
     const leadName = lead ? lead.tool.replace(/^mcp__/, '').replace(/__/g, ' ') : '';
