@@ -30,8 +30,12 @@ grows. Internalize these mechanics; the WHY on every card should trace back to o
   switch, CLAUDE.md edit) and is silently inflating the bill.
 - **Every step is another full re-read.** A turn that triggers 30 tool rounds pays the context
   cost ~30 times. Fewer, fatter steps (batched independent commands) beat many thin ones.
-- **Extended thinking bills as output (~5× input)** and is on by default with a large budget.
-  Reasoning that fires on nearly every step is one of the most common silent cost sinks.
+- **Extended thinking bills as output (~5× input)**, on by default with a large budget.
+  *Interleaved/unstored* thinking fires before each tool call and is never written to the
+  transcript, so it scales with **step count** — a 150-step session pays the thinking tax 150
+  times, even on mechanical Writes/Bash. Reasoning on nearly every step is a top silent cost
+  sink; the `assistantOutput.thinking` stored-vs-unstored split and `byTurn` show how much, and
+  where.
 - **Context rot is real but a gradient, not a cliff.** Model accuracy declines as the window
   fills (Anthropic confirms this, citing Chroma's 18-model study). Treat ~80% of the window as
   a soft cap for heavy multi-file work and keep the last ~20% for light wrap-up. Community
@@ -63,6 +67,18 @@ hedge them in cards ("~30–40%", "community-reported") rather than stating as g
   monitoring and earlier auto-compaction (`CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`).
 - **Hooks that pre-filter tool output** (e.g. grep test logs for failures) cut a result from
   tens of thousands of tokens to hundreds.
+
+**Thinking control**
+- Extended thinking is on by default with a large budget. Lower it the moment the plan is
+  settled: **`/effort low`** (granular, persists for the session — still reasons on genuinely
+  hard steps, drops it on rote ones) or the **`Alt+T` / `Option+T`** toggle (binary on/off,
+  session-wide). `ultrathink` in a prompt only *raises* it for one turn; there is no inverse
+  word, and `MAX_THINKING_TOKENS` needs a restart. Prefer these live levers over editing `/config`.
+- Interleaved thinking is one-think-per-tool-call, so **fewer steps also cut it** — batching
+  tool calls saves reasoning and cache re-read together.
+- Estimating the saving: base it on `assistantOutput.thinking.byTurn` (per-turn intensity), not
+  the flat per-step average, and frame `/effort low` as a *reduction* (~50–70%), not full
+  elimination — it lowers thinking, it doesn't switch it off.
 
 **Scoping & multi-session**
 - One coherent task per session; don't run a single session all day. Split a big epic into
@@ -144,6 +160,8 @@ hedge them in cards ("~30–40%", "community-reported") rather than stating as g
 - **Plan-then-execute** for multi-file/uncertain work; verification targets given up front.
 - **Cache protected** — no needless mid-session model/effort/CLAUDE.md churn.
 - **Batched commands** — independent commands grouped into one step.
+- **Thinking dialed down for execution** — `/effort` lowered (or thinking toggled off) once
+  planning was done, so rote steps didn't carry full reasoning.
 - **Review done in a fresh session** off the committed diff, not stacked on the implementation
   context.
 
@@ -152,7 +170,9 @@ hedge them in cards ("~30–40%", "community-reported") rather than stating as g
 - **Kitchen-sink session** — context driven high and held there, no `/compact`/`/clear` at
   boundaries. *The single biggest failure mode.*
 - **Correction spiral** — same issue re-corrected >2×, cluttering context with dead approaches.
-- **Reasoning on every step** where batching would reason once (thinking billed ~5× input).
+- **Reasoning on every step** — extended thinking left on through execution, so interleaved
+  thinking fires on every mechanical Write/Bash (it scales with step count; billed ~5× input)
+  instead of being dialed down once the plan was settled.
 - **Bulky results carried** — big logs/files/search dumps re-read step after step instead of
   delegated or filtered.
 - **Wrong model / wrong fan-out** — Opus on mechanical work; multi-agent teams on tightly-coupled
@@ -214,9 +234,9 @@ plain, concrete language a newcomer can act on without a glossary.
 - **No bare jargon.** Don't write "batch your steps", "gate thinking", "the cache_read prefix",
   "fan-out", "step multiplication" and stop there. Either avoid the term or, the first time you use
   it, say in plain words what it means. "Batch" → *"make all your edits first, then run the test
-  command once at the end instead of after every edit."* "Gate thinking" → *"turn off extended
-  thinking for simple steps — drop `/effort` to low, or don't enable thinking — so the model stops
-  reasoning when it's just posting a reply or re-running a check."*
+  command once at the end instead of after every edit."* "Gate thinking" → *"once you've
+  finished planning, drop `/effort` to low (or toggle thinking off with `Alt+T`) so the model
+  stops over-reasoning on simple steps like posting a reply or re-running a check."*
 - **`how` is a recipe, not a label.** Spell out the concrete action: the command to type
   (`/compact`, `/clear`, `/effort low`, `--model sonnet`), the habit to change, what to do
   differently *and when*. The reader should be able to do it next session without guessing. Tie the
