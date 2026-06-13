@@ -40,3 +40,14 @@ test('truncate: ellipsis at width', () => {
   assert.strictEqual(truncate('ab', 5), 'ab');
   assert.strictEqual(truncate('abc', 0), '');
 });
+
+test('truncate: does not split surrogate pairs (emoji)', () => {
+  // cut lands inside an emoji — must drop it whole, not leave a lone surrogate
+  const out = truncate('fix bug 🚀🚀🚀', 10);
+  // lone (unpaired) surrogate — a valid emoji pair is fine, a split one is not
+  const lone = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+  assert.ok(!lone.test(out), `lone surrogate in ${JSON.stringify(out)}`);
+  assert.strictEqual(out, 'fix bug 🚀…');
+  // no truncation needed: emoji string shorter than width (by code points)
+  assert.strictEqual(truncate('🚀🚀', 5), '🚀🚀');
+});
