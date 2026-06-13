@@ -11,6 +11,7 @@ const { buildDetail } = require('../lib/session-detail');
 const { sumPeriods } = require('../lib/periods');
 const { resolveBudget } = require('../lib/budget');
 const { resolveStateDir } = require('../lib/state');
+const { formatCompact } = require('../lib/format');
 
 function parseArgs(argv) {
   const opts = { last: null, since: null, configDir: undefined, detail: undefined, analyze: false };
@@ -68,12 +69,10 @@ function truncate(s, width) {
 
 const money = (c) => '$' + c.toFixed(2);
 
-// Compact token count: 950, 12k, 4.1M.
-function tok(n) {
-  if (n < 1000) return String(n);
-  if (n < 1e6) return Math.round(n / 1000) + 'k';
-  return (n / 1e6).toFixed(1) + 'M';
-}
+// Compact token count, sharing the renderer's formatter (lib/format.js) so a
+// given magnitude renders the same here and in the statusline. formatCompact
+// returns '' for ≤0; the viewer's numeric columns want a literal "0".
+const tok = (n) => formatCompact(n) || '0';
 
 // Top-3 tools of a turn as 'NN×Tool …', e.g. '40×Bash 26×Edit 13×Read'. '—' if none.
 function toolStr(tools, n = 3) {

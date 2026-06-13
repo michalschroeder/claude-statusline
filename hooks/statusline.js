@@ -9,6 +9,7 @@ const { dim, bold, green, yellow, orange, red, colorByTier, SESSION_TIERS, BUDGE
 const { readSummary } = require('../lib/cost-aggregate');
 const { sumPeriods } = require('../lib/periods');
 const { resolveBudget } = require('../lib/budget');
+const { formatCompact } = require('../lib/format');
 
 // Terminal width for the trailing rule. Sizes to the terminal when run
 // interactively; Claude Code pipes stdout so columns is undefined there and
@@ -61,18 +62,6 @@ function resolveIconMode() {
     fs.writeFileSync(cacheFile, 'ascii\n');
   } catch {}
   return { mode: 'ascii', hint: true };
-}
-
-/**
- * Format a number with k/M suffixes for compact display.
- * 523 → "523", 4500 → "4.5k", 15000 → "15k", 1200000 → "1.2M"
- */
-function formatCompact(n) {
-  if (n == null || n <= 0) return '';
-  if (n < 1000) return String(Math.round(n));
-  if (n < 10000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
-  if (n < 1000000) return Math.round(n / 1000) + 'k';
-  return (n / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
 }
 
 /**
