@@ -69,6 +69,30 @@ test('smoke: detail payload exposes the precomputed summary rollups', async () =
   }
 });
 
+// A subagent's byAgent label prefers its meta.json `description` (the Task tool's
+// short summary) over the long, boilerplate-heavy first prompt.
+test('smoke: subagent label comes from meta.json description', async () => {
+  const cfg = mkProfile();
+  const id = 'smoke003';
+  writeTranscript(cfg, id, fixture(), 1717200000);
+  const subDir = path.join(cfg, 'projects', '-test-proj', id, 'subagents');
+  fs.mkdirSync(subDir, { recursive: true });
+  const sub = [
+    { type: 'user', message: { role: 'user', content: 'You have access to the Datadog MCP tools. The account is already authenticated. Validate ...' }, uuid: 's-u1' },
+    { type: 'assistant', timestamp: '2024-06-01T10:05:00Z',
+      message: { id: 'sm1', role: 'assistant', model: 'claude-sonnet-4-6',
+        usage: { input_tokens: 50, output_tokens: 20, cache_read_input_tokens: 500, cache_creation_input_tokens: 100 },
+        content: [{ type: 'text', text: 'ok' }] }, uuid: 's-a1' },
+  ];
+  fs.writeFileSync(path.join(subDir, 'agent-abc123.jsonl'), sub.map((o) => JSON.stringify(o)).join('\n') + '\n');
+  fs.writeFileSync(path.join(subDir, 'agent-abc123.meta.json'),
+    JSON.stringify({ agentType: 'general-purpose', description: 'Validate DD error tracking' }));
+  const out = await runJson([id], cfg);
+  const agent = out.byAgent.find((a) => a.name === 'agent-abc123');
+  assert.ok(agent, 'subagent present in byAgent');
+  assert.strictEqual(agent.label, 'Validate DD error tracking');
+});
+
 test('smoke: empty store still emits valid list JSON', async () => {
   const cfg = mkProfile();
   const out = await runJson(['list'], cfg);

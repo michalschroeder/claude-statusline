@@ -98,6 +98,35 @@ test('render: rows are built from the arrays', () => {
   assert.match(html, /short late prompt/);          // top-turns row
 });
 
+test('render: top-turns — skill column, summary, and styled tooltip only on user rows', () => {
+  const d = { ...detail, turns: [
+    { turnIndex: 1, kind: 'skill', cost: 3.0, peakContext: 176000, skill: 'write-a-skill',
+      prompt: 'Base directory for this skill: /home/u/.claude/skills/write-a-skill # Writing Skills ...' },
+    { turnIndex: 2, kind: 'subagent-orchestration', cost: 2.0, peakContext: 239000,
+      prompt: '<task-notification> <task-id>bjraq17xi</task-id> <tool-use-id>toolu_x</tool-use-id> done' },
+    { turnIndex: 3, kind: 'user', cost: 1.5, peakContext: 104000,
+      prompt: 'read log tags, we have some useful tags there like adhoc job or worker — a fairly long message that exceeds the displayed summary so the tooltip adds detail',
+      summary: 'Parsed Datadog log tags' },
+    { turnIndex: 4, kind: 'user', cost: 1.0, peakContext: 61000,
+      prompt: 'do it', summary: 'Applied 6 edits and ran shell validation' },
+  ] };
+  const html = render(d, TEMPLATE);
+  // skill name lands in its own column; the skill row's WHAT cell is blank (no redundancy)
+  assert.match(html, /<td>write-a-skill<\/td>/);
+  // orchestration → fixed label, no tooltip tagging
+  assert.match(html, /class="prompt"[^>]*>↩ subagent results</);
+  // a Haiku summary wins in the WHAT cell
+  assert.match(html, /Applied 6 edits and ran shell validation/);
+  // user rows expose the full message via the styled tooltip (data-full), NOT native title=;
+  // skill/orchestration rows do not
+  assert.match(html, /class="prompt has-tip" data-tip-h="user message" data-full="read log tags[^"]*"/);
+  assert.ok(!/title="Base directory/.test(html), 'no native title tooltip');
+  assert.ok(!/has-tip[^>]*write-a-skill/.test(html), 'skill row has no tooltip');
+  // the original user prompt is preserved even when a summary replaced it in the cell —
+  // "do it" stays reachable on hover, not lost
+  assert.match(html, /data-full="do it">Applied 6 edits and ran shell validation</);
+});
+
 test('render: all user-derived text is HTML-escaped (no injection)', () => {
   const html = render(detail, TEMPLATE);
   assert.ok(!html.includes('<script>alert(1)</script>'), 'raw script tag leaked');
@@ -111,6 +140,43 @@ test('render: context consumers name the concrete target, escaped', () => {
   assert.match(html, /Read ×2/);              // grouped count
   assert.match(html, /git log --stat/);       // bash command as target
   assert.match(html, /estimates, not billed/i); // disclaimer note rendered
+});
+
+test('render: long un-summarized consumer target gets a hover tooltip', () => {
+  const longTarget = 'Base directory for this skill: ' + '/very/long/path'.repeat(12);
+  const withLong = {
+    ...detail,
+    summary: {
+      ...detail.summary,
+      contextConsumers: { ...detail.summary.contextConsumers, totalEstTokens: 60000,
+        top: [{ tool: 'user-prompt', target: longTarget, count: 1, estTokens: 38000, carriedCost: 1.1 }] },
+    },
+  };
+  const html = render(withLong, TEMPLATE);
+  // tagged for the tooltip, full target on data-full, even though no summary was applied
+  assert.match(html, /class="prompt has-tip"[^>]*data-full="Base directory for this skill: \/very\/long/);
+  assert.ok(!html.includes(longTarget + '</td>'), 'visible cell text is truncated, not the full target');
+});
+
+test('render: consumer summary replaces target, raw target stays on hover', () => {
+  const withSummary = {
+    ...detail,
+    summary: {
+      ...detail.summary,
+      contextConsumers: {
+        ...detail.summary.contextConsumers,
+        top: [
+          { tool: 'Read', target: '/repo/src/<huge> & "big".js', count: 2, estTokens: 38000, carriedCost: 1.1, summary: 'The oversized bundled renderer module' },
+          { tool: 'Bash', target: 'git log --stat', count: 1, estTokens: 15000, carriedCost: 0.3 },
+        ],
+      },
+    },
+  };
+  const html = render(withSummary, TEMPLATE);
+  // summary text shown in the cell, tagged for the styled tooltip, raw target on data-full
+  assert.match(html, /class="prompt has-tip"[^>]*data-tip-h="Read target"[^>]*data-full="\/repo\/src\/&lt;huge&gt; &amp; &quot;big&quot;\.js"[^>]*>The oversized bundled renderer module</);
+  // un-summarized row stays a plain cell with the raw target, no tooltip
+  assert.match(html, /<td class="prompt">git log --stat<\/td>/);
 });
 
 test('render: payload without contextConsumers → placeholder rows, no crash', () => {
@@ -133,6 +199,72 @@ test('render: thinking section carries the headline and per-turn rows, escaped',
   assert.match(html, /replied/);
 });
 
+test('render: thinking turn reuses the matching turn Haiku summary, full prompt on hover', () => {
+  // A summarized user turn whose words also drove reasoning: the thinking row should
+  // show the summary, tag the cell, and keep the raw prompt one hover away.
+  const withSummary = {
+    ...detail,
+    turns: [
+      { turnIndex: 5, prompt: 'do it', kind: 'user', cost: 1.0, peakContext: 100000,
+        summary: 'Approved the migration plan and told the agent to execute it' },
+    ],
+    summary: {
+      ...detail.summary,
+      assistantOutput: {
+        ...detail.summary.assistantOutput,
+        thinking: {
+          ...detail.summary.assistantOutput.thinking,
+          byTurn: [{ turnIndex: 5, prompt: 'do it', kind: 'user', steps: 13, thinkingTokens: 17000 }],
+        },
+      },
+    },
+  };
+  const html = render(withSummary, TEMPLATE);
+  assert.match(html, /class="prompt has-tip"[^>]*data-tip-h="user message"[^>]*data-full="do it"/);
+  assert.match(html, /Approved the migration plan and told the agent to execute it/);
+});
+
+test('render: long un-summarized thinking prompt gets a hover tooltip', () => {
+  const long = 'Base directory for this skill: /home/ms/.claude/skills/write-a-skill # Writing Skills ## Process 1. and so on for a very long expansion that exceeds the cell width';
+  const noSum = {
+    ...detail,
+    turns: [{ turnIndex: 5, prompt: long, kind: 'user', cost: 1.0, peakContext: 100000 }],
+    summary: {
+      ...detail.summary,
+      assistantOutput: {
+        ...detail.summary.assistantOutput,
+        thinking: {
+          ...detail.summary.assistantOutput.thinking,
+          byTurn: [{ turnIndex: 5, prompt: long.slice(0, 200), kind: 'user', steps: 7, thinkingTokens: 10000 }],
+        },
+      },
+    },
+  };
+  const html = render(noSum, TEMPLATE);
+  assert.match(html, /class="prompt has-tip"[^>]*data-full="Base directory for this skill: \/home\/ms/);
+});
+
+test('render: skill-kind thinking turn gets a plain cell — no tooltip, no data-full', () => {
+  const expansion = 'Base directory for this skill: /skills/x # giant expansion blob';
+  const skillTurn = {
+    ...detail,
+    turns: [{ turnIndex: 5, prompt: expansion, kind: 'skill', cost: 1.0, peakContext: 100000 }],
+    summary: {
+      ...detail.summary,
+      assistantOutput: {
+        ...detail.summary.assistantOutput,
+        thinking: {
+          ...detail.summary.assistantOutput.thinking,
+          byTurn: [{ turnIndex: 5, prompt: expansion, kind: 'skill', steps: 7, thinkingTokens: 10000 }],
+        },
+      },
+    },
+  };
+  const html = render(skillTurn, TEMPLATE);
+  assert.ok(!/data-tip-h="skill message"/.test(html), 'skill thinking row has no tooltip');
+  assert.ok(!/data-full="Base directory for this skill: \/skills\/x/.test(html), 'expansion not embedded');
+});
+
 test('render: by-skill rows + placeholder when absent', () => {
   const html = render(detail, TEMPLATE);
   assert.match(html, /writing-phpunit-tests/);
@@ -148,6 +280,61 @@ test('render: payload without assistantOutput → placeholder, no crash', () => 
   assert.ok(!/\{\{[A-Z_]+\}\}/.test(html));
 });
 
+// Everything between the assessment grid and the footer (the .acard panels live here).
+const assessOf = (html) => (html.split('class="assess"')[1] || '').split('<footer')[0];
+
+test('render: no aiAssessment → assessment section renders empty, no grade badge', () => {
+  // The assessment is always AI-written; a payload with no summary.aiAssessment (e.g. a raw
+  // render-report.js run with no merge step) shows no grade and a placeholder card.
+  const html = render(detail, TEMPLATE);
+  assert.ok(!/class="grade grade-\d"/.test(html), 'no grade badge without an AI assessment');
+  assert.match(assessOf(html), /No assessment available/);
+  assert.ok(!/\{\{[A-Z_]+\}\}/.test(html), 'no unfilled slots');
+});
+
+test('render: markup in AI assessment values is escaped at the sink', () => {
+  const evil = {
+    ...detail,
+    summary: {
+      ...detail.summary,
+      aiAssessment: { rating: 2, headline: '<b>hot</b>',
+        cards: [{ verdict: 'bad', title: 'x<img src=x>', what: '<script>alert(1)</script>' }] },
+    },
+  };
+  const html = render(evil, TEMPLATE);
+  const tips = assessOf(html);
+  assert.match(tips, /x&lt;img src=x&gt;/);              // card title escaped, not live HTML
+  assert.match(tips, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+  assert.match(html, /&lt;b&gt;hot&lt;\/b&gt;/);          // headline escaped in the badge
+  assert.ok(!tips.includes('<img') && !tips.includes('<script'));
+});
+
+test('render: AI assessment (summary.aiAssessment) drives the grade and cards', () => {
+  const withAi = {
+    ...detail,
+    summary: {
+      ...detail.summary,
+      aiAssessment: {
+        rating: 3,
+        headline: 'Strong work but the context ran hot for most of it.',
+        cards: [
+          { verdict: 'good', title: 'Offloaded heavy reads', what: 'Subagents did the digging.',
+            why: 'Bulk never piled up in the main window.', how: 'Keep delegating exploration.' },
+          { verdict: 'bad', title: 'Costliest skill', what: 'writing-phpunit-tests drove $0.84 over a long retry loop.' },
+        ],
+      },
+    },
+  };
+  const html = render(withAi, TEMPLATE);
+  assert.match(html, /class="grade grade-3"/);   // model rating drives the badge
+  assert.match(html, /Strong work but the context ran hot/);
+  const tips = assessOf(html);
+  assert.match(tips, /class="acard acard-good"/);
+  assert.match(tips, /class="acard acard-bad"/);
+  assert.match(tips, /writing-phpunit-tests drove \$0\.84/);
+  assert.match(tips, /class="alabel">Keep it up</);   // HOW relabelled on the good card
+});
+
 test('render: context timeline draws one bar per MAIN step, threshold tiers, escaped', () => {
   const html = render(detail, TEMPLATE);
   assert.match(html, /<svg class="ctx-chart"/);
@@ -158,6 +345,22 @@ test('render: context timeline draws one bar per MAIN step, threshold tiers, esc
   assert.match(html, /class="ctx-turn /);       // turn-start tick
   assert.ok(!html.includes('<img src=x'), 'raw prompt leaked into svg');
   assert.match(html, /evil &lt;img src=x onerror=alert\(1\)&gt; prompt/);
+});
+
+test('render: chart thresholds come from the payload, not hardcoded constants', () => {
+  const moved = {
+    ...detail,
+    summary: {
+      ...detail.summary,
+      highContextCost: { ...detail.summary.highContextCost, thresholdTokens: 150000 },
+      contextResetDropTokens: 50000,
+    },
+  };
+  const html = render(moved, TEMPLATE);
+  assert.match(html, />150k<\/text>/);            // gridline follows payload threshold
+  assert.match(html, />50k<\/text>/);             // reset-drop gridline follows payload
+  assert.ok(!/>200k<\/text>/.test(html));         // default gridline gone
+  assert.match(html, /class="ctx-bar c-high"/);   // 210k bar still red above 150k
 });
 
 test('render: growth bar groups steps by turn, leads with session overhead', () => {

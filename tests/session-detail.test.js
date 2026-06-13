@@ -238,6 +238,11 @@ test('buildDetail: summary + per-turn context fix the growth-misread', () => {
   assert.ok(s.highContextCost.cost > 0);
   // contextResets: the 250k → 30k drop counts as one reset
   assert.equal(s.contextResets, 1);
+  // the reset-drop threshold is published so renderers don't hardcode it
+  assert.equal(s.contextResetDropTokens, 100000);
+  // session baseline (first call cacheRead + cacheWrite + input) is published —
+  // same formula as the session-overhead consumer row
+  assert.equal(s.sessionBaselineTokens, 40000 + 1000 + 100);
 });
 
 test('buildDetail: subagent cost split out', () => {
@@ -461,4 +466,24 @@ test('buildDetail: bySkill attributes turn cost to the dispatched skill', () => 
   assert.equal(cr.steps, 1);
   // skill turn costs are a subset of the total
   assert.ok(bs.reduce((a, s) => a + s.cost, 0) < detail.total);
+});
+
+test('buildDetail: absolute-path prompt is kind user, not a skill dispatch', () => {
+  const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-sd-path-'));
+  tmp.push(cfg);
+  const main = path.join(cfg, 'projects', 'p', 'sessIII1.jsonl');
+  writeJsonl(main, [
+    userPrompt('/home/ms/app.log is huge, trim it'),
+    asst('m1', { input_tokens: 1000, output_tokens: 100 }),
+    userPrompt('/code-review high'),
+    asst('m2', { input_tokens: 800, output_tokens: 80 }),
+  ]);
+  const detail = buildDetail(main, [], pricing());
+  const pathTurn = detail.turns.find((t) => t.prompt.startsWith('/home/ms/'));
+  assert.equal(pathTurn.kind, 'user'); // path ≠ slash command
+  const cmdTurn = detail.turns.find((t) => t.prompt === '/code-review high');
+  assert.equal(cmdTurn.kind, 'skill');
+  const bs = detail.summary.bySkill;
+  assert.equal(bs.length, 1); // only the real slash command
+  assert.equal(bs[0].skill, 'code-review');
 });

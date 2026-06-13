@@ -46,7 +46,8 @@ incl. each tool-use round; the four token columns are the per-turn sums of fresh
 / cache-write / output, where **cache-rd** dominates the cost, which is why a short late prompt over
 a large context can cost more than a long early one; tools = the turn's top-3 `tool_use` tally —
 plus a `+ $X across N subagents` line), and `BY AGENT` (only when subagents exist; each agent is
-labelled by its task — the subagent's first prompt, falling back to the `agent-<hash>` stem). A
+labelled by its task — its `<agent>.meta.json` `description` (the dispatcher's short Task summary),
+falling back to the subagent's first prompt, then the `agent-<hash>` stem). A
 `sessions.js <prefix> --analyze` flag swaps the rendered table for a full-fidelity **JSON** payload meant
 for an LLM/agent to reason about *why* a session was costly: raw integer tokens (no compaction),
 untruncated prompts, full tool tallies, a `legend` stating the cost model, plus `turns` (main-session
@@ -123,6 +124,23 @@ session's whole-lifetime cross-basis pricing gap. Into the **d/w/m** windows it 
 the session isn't yet cached is the reported total. Trade-off: a genuine >$5 single turn briefly
 under-counts the d/w/m windows until the next `UserPromptSubmit` refresh corrects it — a bounded,
 self-healing error.
+
+**`/clear` does NOT reset the `s` chip** (nor `duration`/`lines`). `/clear` mints a *new*
+`session_id` + new transcript (old one preserved/resumable), so our recomputed `cachedSession`
+for the fresh id is ~$0 — but Claude's `cost.total_cost_usd` is **process-cumulative** (it does not
+reset on `/clear`; confirmed via CC docs + issues #3019/#37451). Since the new session isn't cached
+yet, `s = cachedSession + rawDelta = 0 + (total_cost_usd − 0)` = the whole process's lifetime cost,
+so right after `/clear` the `s` chip still shows the pre-clear total and only *grows* from there.
+`duration` (`total_duration_ms`) and `lines` (`total_lines_added/removed`) are the same
+process-cumulative payload fields and likewise survive `/clear`. The **cache-based `d/w/m` base is
+correct** (pre-clear spend counts once via the old session's day-buckets), but the **live-delta fold
+double-counts the carry-in**: `periodDelta = min($5, rawDelta)` and `rawDelta = total_cost_usd −
+cachedSession[newId]` never sheds the carry-in (total_cost_usd is process-cumulative, cachedSession
+is per-session), so after a `/clear` d/w/m carry a *standing* phantom of `min($5, pre-clear process
+cost)` for the lifetime of the post-clear session — the same #44 mechanism, just at its clamp ceiling
+rather than self-healing. Resetting `s` on `/clear` would require a `SessionStart` (`source:"clear"`) hook to record a
+per-session carry-in baseline `B` and compute the live part against `total_cost_usd − B` — not
+implemented; only a fresh `claude` process (new id **and** `total_cost_usd` starting at 0) resets `s`.
 
 Data flow:
 

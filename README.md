@@ -161,6 +161,8 @@ The d/w/m totals are rebuilt once per prompt by the `UserPromptSubmit` hook (`ho
 
 The session chip keeps absolute USD tiers (green <$1, yellow <$5, orange <$10, red ≥$10).
 
+> **`/clear` does not reset the `s` chip.** `/clear` starts a new session (new id + transcript), but Claude Code's `cost.total_cost_usd` is cumulative across the whole CLI process and survives the clear — so `s` keeps showing the running total and grows from there (same for the `duration` and `lines` chips). The `d`/`w`/`m` totals already count your pre-clear spend correctly (it still belongs to today), but they also get the current session's live cost folded in — and after a `/clear` that live figure still carries the pre-clear total, so d/w/m over-count by up to $5 (the live-delta cap) for the rest of the post-clear session. Only starting a fresh `claude` process clears this.
+
 The [session viewer](#session-viewer) (`bin/sessions.js`) also shows a per-session COST column and a today/week/month footer, using the same recomputed costs.
 
 ## Session viewer

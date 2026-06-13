@@ -17,19 +17,29 @@
     CONTEXT_GROWTH_BAR inline SVG — horizontal bar, one segment per turn, width = context growth
     WHERE_IT_WENT_ROWS  one <tr> per components entry: <td>label</td><td>$cost</td><td><bar></td>
     CONSUMER_TOOL_ROWS  one <tr> per summary.contextConsumers.byTool entry (tool, count, est tokens, carried cost, share)
-    CONSUMER_ROWS       one <tr> per summary.contextConsumers.top entry (est tokens, share, carried cost, tool, target)
+    CONSUMER_ROWS       one <tr> per summary.contextConsumers.top entry (est tokens, share, carried cost, tool, target — target cell shows the model-written summary with the raw target on hover when one was applied)
     CONSUMERS_NOTE      summary.contextConsumers.note (estimate disclaimer)
     THINKING_SUMMARY    summary.assistantOutput.thinking headline (tokens, cost, stored vs unstored, peak step)
-    THINKING_TURN_ROWS  one <tr> per summary.assistantOutput.thinking.byTurn entry (tokens, share, steps, prompt)
+    THINKING_TURN_ROWS  one <tr> per summary.assistantOutput.thinking.byTurn entry (tokens, share, steps, prompt); the prompt cell reuses the matching turn's model-written summary when merged, raw message on hover
     THINKING_STEP_ROWS  one <tr> per summary.assistantOutput.thinking.topSteps entry (tokens, step, trigger, next action)
     SKILL_ROWS          one <tr> per summary.bySkill entry (skill, turns, steps, cost)
     BY_MODEL_ROWS       one <tr> per byModel entry
-    TOP_TURNS_ROWS      one <tr> per top turn (cost, kind, peakContext, prompt)
-    SUBAGENT_ROWS       one <tr> per byAgent entry (task, cost) — omit table if none
+    TOP_TURNS_ROWS      one <tr> per top turn (cost, kind, skill, peak ctx, what)
+    SUBAGENT_ROWS       one <tr> per byAgent entry (task, cost) — placeholder row if none
+    RATING_BADGE        the 1–5 session grade badge (colored by rating); empty when unrated
+    ASSESS_CARDS        one verdict-tinted .acard per finding (WHAT/WHY/HOW blocks) from the
+                        model's assessment; empty placeholder when none was merged
 
   All explanatory copy is static template text by design: the report must stay
   readable when shared or printed, so explanations are always visible (no tooltips)
   and the renderer stays a pure slot-filling transform.
+
+  Visual language: Dell.com circa December 1996 — a fixed black "picture frame"
+  around a white catalog page, Times Roman body, Helvetica/Arial-Black headings,
+  flat web-safe "ribbon-card" tints (sage/salmon/peach/lime/sky/steel/periwinkle/
+  olive), hard 1px borders, zero radius, zero soft shadow. Dell red is reserved for
+  exactly two roles: the top-banner total-cost callout (the "phone number") and the
+  one cost-formula CTA panel. Classic Mosaic-blue (#0000ee) underlined links.
 -->
 <html lang="en">
 <head>
@@ -38,241 +48,682 @@
 <title>Session cost · {{SESSION_ID}}</title>
 <style>
   :root {
-    --bg:#0f1115; --fg:#e6e6e6; --dim:#8a8f98; --accent:#7aa2f7; --warn:#e0af68; --bar:#3b4261;
-    /* chart palette — the single source for SVG fills AND legend swatches below */
-    --c-low:#9ece6a; --c-mid:var(--warn); --c-high:#f7768e;
-    --c-user:var(--accent); --c-skill:#bb9af7; --c-orch:#2ac3de; --c-start:#565f89; --c-dim:var(--bar);
+    /* Closed palette — nothing outside the eight catalog tints + Dell red/yellow + link blue. */
+    --frame:#000; --canvas:#fff; --ink:#000; --link:#0000ee;
+    --dim:#333; --hair:#000;
+    --red:#e91d2a; --yellow:#fcc20f; --purple:#6a26a4;
+    --t-olive:#8e8a25; --t-sage:#b3bd95; --t-salmon:#d77a7a; --t-peach:#e6915d;
+    --t-lime:#c0d4a7; --t-sky:#9ab6c8; --t-steel:#a5b8c0; --t-periwinkle:#8c9ae0;
+    --zebra:#f1efe2; --highlight:#fff3c4;
+    /* Context-heat severity ramp — single source for SVG bar fills AND legend
+       swatches below. Deliberately NOT the muted section tints: a stoplight needs
+       real separation, and sage→peach→salmon collapsed (peach orange and salmon
+       pink read almost identical, so "getting heavy" vs "expensive" was invisible).
+       This is a proper green→amber→red ramp with distinct hue AND lightness at each
+       step, kept slightly muted so it still reads as flat 90s catalog ink rather
+       than neon. Dell red (#e91d2a, the CTA/total accent) stays off the chart; the
+       danger tier uses its own brick red. */
+    --c-low:#5f9e3f; --c-mid:#e8a01e; --c-high:#c0392b;
+    --c-user:var(--t-sky); --c-skill:var(--t-periwinkle); --c-orch:var(--t-olive);
+    --c-start:var(--t-steel); --c-dim:#d9d6c4;
+    --font-display:"Arial Black","Helvetica Neue",Helvetica,Arial,sans-serif;
+    --font-head:"Helvetica Neue",Helvetica,Arial,sans-serif;
+    --font-body:"Times New Roman",Times,Georgia,serif;
   }
   svg .c-low{fill:var(--c-low)} svg .c-mid{fill:var(--c-mid)} svg .c-high{fill:var(--c-high)}
   svg .c-user{fill:var(--c-user)} svg .c-skill{fill:var(--c-skill)} svg .c-orch{fill:var(--c-orch)}
   svg .c-start{fill:var(--c-start)} svg .c-dim{fill:var(--c-dim)}
-  svg .grid{stroke:#232838} svg .grid-warn{stroke:var(--c-mid)}
-  svg .reset-line{stroke:var(--c-user)} svg .divider{stroke:var(--fg)}
+  /* Faint severity zones behind the timeline bars (green/amber/red 0–100k–200k–up),
+     so all three tier colours stay legible even when bars never reach the red zone. */
+  svg .ctx-zone{opacity:.10} svg .zone-low{fill:var(--c-low);opacity:.20}
+  svg .zone-mid{fill:var(--c-mid)} svg .zone-high{fill:var(--c-high)}
+  svg .grid{stroke:#999} svg .grid-warn{stroke:var(--red)}
+  svg .reset-line{stroke:var(--red)} svg .divider{stroke:var(--ink)}
   .ctx-legend i.c-low{background:var(--c-low)} .ctx-legend i.c-mid{background:var(--c-mid)}
   .ctx-legend i.c-high{background:var(--c-high)} .ctx-legend i.c-user{background:var(--c-user)}
   .ctx-legend i.c-skill{background:var(--c-skill)} .ctx-legend i.c-orch{background:var(--c-orch)}
   .ctx-legend i.c-start{background:var(--c-start)} .ctx-legend i.c-dim{background:var(--c-dim)}
   * { box-sizing: border-box; }
-  body { margin:0; font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--bg); color:var(--fg); }
-  .wrap { max-width:900px; margin:0 auto; padding:32px 20px; }
-  h1 { font-size:18px; margin:0 0 4px; }
-  .sub { color:var(--dim); margin:0 0 24px; }
-  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:20px; }
-  .card { background:#161922; border:1px solid #232838; border-radius:8px; padding:14px; }
-  .card .k { color:var(--dim); font-size:12px; }
-  .card .v { font-size:20px; margin-top:4px; }
-  .card .v.warn { color:var(--warn); }
-  .primer { background:#161922; border:1px solid #232838; border-left:3px solid var(--accent); border-radius:8px; padding:16px 18px; margin-bottom:28px; }
-  .primer .formula { font-size:16px; color:var(--accent); margin-bottom:8px; }
-  .primer p { margin:0; color:var(--dim); font-size:13px; max-width:75ch; }
-  h2 { font-size:14px; color:var(--accent); border-bottom:1px solid #232838; padding-bottom:6px; margin:28px 0 8px; }
-  .explain { color:var(--dim); font-size:12px; line-height:1.6; margin:0 0 12px; max-width:78ch; }
-  .explain strong { color:var(--fg); font-weight:normal; }
-  table { width:100%; border-collapse:collapse; }
-  td, th { text-align:left; padding:6px 8px; border-bottom:1px solid #1c2030; vertical-align:top; }
-  th { color:var(--dim); font-weight:normal; font-size:12px; }
-  td.num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
-  .bar { height:8px; background:var(--bar); border-radius:4px; }
-  .ctx-chart { width:100%; height:auto; display:block; background:#161922; border:1px solid #232838; border-radius:8px; }
-  .ctx-chart .ctx-axis { fill:var(--dim); font-size:10px; font-family:inherit; }
+  html { scroll-behavior:smooth; }
+
+  /* Win95-desktop grey outside the frame; true white catalog page inside it. */
+  body { margin:0; background:#c0c0c0; color:var(--ink);
+    font:16px/1.5 var(--font-body); -webkit-font-smoothing:antialiased; }
+
+  /* The literal picture frame: an 8px black border the whole window sits inside.
+     Full-bleed — the browser window itself is the printed picture frame. */
+  .frame { margin:16px; background:var(--canvas); border:8px solid var(--frame); }
+  .wrap { padding:0 28px 40px; }
+
+  /* Tint helpers — one catalog colour per section, applied as flat eyebrow/card fills. */
+  .tint-olive{--tint:var(--t-olive)} .tint-sage{--tint:var(--t-sage)}
+  .tint-salmon{--tint:var(--t-salmon)} .tint-peach{--tint:var(--t-peach)}
+  .tint-lime{--tint:var(--t-lime)} .tint-sky{--tint:var(--t-sky)}
+  .tint-steel{--tint:var(--t-steel)} .tint-periwinkle{--tint:var(--t-periwinkle)}
+
+  /* Top banner: pure-black strip, Arial-Black title, yellow sticker + red cost callout. */
+  .banner { display:flex; justify-content:space-between; align-items:flex-start; gap:18px;
+    background:var(--frame); color:var(--canvas); padding:16px 20px; }
+  .banner-main { min-width:0; }
+  .kicker { font-family:var(--font-head); font-weight:700; text-transform:uppercase;
+    letter-spacing:.09em; font-size:13px; color:#fff; margin:0 0 6px; }
+  .banner h1 { font-family:var(--font-display); font-weight:900; font-size:27px; line-height:1.05;
+    color:#fff; margin:0 0 6px; }
+  .banner .sub { font-family:var(--font-body); color:#cfd2d6; font-size:15px; margin:0;
+    word-break:break-all; }
+  .banner-side { display:flex; flex-direction:column; align-items:flex-end; gap:12px; flex:0 0 auto; }
+  /* Yellow "BUY a DELL"-style sticker with a hard 1px bevel (never a soft shadow). */
+  .sticker { font-family:var(--font-head); font-weight:700; text-transform:uppercase; font-size:12px;
+    color:var(--ink); background:var(--yellow); border:1px solid var(--frame);
+    padding:4px 10px; box-shadow:2px 2px 0 #000; white-space:nowrap; }
+  /* The "phone number": Dell red on black. One of only two sanctioned reds on the page. */
+  .phone { text-align:right; }
+  .phone .phone-k { display:block; font-family:var(--font-head); font-weight:700; text-transform:uppercase;
+    font-size:11px; letter-spacing:.08em; color:#cfd2d6; }
+  .phone .phone-v { font-family:var(--font-display); font-weight:900; font-size:32px; line-height:1.0;
+    color:var(--red); }
+
+  /* Sticky jump-nav: white catalog strip, classic-blue underlined anchors. Hidden in print. */
+  .toc { position:sticky; top:0; z-index:50; display:flex; flex-wrap:wrap; align-items:baseline;
+    gap:6px 16px; background:var(--canvas); border-bottom:3px solid var(--frame);
+    padding:10px 0; margin:0 0 22px; }
+  .toc .toc-cost { font-family:var(--font-head); font-weight:700; font-size:20px; color:var(--ink);
+    margin-right:8px; }
+  .toc a { font-family:var(--font-head); font-size:16px; color:var(--link); text-decoration:underline; }
+  .toc a:hover { color:var(--red); }
+  .toc a:focus-visible { outline:2px solid var(--ink); outline-offset:1px; }
+
+  /* Metric "ribbon cards": white Helvetica title bar + flat tinted body block. */
+  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(215px,1fr)); gap:14px;
+    margin:22px 0 26px; }
+  .card { border:1px solid var(--frame); background:var(--canvas); }
+  .card .ctitle { font-family:var(--font-head); font-weight:700; text-transform:uppercase; font-size:13px;
+    letter-spacing:.02em; color:var(--ink); background:var(--canvas); padding:6px 12px;
+    border-bottom:1px solid var(--frame); }
+  .card .cbody { background:var(--tint,var(--t-sage)); padding:12px 16px; }
+  .card .v { font-family:var(--font-display); font-weight:900; font-size:32px; line-height:1.0;
+    color:var(--ink); }
+  .card .k { font-family:var(--font-body); font-size:15px; color:#1a1a1a; margin-top:7px; line-height:1.35; }
+
+  /* Cost-formula CTA — the single Dell-red fill panel (cream Times copy). One per page. */
+  .primer { background:var(--red); color:#fff3e0; border:1px solid var(--frame);
+    padding:18px 22px; margin:0 0 30px; }
+  .primer .formula { font-family:var(--font-head); font-weight:700; text-transform:uppercase;
+    font-size:23px; letter-spacing:.02em; color:#fff; margin-bottom:10px; }
+  .primer p { margin:0; font-family:var(--font-body); color:#fff3e0; font-size:24px; line-height:1.5; }
+
+  /* Section eyebrows: chunky Arial-Black caps on a flat catalog-tint block, heavy black underline. */
+  h2 { font-family:var(--font-display); font-weight:900; text-transform:uppercase; font-size:23px;
+    line-height:1.05; color:var(--ink); background:var(--tint,var(--t-sage));
+    border:1px solid var(--frame); border-bottom:4px solid var(--frame);
+    padding:13px 16px; margin:40px 0 14px; scroll-margin-top:72px; }
+  /* Reasoning sections take the periwinkle tint so the "thinking" family reads from the heading. */
+  h2.think { background:var(--t-periwinkle); }
+  h3 { font-family:var(--font-head); font-weight:700; text-transform:uppercase; font-size:15px;
+    letter-spacing:.02em; color:var(--ink); margin:32px 0 8px; }
+  /* Full available width, larger catalog body copy. */
+  .explain { font-family:var(--font-body); color:#222; font-size:24px; line-height:1.5;
+    margin:0 0 18px; }
+  .explain strong { color:var(--ink); font-weight:bold; }
+
+  /* Side-by-side section grids: .pair (two wide panels) and .trio (three compact
+     panels) share the scaffold, differing only in the minmax floor via --minw. */
+  .pair, .trio { display:grid; grid-template-columns:repeat(auto-fit,minmax(var(--minw,300px),1fr));
+    gap:0 40px; align-items:start; }
+  .pair { --minw:440px; }
+  .pair > section, .trio section { min-width:0; }
+  .pair > section table, .trio table { max-width:none; }
+  .pair h2, .trio h2 { margin-top:24px; }
+  @media (max-width:760px) { .trio { grid-template-columns:1fr; } }
+
+  /* Session grade badge — colored score block + word + 5-pip meter, sits at the very top. */
+  .grade { display:flex; align-items:stretch; border:1px solid var(--frame); background:var(--canvas);
+    margin:0 0 22px; }
+  .grade-score { display:flex; align-items:baseline; justify-content:center; gap:3px; min-width:132px;
+    padding:14px 24px; background:var(--gcol,#bbb); border-right:1px solid var(--frame); }
+  .grade-num { font-family:var(--font-display); font-weight:900; font-size:60px; line-height:1; color:#fff; }
+  .grade-max { font-family:var(--font-head); font-weight:700; font-size:20px; color:#fff; opacity:.85; }
+  .grade-meta { display:flex; flex-direction:column; justify-content:center; gap:7px; padding:14px 22px; }
+  .grade-word { font-family:var(--font-display); font-weight:900; text-transform:uppercase; font-size:26px;
+    line-height:1; color:var(--ink); }
+  .grade-pips { display:flex; gap:5px; }
+  .grade-pips .pip { width:28px; height:13px; border:1px solid var(--frame); background:var(--canvas); }
+  .grade-pips .pip.on { background:var(--gcol,#888); }
+  .grade-line { font-family:var(--font-body); font-size:21px; line-height:1.4; color:#222; }
+  .grade-1{--gcol:var(--red)} .grade-2{--gcol:#e6915d} .grade-3{--gcol:#d6a40c}
+  .grade-4{--gcol:#7a9a3e} .grade-5{--gcol:#4f7a2f}
+
+  /* Assessment cards: equal height, capped at 4 per row, each split into WHAT / WHY / HOW blocks.
+     Verdict drives a 3-level tint (good=green, warn=amber, bad=salmon): a strong colored left
+     spine + saturated header band + soft readable body wash of the same hue. */
+  .assess { display:grid; gap:14px; margin:0 0 8px; align-items:stretch;
+    grid-template-columns:repeat(auto-fit,minmax(max(240px,calc((100% - 42px)/4)),1fr)); }
+  .acard { display:flex; flex-direction:column; border:1px solid var(--frame);
+    border-left:5px solid var(--acol); background:var(--abg,var(--t-sage)); overflow-wrap:anywhere; }
+  .acard-good{--acol:#6f9438;--ahdr:#bcd49f;--abg:#eaf2dd}
+  .acard-warn{--acol:#cf9b0a;--ahdr:#e9d08a;--abg:#f7eecb}
+  .acard-bad {--acol:#c2603c;--ahdr:#e0a892;--abg:#f4ded2}
+  .acard-title { font-family:var(--font-head); font-weight:700; text-transform:uppercase; font-size:15px;
+    letter-spacing:.02em; color:var(--ink); padding:11px 16px; background:var(--ahdr,rgba(255,255,255,.32));
+    border-bottom:1px solid var(--frame); }
+  .ablk { padding:10px 16px; border-bottom:1px dashed rgba(0,0,0,.28); }
+  .ablk:last-child { border-bottom:0; }
+  .alabel { display:block; font-family:var(--font-head); font-weight:700; text-transform:uppercase;
+    font-size:12px; letter-spacing:.04em; color:var(--ink); opacity:.65; margin-bottom:3px; }
+  .atext { font-family:var(--font-body); font-size:19px; line-height:1.45; color:var(--ink); }
+
+  /* Catalog data tables: full 1px black HTML-3.2 grid, black header bar, Times body, zebra stripe. */
+  table { width:100%; border-collapse:collapse; background:var(--canvas);
+    border:1px solid var(--frame); margin-bottom:14px; }
+  td, th { text-align:left; padding:9px 14px; border:1px solid var(--frame); vertical-align:top; }
+  thead th { background:var(--frame); color:var(--canvas); font-family:var(--font-head); font-weight:700;
+    text-transform:uppercase; font-size:14px; letter-spacing:.02em; }
+  tbody td { font-family:var(--font-body); font-size:18px; }
+  th.num, td.num { text-align:right; }
+  td.num { font-variant-numeric:tabular-nums; white-space:nowrap; }
+  tbody tr:nth-child(even) { background:var(--zebra); }
+  tbody tr:hover { background:var(--highlight); }
+  /* Sortable headers: click to sort, with a small arrow cue. Black header bar, white glyph. */
+  thead th[data-sort] { cursor:pointer; user-select:none; white-space:nowrap; }
+  thead th[data-sort]:hover { background:#222; }
+  thead th[data-sort]:focus-visible { outline:2px solid var(--yellow); outline-offset:-2px; }
+  thead th[data-sort]::after { content:"\2195"; opacity:.45; margin-left:6px; font-size:11px; }
+  thead th.sort-asc::after { content:"\25B2"; opacity:1; }
+  thead th.sort-desc::after { content:"\25BC"; opacity:1; }
+  /* Totals row: bold Helvetica, heavy top rule, tinted so it reads as a sum line. */
+  tfoot td { font-family:var(--font-head); font-weight:700; background:var(--zebra);
+    border-top:3px solid var(--frame); font-size:16px; }
+  tfoot td:first-child { text-transform:uppercase; letter-spacing:.02em; }
+  /* Flat tinted progress bar with a hard black hairline — no gradient, no radius. */
+  .bar { height:12px; background:var(--t-periwinkle); border:1px solid var(--frame); min-width:2px; }
+
+  .ctx-chart { width:100%; height:auto; display:block; background:var(--canvas); border:1px solid var(--frame); }
+  .ctx-chart .ctx-axis { fill:var(--dim); font-size:10px; font-family:var(--font-head); }
   .ctx-bar:hover { opacity:.7; }
-  .ctx-legend { display:flex; gap:16px; flex-wrap:wrap; color:var(--dim); font-size:12px; margin:8px 0 0; }
-  .ctx-legend i { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px; vertical-align:-1px; }
-  #ctx-readout, #grow-readout { color:var(--dim); font-size:12px; margin-top:6px; min-height:1.5em; }
-  h3 { font-size:13px; color:var(--fg); font-weight:normal; margin:24px 0 6px; }
-  .ctx-growbar { width:100%; height:auto; display:block; background:#161922; border:1px solid #232838; border-radius:8px; }
-  .ctx-growbar .ctx-axis { fill:var(--dim); font-size:10px; font-family:inherit; }
+  .ctx-legend { display:flex; gap:16px; flex-wrap:wrap; color:#222; font-family:var(--font-body);
+    font-size:18px; margin:10px 0 0; }
+  .ctx-legend i { display:inline-block; width:14px; height:14px; border:1px solid var(--frame);
+    margin-right:7px; vertical-align:-1px; }
+  #ctx-readout, #grow-readout { color:#222; font-family:var(--font-body); font-size:16px;
+    margin-top:8px; min-height:1.5em; }
+  .ctx-growbar { width:100%; height:auto; display:block; background:var(--canvas); border:1px solid var(--frame); }
+  .ctx-growbar .ctx-axis { fill:var(--dim); font-size:10px; font-family:var(--font-head); }
   .ctx-seg:hover { opacity:.7; }
-  .ctx-legend i.reset { background:transparent; border-left:2px dashed var(--c-user); border-radius:0; width:3px; }
-  .prompt { color:var(--dim); }
-  footer { color:var(--dim); font-size:12px; margin-top:32px; max-width:78ch; }
+  .ctx-bar, .ctx-seg { cursor:crosshair; }
+  .ctx-legend i.reset { background:transparent; border:0; border-left:2px dashed var(--red); width:3px; }
+
+  /* Floating hover tooltip styled as a catalog "sticker": white card, 1px black
+     border, hard bevel (never a soft shadow), zero radius, yellow Helvetica-caps
+     header. Follows the cursor; replaces the browser's slow native title popup. */
+  .tip { position:fixed; top:0; left:0; z-index:100; pointer-events:none;
+    max-width:360px; background:var(--canvas); color:var(--ink);
+    border:1px solid var(--frame); box-shadow:4px 4px 0 #000;
+    opacity:0; transition:opacity .08s ease-out; will-change:transform; }
+  .tip.show { opacity:1; }
+  .tip[hidden] { display:none; }
+  .tip .tip-h { font-family:var(--font-head); font-weight:700; text-transform:uppercase;
+    font-size:12px; letter-spacing:.03em; color:var(--ink); background:var(--yellow);
+    border-bottom:1px solid var(--frame); padding:6px 11px; }
+  .tip .tip-cost { font-family:var(--font-display); font-weight:900; font-size:22px;
+    line-height:1; color:var(--ink); padding:9px 11px 2px; }
+  .tip .tip-meta { font-family:var(--font-head); font-size:12px; color:#333; padding:6px 11px 0; }
+  .tip .tip-b { font-family:var(--font-body); font-size:14.5px; line-height:1.4; color:#222;
+    padding:7px 11px 10px; }
+  .prompt { font-family:var(--font-body); color:#333; }
+  /* Small-print notes under tables (estimate disclaimer, thinking headline). */
+  p.note { font-family:var(--font-body); color:#333; font-size:13px; }
+  /* Cells wired to the styled .tip card (full message/target on hover). */
+  td.has-tip { cursor:help; }
+
+  /* Footer band: white, 1px black top rule, small Times print. */
+  footer { font-family:var(--font-body); color:#333; font-size:15px; border-top:1px solid var(--frame);
+    padding-top:14px; margin-top:34px; }
+
+  /* Small screens: stack the banner, let dense tables scroll instead of crushing columns. */
+  @media (max-width:680px) {
+    .frame { margin:8px; border-width:4px; }
+    .wrap { padding:0 14px 28px; }
+    .banner { flex-direction:column; }
+    .banner-side { align-items:flex-start; }
+    .banner h1 { font-size:22px; }
+    table { display:block; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+  }
+
+  /* Respect users who reduce motion. */
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior:auto; }
+    * { transition:none !important; }
+  }
+
+  /* Print: drop the grey desktop + sticky nav; the catalog page is already ink-friendly. */
+  @media print {
+    body { background:#fff; }
+    .frame { border-width:4px; margin:0; max-width:none; }
+    .toc, #ctx-readout, #grow-readout { display:none; }
+    h2 { break-after:avoid; } table { break-inside:auto; } tr { break-inside:avoid; }
+  }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <h1>{{TITLE}}</h1>
-  <p class="sub">{{SESSION_ID}} · started {{STARTED_AT}}</p>
+<div class="frame">
+  <header class="banner">
+    <div class="banner-main">
+      <p class="kicker">Session cost analysis</p>
+      <h1>{{TITLE}}</h1>
+      <p class="sub">{{SESSION_ID}} · started {{STARTED_AT}}</p>
+    </div>
+    <div class="banner-side">
+      <span class="sticker">Cost Report</span>
+      <div class="phone"><span class="phone-k">Total cost</span><span class="phone-v">{{TOTAL_COST}}</span></div>
+    </div>
+  </header>
+
+  <div class="wrap">
+  {{RATING_BADGE}}
+  <nav class="toc" aria-label="Report sections">
+    <span class="toc-cost">{{TOTAL_COST}}</span>
+    <a href="#context">Context</a>
+    <a href="#where">Where it went</a>
+    <a href="#consumers">Consumers</a>
+    <a href="#thinking">Thinking</a>
+    <a href="#skill">Skills</a>
+    <a href="#model">Models</a>
+    <a href="#turns">Top turns</a>
+    <a href="#subagents">Subagents</a>
+    <a href="#tips">Spend less</a>
+  </nav>
 
   <div class="cards">
-    <div class="card"><div class="k">total cost</div><div class="v">{{TOTAL_COST}}</div></div>
-    <div class="card"><div class="k">steps — each model reply or tool round</div><div class="v">{{STEP_COUNT}}</div></div>
-    <div class="card"><div class="k">duration</div><div class="v">{{DURATION}}</div></div>
-    <div class="card"><div class="k">peak context — fullest the conversation got</div><div class="v">{{PEAK_CONTEXT}}</div></div>
-    <div class="card"><div class="k">spent above 200k context (/compact would cut)</div><div class="v warn">{{HIGH_CTX_COST}}</div><div class="k">{{HIGH_CTX_CALLS}} calls · {{CONTEXT_RESETS}} resets</div></div>
+    <div class="card tint-sage">
+      <div class="ctitle">Steps</div>
+      <div class="cbody"><div class="v">{{STEP_COUNT}}</div><div class="k">each model reply or tool round</div></div>
+    </div>
+    <div class="card tint-sky">
+      <div class="ctitle">Duration</div>
+      <div class="cbody"><div class="v">{{DURATION}}</div><div class="k">wall-clock span of the session</div></div>
+    </div>
+    <div class="card tint-steel">
+      <div class="ctitle">Peak context</div>
+      <div class="cbody"><div class="v">{{PEAK_CONTEXT}}</div><div class="k">fullest the conversation got</div></div>
+    </div>
+    <div class="card tint-salmon">
+      <div class="ctitle">Spent above 200k</div>
+      <div class="cbody"><div class="v">{{HIGH_CTX_COST}}</div><div class="k">{{HIGH_CTX_CALLS}} calls · {{CONTEXT_RESETS}} resets — what /compact would cut</div></div>
+    </div>
   </div>
 
   <div class="primer">
     <div class="formula">cost ≈ context size × steps</div>
-    <p>Every time the model takes a step — writing a reply, running a tool — it re-reads the
-    whole conversation so far. So a session's price is driven less by what you asked than by
-    how much was already in the conversation when you asked it: a one-line question at hour
-    three can cost more than a big task at minute one. Each section below answers one
-    question about this session; the note under each heading says how to read it.</p>
+    <p>Every time the model does something, like writing a reply or running a tool, it first
+    re-reads the whole conversation up to that point. So the cost of a session depends less on
+    what you asked and more on how much had already piled up by the time you asked it. A quick
+    question late in a long chat can cost more than a big task right at the start. Each section
+    below answers one question about this session, and the note under each heading tells you
+    how to read it.</p>
   </div>
 
-  <h2>Context window over time</h2>
-  <p class="explain">The shape of the whole session: one bar per step, left to right in time.
-  Bar height is how full the conversation was at that moment — and since every step re-reads
-  everything below it, <strong>taller bars mean pricier steps</strong>. Green is comfortable
-  (under 100k), amber is getting heavy, red is above the dashed 200k line — the zone the "spent
-  above 200k" card adds up. Blue ticks under the axis mark where your prompts landed; a bar
-  suddenly dropping back to near-zero is a /compact or context clear doing its job. The healthy
-  shape is a sawtooth — climb, compact, climb; a single long ramp that stays red means every
-  late step paid the maximum re-read tax. Hover any bar for that step's size, cost, and the
-  prompt it was serving.</p>
+  <h2 id="context" class="tint-olive">Context window over time</h2>
+  <p class="explain">One bar per step, left to right in time order. The height of a bar is how
+  full the conversation was at that moment, measured in tokens (roughly, pieces of words).
+  Because every step re-reads everything before it, <strong>taller bars cost more</strong>.
+  Green bars are a comfortable size (under 100k tokens). Amber is getting heavy. Red is past
+  the dashed 200k line, which is the expensive zone the "spent above 200k" card adds up. The
+  blue ticks under the bottom line show where your messages landed. When a bar suddenly drops
+  back to almost nothing, that is a /compact or a context clear emptying the conversation. The
+  healthy pattern is a zig-zag: fill up, clear, fill up again. One long climb that stays red
+  means every later step was paying the highest re-reading cost. Hover over any bar to see that
+  step's size, cost, and the message it was working on.</p>
   {{CONTEXT_TIMELINE}}
   <div class="ctx-legend">
-    <span><i class="c-low"></i>under 100k</span>
-    <span><i class="c-mid"></i>100–200k</span>
-    <span><i class="c-high"></i>above 200k — /compact territory</span>
-    <span><i class="c-user"></i>your prompt landed</span>
-    <span><i class="c-dim"></i>skill / agent turn started</span>
-    <span><i class="reset"></i>context cleared — a vertical dashed line marks a step where the
-    context suddenly shrank: a /compact, a context clear, or the cache being rebuilt</span>
+    <span><i class="c-low"></i>under 100k (comfortable)</span>
+    <span><i class="c-mid"></i>100k to 200k (getting heavy)</span>
+    <span><i class="c-high"></i>above 200k (time to clear the conversation)</span>
+    <span><i class="c-user"></i>where your message landed</span>
+    <span><i class="c-dim"></i>a skill or helper started</span>
+    <span><i class="reset"></i>conversation cleared: the dashed line marks a point where the
+    conversation suddenly shrank, from a /compact, a manual clear, or the saved copy being rebuilt</span>
   </div>
   <div id="ctx-readout">hover a bar to inspect a step</div>
 
-  <h3>The same growth, grouped by turn — who added what</h3>
-  <p class="explain">The step chart above repeats one prompt across many bars; this bar collapses
-  each turn into a single block. Reading left to right is the context filling up: the dim block
-  at the start is the session's fixed overhead (system prompt, tool definitions, project
-  context — there before you typed anything), and every colored block is one turn, sized by
-  <strong>how much it added to the context</strong> — what it read, ran, and wrote that every
-  later step then re-read. Wide blocks are the turns that made the session heavy; a white dashed
-  divider is a /compact or context clear wiping the slate. Hover a block for the prompt, how far
-  it pushed the context (from → to), and what its turn cost.</p>
+  <h3>The same growth, grouped by message: who added what</h3>
+  <p class="explain">The chart above uses many bars for a single message. This one is simpler:
+  each message you sent gets one block. Read it left to right as the conversation filling up. The
+  grey block at the start is the fixed setup that is always there before you type anything (the
+  system instructions, the list of available tools, and the project background). Each colored
+  block after it is one of your messages, and its width is <strong>how much that message added to
+  the conversation</strong>: everything it read, ran, or wrote that every later step then had to
+  re-read. Wide blocks are the messages that made the session expensive. A black dashed line is a
+  /compact or context clear wiping it back down. Hover over a block to see the message, how far it
+  pushed the conversation (from one size to the next), and what that turn cost.</p>
   {{CONTEXT_GROWTH_BAR}}
   <div class="ctx-legend">
-    <span><i class="c-dim"></i>session overhead</span>
-    <span><i class="c-user"></i>your prompt</span>
-    <span><i class="c-skill"></i>skill dispatch</span>
-    <span><i class="c-orch"></i>subagent orchestration</span>
+    <span><i class="c-dim"></i>fixed setup</span>
+    <span><i class="c-user"></i>your message</span>
+    <span><i class="c-skill"></i>a skill running</span>
+    <span><i class="c-orch"></i>managing helpers</span>
     <span><i class="c-start"></i>session start</span>
   </div>
   <div id="grow-readout">hover a block to see what that turn added</div>
 
-  <h2>Where it went</h2>
-  <p class="explain">Your total, split the way the API bills it. <strong>cache read</strong> is the
-  model re-reading the conversation on every step — usually the biggest slice and the reason long
-  sessions get expensive. <strong>output</strong> is everything the model wrote, including its
-  private reasoning. <strong>cache write</strong> is saving new material so later steps can re-read
-  it cheaply. <strong>input</strong> is fresh, uncached text — usually tiny.</p>
-  <table><thead><tr><th>component</th><th class="num">cost</th><th>share</th></tr></thead>
-  <tbody>{{WHERE_IT_WENT_ROWS}}</tbody></table>
+  <div class="pair">
+    <section>
+      <h2 id="where" class="tint-sage">Where it went</h2>
+      <p class="explain">Your total cost, split into the four things you actually pay for.
+      <strong>cache read</strong> is the model re-reading the conversation at every step. This is
+      usually the biggest slice, and the main reason long sessions get expensive.
+      <strong>output</strong> is everything the model wrote back, including the private thinking you
+      never see. <strong>cache write</strong> is the cost of saving new material once, so that later
+      steps can re-read it more cheaply. <strong>input</strong> is brand-new text that has not been
+      saved yet, and it is usually tiny.</p>
+      <table><thead><tr><th scope="col" data-sort="text">component</th><th scope="col" class="num" data-sort="num" data-sum="money">cost</th><th scope="col">share</th></tr></thead>
+      <tbody>{{WHERE_IT_WENT_ROWS}}</tbody></table>
+    </section>
+    <section>
+      <h2 id="consumers" class="tint-salmon">What filled the context, by tool</h2>
+      <p class="explain">What took up room in the conversation, grouped by where it came from.
+      <strong>carried cost</strong> is the repeat charge for keeping it around: once a file or a
+      command's output lands in the conversation, the model re-reads it at every later step until the
+      session ends or the conversation is cleared. A big row here is a good thing to hand off to a
+      helper (a subagent) next time. The helper reads it in its own separate conversation and sends
+      back only a short summary, so the bulky original never weighs down your main chat.</p>
+      <table><thead><tr><th scope="col" data-sort="text">tool</th><th scope="col" class="num" data-sort="num" data-sum="int">results</th><th scope="col" class="num" data-sort="num" data-sum="tokens">est tokens</th><th scope="col" class="num" data-sort="num" data-sum="money">carried cost</th><th scope="col">share</th></tr></thead>
+      <tbody>{{CONSUMER_TOOL_ROWS}}</tbody></table>
+    </section>
+  </div>
 
-  <h2>What filled the context — by tool</h2>
-  <p class="explain">What took up space in the conversation, grouped by where it came from.
-  <strong>carried cost</strong> is the re-read tax: once a file read or command output lands in the
-  conversation, the model re-reads it on every later step until the session ends or context is
-  compacted. A big row here is a good candidate to push into a subagent next time — the subagent
-  reads it in its own small context and reports back a summary.</p>
-  <table><thead><tr><th>tool</th><th class="num">results</th><th class="num">est tokens</th><th class="num">carried cost</th><th>share</th></tr></thead>
-  <tbody>{{CONSUMER_TOOL_ROWS}}</tbody></table>
-
-  <h2>Top context consumers</h2>
-  <p class="explain">The same space, item by item: the exact file, command, or prompt.
-  <strong>×3</strong> after a tool name means the same target landed three times — a file re-read
-  three times pays its size three times, plus the re-read tax each time. The
-  <strong>assistant-*</strong> rows are the model's own words: its visible replies
-  (assistant-text), its private reasoning (assistant-thinking), and the arguments it typed into
-  tool calls like Edit payloads and Bash commands (assistant-tool-calls). When those rows sit at
-  the top, the cost driver was the model's own verbosity, not what it read.</p>
-  <table><thead><tr><th class="num">est tokens</th><th>share</th><th class="num">carried cost</th><th>tool</th><th>target (file · command · prompt)</th></tr></thead>
+  <h2 class="tint-peach">Top context consumers</h2>
+  <p class="explain">The same space again, but broken down item by item: the exact file, command,
+  or message. A <strong>×3</strong> after a tool name means the same thing landed three times. A
+  file that gets read three times costs its full size three times over, plus the repeat charge for
+  keeping each copy around. The <strong>assistant-*</strong> rows are the model's own words: its
+  visible replies (assistant-text), its private thinking (assistant-thinking), and the text it
+  typed into its tools, such as the contents of an edit or a command it ran (assistant-tool-calls).
+  When those rows are near the top, the cost came mostly from how much the model itself wrote, not
+  from what it read.</p>
+  <table id="consumers-table" data-total-label="Total (shown)"><thead><tr><th scope="col" class="num" data-sort="num" data-sum="tokens">est tokens</th><th scope="col">share</th><th scope="col" class="num" data-sort="num" data-sum="money">carried cost</th><th scope="col" data-sort="text">tool</th><th scope="col">target (file · command · prompt)</th></tr></thead>
   <tbody>{{CONSUMER_ROWS}}</tbody></table>
-  <p class="prompt" style="font-size:12px">{{CONSUMERS_NOTE}}</p>
+  <p class="note">{{CONSUMERS_NOTE}}</p>
 
-  <h2>Thinking — what the reasoning cost</h2>
-  <p class="explain">Before most replies and tool calls, the model reasons privately. Those tokens
-  are billed at the output rate — the priciest tier — but the text itself is never saved anywhere,
-  so no tool can show it; <strong>interleaved</strong> is exactly that invisible share. The table
-  shows which of your prompts set off the most reasoning. Many steps under one prompt usually
-  means a debugging loop: every test run or log that comes back triggers a fresh round of
-  thinking. The lever is fewer, bigger steps — batching commands, pushing retry loops into a
-  subagent — not "think less".</p>
-  <p class="prompt" style="font-size:12px">{{THINKING_SUMMARY}}</p>
-  <table><thead><tr><th class="num">tokens</th><th>share</th><th class="num">steps</th><th>prompt that drove the reasoning</th></tr></thead>
+  <h2 id="thinking" class="think">Thinking: what the reasoning cost</h2>
+  <p class="explain">Before most replies and tool actions, the model thinks privately. That thinking
+  is charged at the output rate, the most expensive rate, but the text is never saved anywhere, so
+  no tool can show it to you. The <strong>interleaved</strong> figure is exactly that hidden
+  thinking. The table shows which of your messages set off the most reasoning. A lot of steps under
+  one message usually means a debugging loop: every test run or error that comes back sets off
+  another round of thinking. The fix is fewer, bigger steps, for example running several commands at
+  once or handing a repetitive retry loop to a helper. It is not about making the model "think
+  less".</p>
+  <p class="note">{{THINKING_SUMMARY}}</p>
+  <table id="thinking-turns-table" data-total-label="Total (shown)"><thead><tr><th scope="col" class="num" data-sort="num" data-sum="tokens">tokens</th><th scope="col">share</th><th scope="col" class="num" data-sort="num" data-sum="int">steps</th><th scope="col">prompt that drove the reasoning</th></tr></thead>
   <tbody>{{THINKING_TURN_ROWS}}</tbody></table>
 
-  <h2>Biggest reasoning bursts</h2>
-  <p class="explain">The single steps where the model thought hardest. <strong>trigger</strong> is
-  what had just landed in the conversation — the tool output or prompt it was reacting to;
-  <strong>next action</strong> is what it decided to do. A big burst before a state-changing move
-  (switching worktrees, a large edit) is normal deliberation. Repeated bursts after the same
-  command suggest the model kept re-deriving the same conclusion — a sign the loop could have
-  been a subagent.</p>
-  <table><thead><tr><th class="num">tokens</th><th class="num">step</th><th>trigger (what landed in context right before)</th><th>next action</th></tr></thead>
+  <h2 class="think">Biggest reasoning bursts</h2>
+  <p class="explain">The individual steps where the model thought the hardest.
+  <strong>trigger</strong> is what had just landed in the conversation, the tool result or message
+  it was reacting to. <strong>next action</strong> is what it decided to do next. A big burst right
+  before an important action, like making a large edit, is just the model taking time to plan, which
+  is normal. But repeated bursts after the same command usually mean the model kept working out the
+  same answer over and over, a sign that loop would have been better handed to a helper.</p>
+  <table data-total-label="Total (shown)"><thead><tr><th scope="col" class="num" data-sort="num" data-sum="tokens">tokens</th><th scope="col" class="num" data-sort="num">step</th><th scope="col">trigger (what landed in context right before)</th><th scope="col">next action</th></tr></thead>
   <tbody>{{THINKING_STEP_ROWS}}</tbody></table>
 
-  <h2>By skill</h2>
-  <p class="explain">What each skill you invoked cost — counting only the turns the skill's own
-  instructions drove. A skill that shapes the whole session (a workflow or review skill) truly
-  costs more than this shows: its instructions also sit in the conversation as a
-  <strong>user-prompt</strong> row in the consumer table above, taxing every later step.</p>
-  <table><thead><tr><th>skill</th><th class="num">dispatches</th><th class="num">steps</th><th class="num">cost</th></tr></thead>
-  <tbody>{{SKILL_ROWS}}</tbody></table>
+  <div class="trio">
+    <section>
+      <h2 id="skill" class="tint-lime">By skill</h2>
+      <p class="explain">What each skill you used cost, counting only the steps the skill's own
+      instructions set in motion. A skill that shapes the whole session (like a workflow or a review
+      skill) really costs more than this number shows. Its instructions also stay in the
+      conversation, listed as a <strong>user-prompt</strong> row in the table above, adding to the
+      cost of every later step.</p>
+      <table><thead><tr><th scope="col" data-sort="text">skill</th><th scope="col" class="num" data-sort="num" data-sum="int">dispatches</th><th scope="col" class="num" data-sort="num" data-sum="int">steps</th><th scope="col" class="num" data-sort="num" data-sum="money">cost</th></tr></thead>
+      <tbody>{{SKILL_ROWS}}</tbody></table>
+    </section>
+    <section>
+      <h2 id="model" class="tint-sky">By model</h2>
+      <p class="explain">A single session can use more than one model, for example a cheaper one
+      for quick steps. These costs are worked out from the raw token counts and the public price per
+      token, so they may not exactly match the figure the app shows you.</p>
+      <table><thead><tr><th scope="col" data-sort="text">model</th><th scope="col" class="num" data-sort="num" data-sum="money">cost</th></tr></thead>
+      <tbody>{{BY_MODEL_ROWS}}</tbody></table>
+    </section>
+    <section>
+      <h2 id="subagents" class="tint-steel">Subagents</h2>
+      <p class="explain">Smaller side jobs the session handed off to helpers. Each helper works in
+      its own short, separate conversation and sends back only a summary, so they usually cost just a
+      few cents. If this list is short but the main session was expensive, the way to save money is to
+      hand off more of the exploring to helpers, not to cut back on the ones you already have.</p>
+      <table><thead><tr><th scope="col" data-sort="text">task</th><th scope="col" class="num" data-sort="num" data-sum="money">cost</th></tr></thead>
+      <tbody>{{SUBAGENT_ROWS}}</tbody></table>
+    </section>
+  </div>
 
-  <h2>By model</h2>
-  <p class="explain">Sessions can mix models — e.g. a cheaper one for quick steps. Costs are
-  recomputed from raw token counts × public per-token prices, so they can differ from the app's
-  reported figure.</p>
-  <table><thead><tr><th>model</th><th class="num">cost</th></tr></thead>
-  <tbody>{{BY_MODEL_ROWS}}</tbody></table>
-
-  <h2>Top turns</h2>
-  <p class="explain">Your prompts, ranked by the cost of the work each one set off.
-  <strong>peak ctx</strong> is how full the conversation was while that work ran — the same task
-  costs several times more at 150k context than at 20k, which is why a short prompt late in a
-  session can out-cost a big one asked early.</p>
-  <table><thead><tr><th class="num">cost</th><th>kind</th><th class="num">peak ctx</th><th>prompt</th></tr></thead>
+  <h2 id="turns" class="tint-salmon">Top turns</h2>
+  <p class="explain">Your messages, ranked by how much the work each one set off ended up costing.
+  <strong>peak ctx</strong> is how full the conversation was while that work was running. The same
+  task costs several times more when the conversation is already large than when it is small, which
+  is why a short message late in a session can cost more than a big one asked at the start.</p>
+  <table id="turns-table" data-total-label="Total (shown)"><thead><tr><th scope="col" class="num" data-sort="num" data-sum="money">cost</th><th scope="col" data-sort="text">kind</th><th scope="col" data-sort="text">skill</th><th scope="col" class="num" data-sort="num">peak ctx</th><th scope="col">what</th></tr></thead>
   <tbody>{{TOP_TURNS_ROWS}}</tbody></table>
 
-  <h2>Subagents</h2>
-  <p class="explain">Side tasks the session delegated. Each runs in its own fresh, small context
-  and returns only a summary, so they're usually a few cents. If this list is short and the main
-  session was expensive, the lever is moving more exploration into subagents — not trimming the
-  ones you have.</p>
-  <table><thead><tr><th>task</th><th class="num">cost</th></tr></thead>
-  <tbody>{{SUBAGENT_ROWS}}</tbody></table>
+  <h2 id="tips" class="tint-olive">Spending less next time</h2>
+  <p class="explain">An assessment of this session: where the money went and what to do differently.
+  Read the cards as leads to check, not as final verdicts. The cost of a session is driven mostly by
+  one thing, the size of the context multiplied by the number of steps, because everything left in
+  the conversation is re-read on every later step. That makes keeping the context small, with /compact
+  or a fresh session, almost always the biggest lever. When a card blames a more visible detail, such
+  as a short "do it" prompt or one expensive skill, it is often pointing at <em>where</em> the spend
+  happened rather than the underlying cause: that same prompt would have cost about the same in any
+  large context, because what you paid for was re-reading the window it ran in, not the words you
+  typed. So treat each card as a place to look, confirm it against the tables above, and act on the
+  structural lever (a smaller context) before the cosmetic one (longer prompts).</p>
+  <div class="assess">{{ASSESS_CARDS}}</div>
 
-  <h2>Spending less next time</h2>
-  <p class="explain">Three levers, in order of impact: <strong>1.</strong> keep the main
-  conversation small — /compact or start a fresh session between distinct phases; everything that
-  stays in context is re-read on every later step (the "spent above 200k" card is what that
-  would have saved here). <strong>2.</strong> push heavy exploration and retry loops into
-  subagents — they read in their own small context and report back. <strong>3.</strong> batch
-  independent commands into one step — every extra step re-reads the conversation and triggers a
-  fresh round of billed reasoning.</p>
-
-  <footer>Costs recomputed from raw tokens × LiteLLM prices (not Claude's reported cost).
-  Token counts marked "est" are estimates (~4 characters per token); dollar totals come from
-  exact billed token counts.</footer>
+  <footer>Costs are calculated from the raw token counts using public LiteLLM prices, not the
+  figure Claude reports. Numbers marked "est" are estimates (about 4 characters per token). The
+  dollar totals are based on the exact billed token counts.</footer>
+  </div>
 </div>
 <script>
-// Hover readouts for the context charts. Pure progressive enhancement: with
-// scripts off (or on paper) the charts still read and native <title> tooltips
-// still work; this just mirrors the hovered element's data-* into a fixed line
-// so scanning a chart doesn't require waiting for tooltips.
+// Hover affordance for the context charts. Pure progressive enhancement: with
+// scripts off (or on paper) the charts still read via the native <title> popups
+// and the static readout line below each chart. With scripts on, this adds a
+// styled floating tooltip that follows the cursor (the "nicer" experience) and
+// keeps mirroring the hovered element into the readout line as a fallback.
 (function () {
-  function wire(chartSel, outId, targetClass, describe) {
-    var out = document.getElementById(outId);
-    var chart = document.querySelector(chartSel);
-    if (!chart) { if (out) out.remove(); return; }
-    var idle = out.textContent;
-    chart.addEventListener('mouseover', function (e) {
-      var el = e.target.closest ? e.target.closest('.' + targetClass) : null;
-      if (el) out.textContent = describe(el.dataset);
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
     });
-    chart.addEventListener('mouseleave', function () { out.textContent = idle; });
   }
-  wire('.ctx-chart', 'ctx-readout', 'ctx-bar', function (d) {
-    return 'step ' + d.step + ' · ' + d.ctx + ' context · ' + d.cost +
-      (d.prompt ? ' · serving: ' + d.prompt : '');
+
+  // One shared floating card, positioned with transform and clamped to the viewport.
+  var tip = document.createElement('div');
+  tip.className = 'tip';
+  tip.setAttribute('role', 'tooltip');
+  tip.hidden = true;
+  document.body.appendChild(tip);
+  var px = 0, py = 0, raf = 0;
+  function place() {
+    raf = 0;
+    var pad = 12, w = tip.offsetWidth, h = tip.offsetHeight;
+    var x = px + 18, y = py + 18;
+    if (x + w + pad > window.innerWidth) x = px - w - 18;   // flip left near right edge
+    if (y + h + pad > window.innerHeight) y = py - h - 18;  // flip up near bottom edge
+    if (x < pad) x = pad;
+    if (y < pad) y = pad;
+    tip.style.transform = 'translate(' + x + 'px,' + y + 'px)';
+  }
+  function track(e) { px = e.clientX; py = e.clientY; if (!raf) raf = requestAnimationFrame(place); }
+
+  // hideOnGap: hide as soon as the cursor is over a non-target inside the container, not
+  // only on container exit. Tables need this — moving from a tagged cell to a plain cell in
+  // the same table must drop the tip (else it sticks). Charts leave it off: their targets
+  // are contiguous, so hiding on sub-pixel gaps would just flicker.
+  function wire(chartSel, outId, targetClass, html, line, hideOnGap) {
+    var chart = document.querySelector(chartSel);
+    var out = document.getElementById(outId);
+    if (!chart) { if (out) out.remove(); return; }
+    // Drop the native <title>s only where the styled tip takes over — elements
+    // outside targetClass (reset lines, ctx turns, dividers) keep theirs.
+    chart.querySelectorAll('.' + targetClass + ' title').forEach(function (t) { t.remove(); });
+    var idle = out ? out.textContent : '';
+    function hide() {
+      tip.classList.remove('show');
+      tip.hidden = true;
+      if (out) out.textContent = idle;
+    }
+    chart.addEventListener('mouseover', function (e) {
+      track(e); // seed position — mouseover can fire without a prior mousemove
+      var el = e.target.closest ? e.target.closest('.' + targetClass) : null;
+      if (!el) { if (hideOnGap) hide(); return; }
+      tip.innerHTML = html(el.dataset);
+      tip.hidden = false;
+      requestAnimationFrame(function () { tip.classList.add('show'); });
+      place();
+      if (out) out.textContent = line(el.dataset);
+    });
+    chart.addEventListener('mousemove', track);
+    chart.addEventListener('mouseleave', hide);
+  }
+
+  wire('.ctx-chart', 'ctx-readout', 'ctx-bar',
+    function (d) {
+      return '<div class="tip-h">Step ' + esc(d.step) + ' · ' + esc(d.ctx) + ' context</div>' +
+        '<div class="tip-cost">' + esc(d.cost) + '</div>' +
+        (d.prompt ? '<div class="tip-b">serving: ' + esc(d.prompt) + '</div>' : '');
+    },
+    function (d) {
+      return 'step ' + d.step + ' · ' + d.ctx + ' context · ' + d.cost +
+        (d.prompt ? ' · serving: ' + d.prompt : '');
+    });
+
+  wire('.ctx-growbar', 'grow-readout', 'ctx-seg',
+    function (d) {
+      if (d.kind === 'overhead')
+        return '<div class="tip-h">Session overhead</div>' +
+          '<div class="tip-b">' + esc(d.grow) + ' in context before the first reply</div>';
+      return '<div class="tip-h">' + esc(d.kind) + ' · +' + esc(d.grow) + '</div>' +
+        '<div class="tip-cost">' + esc(d.cost) + '</div>' +
+        '<div class="tip-meta">' + esc(d.from) + ' → ' + esc(d.to) + ' · ' + esc(d.steps) + ' steps</div>' +
+        (d.prompt ? '<div class="tip-b">' + esc(d.prompt) + '</div>' : '');
+    },
+    function (d) {
+      if (d.kind === 'overhead') return 'session overhead · ' + d.grow + ' in context before the first reply';
+      return '+' + d.grow + ' (' + d.from + ' → ' + d.to + ') · ' + d.steps + ' steps · ' + d.cost +
+        ' · ' + d.kind + ': ' + d.prompt;
+    });
+
+  // Summary cells (TOP TURNS, top context consumers, thinking by-turn): the renderer
+  // tags any cell showing a Haiku summary or a truncation with `has-tip`, carrying the
+  // card header (data-tip-h) and the full message/target (data-full) — one contract,
+  // one handler, regardless of table.
+  ['#turns-table', '#consumers-table', '#thinking-turns-table'].forEach(function (sel) {
+    wire(sel, null, 'has-tip',
+      function (d) {
+        return '<div class="tip-h">' + esc(d.tipH) + '</div>' +
+          '<div class="tip-b">' + esc(d.full) + '</div>';
+      },
+      function (d) { return d.full || ''; }, true);
   });
-  wire('.ctx-growbar', 'grow-readout', 'ctx-seg', function (d) {
-    if (d.kind === 'overhead') return 'session overhead · ' + d.grow + ' in context before the first reply';
-    return '+' + d.grow + ' (' + d.from + ' → ' + d.to + ') · ' + d.steps + ' steps · ' + d.cost +
-      ' · ' + d.kind + ': ' + d.prompt;
-  });
+})();
+
+// Sortable columns + a totals footer. Pure progressive enhancement over the
+// server-rendered tables: parses the already-formatted cell text ($1.23, 151k,
+// 1.2M, 150), so it needs no extra data from the renderer. Columns opt in via
+// <th data-sort="num|text"> (clickable) and <th data-sum="money|tokens|int">
+// (summed into a <tfoot>). Placeholder "no data" rows (a single colspan cell)
+// are skipped by both, and kept pinned to the bottom when sorting.
+(function () {
+  function parseNum(text) {
+    if (text == null) return NaN;
+    var s = String(text).replace(/[$,\s]/g, '');
+    var m = s.match(/^(-?\d*\.?\d+)\s*([kKmM]?)/);
+    if (!m) return NaN;
+    var n = parseFloat(m[1]);
+    if (m[2] === 'k' || m[2] === 'K') n *= 1e3;
+    else if (m[2] === 'm' || m[2] === 'M') n *= 1e6;
+    return n;
+  }
+  function fmtSum(kind, v) {
+    if (kind === 'money') return '$' + v.toFixed(2);
+    if (kind === 'tokens') {
+      if (v < 1000) return String(Math.round(v));
+      if (v < 1e6) return Math.round(v / 1e3) + 'k';
+      return (v / 1e6).toFixed(1) + 'M';
+    }
+    return String(Math.round(v));
+  }
+
+  function enhance(table) {
+    var head = table.tHead, body = table.tBodies[0];
+    if (!head || !body || !head.rows[0]) return;
+    var ths = Array.prototype.slice.call(head.rows[0].cells);
+    var ncols = ths.length;
+    var sums = ths.map(function (th) { return th.getAttribute('data-sum'); });
+    function dataRows() {
+      return Array.prototype.filter.call(body.rows, function (r) { return r.cells.length === ncols; });
+    }
+
+    // Totals footer (only over real rows, only when something is summable).
+    if (sums.some(Boolean)) {
+      var rows = dataRows();
+      if (rows.length) {
+        var totals = ths.map(function (th, i) {
+          if (!sums[i]) return null;
+          var s = 0;
+          rows.forEach(function (r) { var v = parseNum(r.cells[i].textContent); if (!isNaN(v)) s += v; });
+          return s;
+        });
+        var labelIdx = ths.findIndex(function (th) { return th.getAttribute('data-sort') === 'text'; });
+        if (labelIdx < 0) for (var j = ncols - 1; j >= 0; j--) { if (!sums[j]) { labelIdx = j; break; } }
+        if (labelIdx < 0) labelIdx = 0;
+        var foot = table.createTFoot();
+        var tr = foot.insertRow();
+        ths.forEach(function (th, i) {
+          var td = tr.insertCell();
+          if (sums[i]) { td.className = 'num'; td.textContent = fmtSum(sums[i], totals[i]); }
+          else if (i === labelIdx) { td.textContent = table.getAttribute('data-total-label') || 'Total'; }
+        });
+      }
+    }
+
+    // Click-to-sort headers.
+    ths.forEach(function (th, i) {
+      var type = th.getAttribute('data-sort');
+      if (!type) return;
+      th.tabIndex = 0;
+      th.setAttribute('role', 'button');
+      function run() {
+        var dir = th.getAttribute('aria-sort') === 'ascending' ? 'descending' : 'ascending';
+        ths.forEach(function (o) { o.removeAttribute('aria-sort'); o.classList.remove('sort-asc', 'sort-desc'); });
+        th.setAttribute('aria-sort', dir);
+        th.classList.add(dir === 'ascending' ? 'sort-asc' : 'sort-desc');
+        var rows = dataRows();
+        var rest = Array.prototype.filter.call(body.rows, function (r) { return r.cells.length !== ncols; });
+        rows.sort(function (a, b) {
+          var cmp;
+          if (type === 'num') {
+            var av = parseNum(a.cells[i].textContent), bv = parseNum(b.cells[i].textContent);
+            if (isNaN(av)) av = -Infinity;
+            if (isNaN(bv)) bv = -Infinity;
+            cmp = av - bv;
+          } else {
+            var as = a.cells[i].textContent.trim().toLowerCase(), bs = b.cells[i].textContent.trim().toLowerCase();
+            cmp = as < bs ? -1 : as > bs ? 1 : 0;
+          }
+          return dir === 'ascending' ? cmp : -cmp;
+        });
+        rows.forEach(function (r) { body.appendChild(r); });
+        rest.forEach(function (r) { body.appendChild(r); });
+      }
+      th.addEventListener('click', run);
+      th.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); run(); }
+      });
+    });
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('table'), enhance);
 })();
 </script>
 </body>
