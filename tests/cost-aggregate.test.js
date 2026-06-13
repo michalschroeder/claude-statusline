@@ -10,7 +10,7 @@ const tmp = [];
 after(() => { for (const d of tmp) fs.rmSync(d, { recursive: true, force: true }); });
 
 // Minimal pricing: 1 unit per input token, nothing else. pricingHash 'test'.
-const PRICING = { map: { m: { input: 1, output: 0, cacheWrite: 0, cacheRead: 0, fastMultiplier: 1, webSearch: 0 } }, pricingHash: 'test' };
+const PRICING = { map: { m: { input: 1, output: 0, cacheWrite: 0, cacheRead: 0, webSearch: 0 } }, pricingHash: 'test' };
 
 // Build a configDir with projects/<proj>/<id>.jsonl from given entries; set mtime.
 function mkConfig(files) {
@@ -82,7 +82,7 @@ test('incremental: unchanged file reuses cached calls; pricing change rebuilds',
   const first = aggregate(root, PRICING);
   const second = aggregate(root, PRICING, { cache: { pricingHash: 'test', files: first.files } });
   assert.equal(second.perSession.s1.total, 4);
-  const PRICING2 = { map: { m: { input: 2, output: 0, cacheWrite: 0, cacheRead: 0, fastMultiplier: 1, webSearch: 0 } }, pricingHash: 'other' };
+  const PRICING2 = { map: { m: { input: 2, output: 0, cacheWrite: 0, cacheRead: 0, webSearch: 0 } }, pricingHash: 'other' };
   const third = aggregate(root, PRICING2, { cache: { pricingHash: 'test', files: first.files } });
   assert.equal(third.perSession.s1.total, 8);
 });

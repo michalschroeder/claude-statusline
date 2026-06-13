@@ -3,11 +3,11 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { extractCacheCreation, calculateCost, calculateCostBreakdown } = require('../lib/cost-compute');
 
-const COSTS = { input: 10, output: 20, cacheWrite: 4, cacheRead: 1, fastMultiplier: 0.5, webSearch: 0.01 };
+const COSTS = { input: 10, output: 20, cacheWrite: 4, cacheRead: 1, webSearch: 0.01 };
 
 // Model with a long-context (>200K) premium tier.
 const BIG = {
-  input: 10, output: 20, cacheWrite: 4, cacheRead: 1, fastMultiplier: 1, webSearch: 0.01,
+  input: 10, output: 20, cacheWrite: 4, cacheRead: 1, webSearch: 0.01,
   above200k: { input: 20, output: 40, cacheWrite: 8, cacheRead: 2 },
 };
 
@@ -61,11 +61,6 @@ test('calculateCost: full formula with 1h×1.6', () => {
   assert.equal(calculateCost(usage, COSTS), 41.41);
 });
 
-test('calculateCost: fast multiplies whole call', () => {
-  const usage = { input_tokens: 1, speed: 'fast' };
-  assert.equal(calculateCost(usage, COSTS), 0.5 * 10);
-});
-
 test('calculateCost: null costs → 0', () => {
   assert.equal(calculateCost({ input_tokens: 1000 }, null), 0);
 });
@@ -75,7 +70,7 @@ test('calculateCost: clamps negative/NaN tokens to 0', () => {
 });
 
 test('calculateCostBreakdown: components priced and sum to total', () => {
-  // COSTS = { input:10, output:20, cacheWrite:4, cacheRead:1, fastMultiplier:0.5, webSearch:0.01 }
+  // COSTS = { input:10, output:20, cacheWrite:4, cacheRead:1, webSearch:0.01 }
   const usage = {
     input_tokens: 1000,
     output_tokens: 500,
@@ -91,14 +86,6 @@ test('calculateCostBreakdown: components priced and sum to total', () => {
   assert.equal(b.web, 3 * 0.01);                          // 0.03
   assert.equal(b.total, b.input + b.output + b.cacheRead + b.cacheWrite + b.web);
   assert.equal(b.total, calculateCost(usage, COSTS));     // single source of truth
-});
-
-test('calculateCostBreakdown: fast multiplier scales every component', () => {
-  const usage = { input_tokens: 100, output_tokens: 100, speed: 'fast' };
-  const b = calculateCostBreakdown(usage, COSTS); // fastMultiplier 0.5
-  assert.equal(b.input, 100 * 10 * 0.5);
-  assert.equal(b.output, 100 * 20 * 0.5);
-  assert.equal(b.total, calculateCost(usage, COSTS));
 });
 
 test('calculateCostBreakdown: above-200K tier applies per component', () => {
