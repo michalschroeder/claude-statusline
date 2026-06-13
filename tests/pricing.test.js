@@ -98,6 +98,9 @@ test('getModelCosts: exact, date-stripped, and longest-prefix match', () => {
   assert.equal(getModelCosts(m, 'claude-opus-4-8').input, 0.000005);
   assert.equal(getModelCosts(m, 'claude-opus-4-8-20260601').input, 0.000005);
   assert.equal(getModelCosts(m, 'claude-opus-4-8@beta').input, 0.000005);
+  // bracket suffix (1M-context variant form) strips to the base id (issue #31)
+  assert.equal(getModelCosts(m, 'claude-opus-4-8[1m]').input, 0.000005);
+  assert.equal(getModelCosts(m, 'claude-opus-4-8[1m]-20260601').input, 0.000005);
 });
 
 test('getModelCosts: unknown and local models → null', () => {
