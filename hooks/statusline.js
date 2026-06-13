@@ -5,10 +5,11 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { resolveStateDir } = require('../lib/state');
-const { dim, bold, green, yellow, orange, red, colorByTier, SESSION_TIERS, BUDGET_TIERS } = require('../lib/color');
+const { dim, bold, green, yellow, red, colorByTier, SESSION_TIERS, BUDGET_TIERS } = require('../lib/color');
 const { readSummary } = require('../lib/cost-aggregate');
 const { sumPeriods } = require('../lib/periods');
 const { resolveBudget } = require('../lib/budget');
+const { formatCompact } = require('../lib/format');
 
 // Terminal width for the trailing rule. Sizes to the terminal when run
 // interactively; Claude Code pipes stdout so columns is undefined there and
@@ -19,7 +20,6 @@ function getTerminalWidth() {
 
 // ANSI helpers — dim/bold/green/yellow/red + colorByTier are imported from
 // lib/color.js. These remaining helpers are context-bar specific and stay local.
-const cyan = (s) => `\x1b[36m${s}\x1b[0m`;
 const blink_red = (s) => `\x1b[5;31m${s}\x1b[0m`;
 const dimCyan = (s) => `\x1b[2;36m${s}\x1b[0m`;
 
@@ -61,18 +61,6 @@ function resolveIconMode(env = process.env) {
     fs.writeFileSync(cacheFile, 'ascii\n');
   } catch {}
   return { mode: 'ascii', hint: true };
-}
-
-/**
- * Format a number with k/M suffixes for compact display.
- * 523 → "523", 4500 → "4.5k", 15000 → "15k", 1200000 → "1.2M"
- */
-function formatCompact(n) {
-  if (n == null || n <= 0) return '';
-  if (n < 1000) return String(Math.round(n));
-  if (n < 10000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
-  if (n < 1000000) return Math.round(n / 1000) + 'k';
-  return (n / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
 }
 
 /**
@@ -191,10 +179,10 @@ function buildContextBar(usedPct, inputTokens, icons) {
   // last cell (500k) as explicitly requested by the user.
   const panicCell = isLargeCtx ? 10 : 8;
 
-  // Use the token-driven path only when we can trust the inference. usedPct=0 with
-  // non-zero inputTokens makes inference undefined → fall back to the percent path
-  // (which renders 0 cells, no premature coloring of a possibly-1M session).
-  const useTokenPath = inputTokens > 0 && canInferTotal;
+  // Use the token-driven path only when we can trust the inference: canInferTotal
+  // already requires inputTokens > 0 AND usedPct > 0. usedPct=0 with non-zero
+  // inputTokens makes inference undefined → fall back to the percent path (which
+  // renders 0 cells, no premature coloring of a possibly-1M session).
 
   // displayPct is the raw "% of context window used" from the payload — what the user
   // expects when they see "N%". The bar fill is a separate signal calibrated to the
@@ -204,7 +192,7 @@ function buildContextBar(usedPct, inputTokens, icons) {
   const displayPct = Math.max(0, Math.min(100, Math.round(usedPct)));
 
   let filled, isPanic = false;
-  if (useTokenPath) {
+  if (canInferTotal) {
     filled = Math.min(10, Math.floor(inputTokens / stepTokens));
     if (filled >= panicCell) {
       isPanic = true;
