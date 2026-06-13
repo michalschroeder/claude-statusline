@@ -87,6 +87,18 @@ test('incremental: unchanged file reuses cached calls; pricing change rebuilds',
   assert.equal(third.perSession.s1.total, 8);
 });
 
+test('dirty flag: fresh run dirty; unchanged re-run clean; eviction dirties (#38)', () => {
+  const root = mkConfig([{ id: 's1', mtime: '2026-06-10T10:00:00Z', entries: [asst('a', 'm', 4, '2026-06-10T10:00:00Z')] }]);
+  const first = aggregate(root, PRICING);
+  assert.equal(first.dirty, true, 'first run parses → dirty');
+  const cache = { pricingHash: 'test', files: first.files };
+  const second = aggregate(root, PRICING, { cache });
+  assert.equal(second.dirty, false, 'unchanged re-run → clean (skips write)');
+  // a previously-cached file gone from candidates must force a write (eviction)
+  const empty = aggregate(mkConfig([]), PRICING, { cache });
+  assert.equal(empty.dirty, true, 'cached file disappeared → dirty');
+});
+
 test('readCache/writeCache round-trip', () => {
   const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-cache-')); tmp.push(stateDir);
   assert.equal(readCache(stateDir), null);

@@ -14,7 +14,10 @@ function main() {
   const pricing = loadPricing(stateDir);          // sync; may kick a background fetch
   const cache = readCache(stateDir);
   const result = aggregate(configDir, pricing, { sinceMtimeMs: Date.now() - RETENTION_MS, cache });
-  writeCache(stateDir, result);
+  // Skip the two full serializations + atomic writes when nothing changed since
+  // the last run (every file hit the mtime+size cache and none disappeared) (#38).
+  // Always write when there's no cache yet, so the first run populates it.
+  if (result.dirty || !cache) writeCache(stateDir, result);
 }
 
 try { main(); } catch {}                          // never break the prompt
