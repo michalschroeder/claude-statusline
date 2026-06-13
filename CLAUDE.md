@@ -162,17 +162,17 @@ Each segment is emitted only when its source field is present/non-empty. Separat
 |---|---|---|
 | model | `model.display_name` | dim; fallback `Claude` |
 | effort | `effort.level` | yellow `󰾅` |
-| output style | `output_style.name` | `󰏘`; only when not `default` |
-| vim mode | `vim.mode` | `` |
+| output style (`style`) | `output_style.name` | `󰏘`; only when not `default` |
+| vim mode (`vim`) | `vim.mode` | `` |
 | branch | parsed from `.git/HEAD` (no subprocess) | `󰘬`, truncated >50 chars (`first30...lastN`); supports worktree `gitdir:` indirection and detached HEAD (short hash) |
 | worktree | `worktree.name`, falls back to `workspace.git_worktree` | `󰘯`; covers plain `git worktree add` worktrees, not only `--worktree` sessions |
 | agent | `agent.name` | bold; `󰚩` |
 | dir | `workspace.current_dir` basename | `󰉋`; when inside `.../.claude/worktrees/<name>/`, shows parent project name |
-| added dirs | `workspace.added_dirs.length` | `+Ndir` |
+| added dirs (`addeddirs`) | `workspace.added_dirs.length` | `+Ndir` |
 | cost | `cost.total_cost_usd` + `cost-summary.json` | s/d/w/m chip group joined by dim `·`. `s` = this session's recomputed spend (cached recomputed total + live delta), absolute USD thresholds (green <$1, yellow <$5, orange <$10, red ≥$10), omitted when ≤0. `d`/`w`/`m` = today / this week / this month = **all sessions' recomputed, day-bucketed spend (from `cost-summary.json`) + the current session's live delta (`max(0, live − cached total)`) folded into the current windows**, budget-relative coloring via `STATUSLINE_MONTHLY_BUDGET`. d/w/m hidden when `STATUSLINE_MONTHLY_BUDGET=0` |
 | duration | `cost.total_duration_ms` | `󰔛`; `Ns` / `Nm` / `Nh Nm` |
 | lines | `cost.total_lines_added` / `total_lines_removed` | `󰷈 +A -R` (green/red) |
-| rate limits | `rate_limits.five_hour.used_percentage`, `rate_limits.seven_day.used_percentage` | `󰔚 5h N%`, `󰃭 7d N%`, joined with `·` |
+| rate limits (`ratelimits`) | `rate_limits.five_hour.used_percentage`, `rate_limits.seven_day.used_percentage` | `󰔚 5h N%`, `󰃭 7d N%`, joined with `·` |
 | context | `context_window.used_percentage` (falls back to `100 − remaining_percentage`), `context_window.total_input_tokens` | 10-cell block bar with per-cell coloring (256-color "ramp B": forest → olive → amber → red), dim grey empty cells, `N%` of panic threshold, followed by dim compact input tokens `Xk󰁝`. Replaces the prior standalone `tokens` segment — single segment name `context` |
 
 ### Context bar — per-cell palette and thresholds
@@ -198,7 +198,7 @@ So a 200k model fills cell N at `20k · N` tokens; a 1M model fills cell N at `5
 
 ## Configuration
 
-`STATUSLINE_SEGMENTS` env var (set via `"env"` in `~/.claude/settings.json`) is an optional comma-separated allowlist that also controls render order. Unset/empty = render all. Names match the segment column above. Unknown names ignored. Each segment is tagged via `add(name, value)`; filter applied just before joining.
+`STATUSLINE_SEGMENTS` env var (set via `"env"` in `~/.claude/settings.json`) is an optional comma-separated allowlist that also controls render order. Unset/empty = render all. Names are the literal `add(name, …)` keys — the full set is `model`, `effort`, `style`, `vim`, `branch`, `worktree`, `agent`, `dir`, `addeddirs`, `cost`, `duration`, `lines`, `ratelimits`, `context` (parenthesized in the segment column above where the human label differs). Unknown names are silently ignored — a typo like `output style` just never renders, with no error. Each segment is tagged via `add(name, value)`; filter applied just before joining.
 
 `STATUSLINE_MONTHLY_BUDGET` env var sets the budget for the cost segment's d/w/m budget-relative
 coloring. Unset → $1000/mo default; `0` → hide d/w/m chips; a number → that monthly budget. Derived:
