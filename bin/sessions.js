@@ -59,8 +59,11 @@ function sinceToTs(s) {
 
 function truncate(s, width) {
   if (width <= 0) return '';
-  if (s.length <= width) return s;
-  return s.slice(0, Math.max(0, width - 1)) + '…';
+  // Slice by code points so a cut never lands inside a surrogate pair (emoji →
+  // lone surrogate → mojibake). Wide chars still count as 1 column (separate concern).
+  const cps = [...s];
+  if (cps.length <= width) return s;
+  return cps.slice(0, Math.max(0, width - 1)).join('') + '…';
 }
 
 const money = (c) => '$' + c.toFixed(2);
