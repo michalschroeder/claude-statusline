@@ -350,10 +350,15 @@ process.stdin.on('end', () => {
     // also carries the lifetime cross-basis gap. The d/w/m fold is clamped to
     // MAX_LIVE_DELTA so that standing bias can't exceed one turn's plausible spend
     // (#44); the `s` chip uses the full delta (it's the whole-session figure).
-    const costFilter = process.env.STATUSLINE_SEGMENTS;
-    const costEnabled = !costFilter || !costFilter.trim()
-      || costFilter.split(',').map((s) => s.trim()).includes('cost');
-    if (costEnabled) {
+    // Parse the allowlist once: null = render all, else the ordered name list.
+    // Both the cost gate and the final filter/order step read this — keep it
+    // single-sourced so the two can't drift (#37).
+    const segFilter = process.env.STATUSLINE_SEGMENTS;
+    const allowed = segFilter && segFilter.trim()
+      ? segFilter.split(',').map((s) => s.trim()).filter(Boolean)
+      : null;
+    const segEnabled = (n) => !allowed || allowed.includes(n);
+    if (segEnabled('cost')) {
       const { budgetOptedOut, monthly: monthlyBudget, daily: dailyLimit, weekly: weeklyLimit } =
         resolveBudget(process.env.STATUSLINE_MONTHLY_BUDGET);
       const summary = readSummary(stateDir);
@@ -405,11 +410,9 @@ process.stdin.on('end', () => {
       add('context', `${ctxBar}${suffix}`);
     }
 
-    // Optional allowlist + order via STATUSLINE_SEGMENTS env var.
-    const filter = process.env.STATUSLINE_SEGMENTS;
+    // Optional allowlist + order via STATUSLINE_SEGMENTS env var (parsed once above).
     let final;
-    if (filter && filter.trim()) {
-      const allowed = filter.split(',').map((s) => s.trim()).filter(Boolean);
+    if (allowed) {
       const byName = new Map(segments.map((s) => [s.name, s.value]));
       final = allowed.map((n) => byName.get(n)).filter((v) => v);
     } else {
