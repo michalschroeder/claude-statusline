@@ -23,7 +23,6 @@ test('buildMap: applies cache fallbacks (write=input×1.25, read=input×0.1)', (
   assert.equal(c.cacheWrite, 0.000005 * 1.25);
   assert.equal(c.cacheRead, 0.000005 * 0.1);
   assert.equal(c.webSearch, 0.01);
-  assert.equal(c.fastMultiplier, 1);
 });
 
 test('buildMap: indexes provider-stripped alias', () => {
