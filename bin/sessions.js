@@ -6,7 +6,7 @@ const os = require('os');
 const { readTitleRecap, projectDirs, listSessions, listSubagentTranscripts } = require('../lib/transcript');
 const { dim, cyan, colorByTier, SESSION_TIERS, BUDGET_TIERS } = require('../lib/color');
 const { loadPricing } = require('../lib/pricing');
-const { aggregate } = require('../lib/cost-aggregate');
+const { aggregate, readCache } = require('../lib/cost-aggregate');
 const { buildDetail } = require('../lib/session-detail');
 const { sumPeriods } = require('../lib/periods');
 const { resolveBudget } = require('../lib/budget');
@@ -382,8 +382,12 @@ function main() {
 
   // List mode from here on. Recompute every session's spend (full history, no
   // mtime cap — the one-shot viewer can afford the parse); detail mode above
-  // skips this since buildDetail re-derives the one session it needs.
-  const agg = aggregate(transcriptRoot, pricing);
+  // skips this since buildDetail re-derives the one session it needs. Reuse the
+  // refresh hook's incremental cache read-only (per-file mtime+size+pricingHash):
+  // unchanged files skip the re-parse, everything outside the hook's 40-day
+  // window is parsed fresh. Never writeCache from here — keep the hook's
+  // windowed cache unpolluted by full-history entries (#35).
+  const agg = aggregate(transcriptRoot, pricing, { cache: readCache(stateDir) });
   const costOf = (id) => { const ps = agg.perSession[id]; return ps ? ps.total : 0; };
 
   // Period totals + budget (footer in text mode, top-level fields in JSON mode).
