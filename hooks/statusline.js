@@ -46,9 +46,9 @@ const ICON_SETS = {
 // Resolve icon mode. Priority: STATUSLINE_ICONS env > cached choice > first-run default.
 // First run writes a cache file and signals (via returned `hint`) that we should
 // append a one-time nudge to the statusline.
-function resolveIconMode() {
-  const env = process.env.STATUSLINE_ICONS;
-  if (env && ICON_SETS[env]) return { mode: env, hint: false };
+function resolveIconMode(env = process.env) {
+  const iconEnv = env.STATUSLINE_ICONS;
+  if (iconEnv && ICON_SETS[iconEnv]) return { mode: iconEnv, hint: false };
 
   const cacheFile = path.join(os.homedir(), '.cache', 'claude-statusline', 'icons');
   try {
@@ -230,20 +230,25 @@ function buildContextBar(usedPct, inputTokens, icons) {
   return `${bar} ${displayPct}%`;
 }
 
-// Read JSON from stdin
-let input = '';
-process.stdin.setEncoding('utf8');
-process.stdin.on('data', (chunk) => (input += chunk));
-process.stdin.on('end', () => {
-  try {
-    const data = JSON.parse(input);
+/**
+ * Build the full statusline string from a parsed status payload.
+ *
+ * Pure(ish): no stdin/stdout, all environment access goes through `env` (the
+ * caller passes process.env). Throws on bad input — the stdin shell below
+ * swallows that so a render error never breaks the user's prompt. Exported for
+ * in-process unit tests (the spawn-based tests in tests/helpers.js still cover
+ * the wiring). Still touches the filesystem for the skills log and cost summary
+ * and reads process.stdout.columns for the rule width, per the cheap-hot-path
+ * conventions in CLAUDE.md.
+ */
+function render(data, env) {
     // State dir resolution (must match the bash hooks). Data always lives in our
     // own XDG namespace (never inside CLAUDE_CONFIG_DIR — that's Claude Code's
     // managed dir and could collide with a future CC feature). CLAUDE_CONFIG_DIR
     // is used only as a per-subscription KEY: its sanitized path becomes a profile
     // subdir, so distinct subscriptions keep separate skill logs. When
     // unset (single-profile users), profile is empty → flat layout, unchanged.
-    const stateDir = resolveStateDir(process.env.CLAUDE_CONFIG_DIR);
+    const stateDir = resolveStateDir(env.CLAUDE_CONFIG_DIR);
 
     // Extract data fields
     const model = data.model?.display_name || 'Claude';
@@ -265,7 +270,7 @@ process.stdin.on('end', () => {
     const addedDirs = data.workspace?.added_dirs;
     const worktreeName = data.worktree?.name || data.workspace?.git_worktree;
 
-    const { mode: iconMode, hint: iconHint } = resolveIconMode();
+    const { mode: iconMode, hint: iconHint } = resolveIconMode(env);
     const icons = ICON_SETS[iconMode];
 
     const segments = [];
@@ -353,14 +358,14 @@ process.stdin.on('end', () => {
     // Parse the allowlist once: null = render all, else the ordered name list.
     // Both the cost gate and the final filter/order step read this — keep it
     // single-sourced so the two can't drift (#37).
-    const segFilter = process.env.STATUSLINE_SEGMENTS;
+    const segFilter = env.STATUSLINE_SEGMENTS;
     const allowed = segFilter && segFilter.trim()
       ? segFilter.split(',').map((s) => s.trim()).filter(Boolean)
       : null;
     const segEnabled = (n) => !allowed || allowed.includes(n);
     if (segEnabled('cost')) {
       const { budgetOptedOut, monthly: monthlyBudget, daily: dailyLimit, weekly: weeklyLimit } =
-        resolveBudget(process.env.STATUSLINE_MONTHLY_BUDGET);
+        resolveBudget(env.STATUSLINE_MONTHLY_BUDGET);
       const summary = readSummary(stateDir);
       const perSession = (summary && summary.perSession) || {};
       const cachedSession = (session && perSession[session] && perSession[session].total) || 0;
@@ -438,9 +443,24 @@ process.stdin.on('end', () => {
       out += `\n${title} ${dim(full)}\n${rule}`;
     }
 
-    process.stdout.write(out);
-  } catch {
-    // Silent fail - don't break statusline on parse errors
-  }
-});
+    return out;
+}
+
+module.exports = { render };
+
+// Thin stdin shell — only when run directly (not when required by a test). Reads
+// the JSON payload Claude Code pipes in, renders, writes one line. Silent failure
+// on any parse/render error so a bug never blanks the user's prompt.
+if (require.main === module) {
+  let input = '';
+  process.stdin.setEncoding('utf8');
+  process.stdin.on('data', (chunk) => (input += chunk));
+  process.stdin.on('end', () => {
+    try {
+      process.stdout.write(render(JSON.parse(input), process.env));
+    } catch {
+      // Silent fail - don't break statusline on parse errors
+    }
+  });
+}
 
