@@ -144,6 +144,34 @@ test('subagent transcripts counted, attributed to parent session', () => {
   assert.equal(r.byDay['2026-06-10'], 12);
 });
 
+test('resumed old session: subagent in-window via parent mtime, not its own (#30)', () => {
+  // Main transcript freshly resumed (mtime now), subagent file untouched (old mtime).
+  const root = mkConfig([{ id: 's1', proj: 'p', mtime: '2026-06-13T10:00:00Z',
+    entries: [asst('a', 'm', 3, '2026-06-13T10:00:00Z')] }]);
+  const subDir = path.join(root, 'projects', 'p', 's1', 'subagents');
+  fs.mkdirSync(subDir, { recursive: true });
+  const subFile = path.join(subDir, 'agent-x.jsonl');
+  fs.writeFileSync(subFile, JSON.stringify(asst('sub1', 'm', 9, '2026-05-01T10:00:00Z')) + '\n');
+  fs.utimesSync(subFile, new Date('2026-05-01T10:00:00Z'), new Date('2026-05-01T10:00:00Z'));
+  // Window bound excludes the subagent's own old mtime, but the parent main file
+  // is in-window → subagent cost still folded in.
+  const r = aggregate(root, PRICING, { sinceMtimeMs: new Date('2026-06-01T00:00:00Z').getTime() });
+  assert.equal(r.perSession.s1.total, 3 + 9);
+});
+
+test('orphan old subagent (no in-window parent) still excluded (#30)', () => {
+  // Both main and subagent are old → both out of window, subagent stays excluded.
+  const root = mkConfig([{ id: 's1', proj: 'p', mtime: '2026-05-01T10:00:00Z',
+    entries: [asst('a', 'm', 3, '2026-05-01T10:00:00Z')] }]);
+  const subDir = path.join(root, 'projects', 'p', 's1', 'subagents');
+  fs.mkdirSync(subDir, { recursive: true });
+  const subFile = path.join(subDir, 'agent-x.jsonl');
+  fs.writeFileSync(subFile, JSON.stringify(asst('sub1', 'm', 9, '2026-05-01T10:00:00Z')) + '\n');
+  fs.utimesSync(subFile, new Date('2026-05-01T10:00:00Z'), new Date('2026-05-01T10:00:00Z'));
+  const r = aggregate(root, PRICING, { sinceMtimeMs: new Date('2026-06-01T00:00:00Z').getTime() });
+  assert.equal(r.perSession.s1, undefined);
+});
+
 test('writeCache emits slim cost-summary.json; readSummary prefers it over full cache', () => {
   const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-sum-')); tmp.push(stateDir);
   writeCache(stateDir, {
