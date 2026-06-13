@@ -125,6 +125,23 @@ the session isn't yet cached is the reported total. Trade-off: a genuine >$5 sin
 under-counts the d/w/m windows until the next `UserPromptSubmit` refresh corrects it — a bounded,
 self-healing error.
 
+**`/clear` does NOT reset the `s` chip** (nor `duration`/`lines`). `/clear` mints a *new*
+`session_id` + new transcript (old one preserved/resumable), so our recomputed `cachedSession`
+for the fresh id is ~$0 — but Claude's `cost.total_cost_usd` is **process-cumulative** (it does not
+reset on `/clear`; confirmed via CC docs + issues #3019/#37451). Since the new session isn't cached
+yet, `s = cachedSession + rawDelta = 0 + (total_cost_usd − 0)` = the whole process's lifetime cost,
+so right after `/clear` the `s` chip still shows the pre-clear total and only *grows* from there.
+`duration` (`total_duration_ms`) and `lines` (`total_lines_added/removed`) are the same
+process-cumulative payload fields and likewise survive `/clear`. The **cache-based `d/w/m` base is
+correct** (pre-clear spend counts once via the old session's day-buckets), but the **live-delta fold
+double-counts the carry-in**: `periodDelta = min($5, rawDelta)` and `rawDelta = total_cost_usd −
+cachedSession[newId]` never sheds the carry-in (total_cost_usd is process-cumulative, cachedSession
+is per-session), so after a `/clear` d/w/m carry a *standing* phantom of `min($5, pre-clear process
+cost)` for the lifetime of the post-clear session — the same #44 mechanism, just at its clamp ceiling
+rather than self-healing. Resetting `s` on `/clear` would require a `SessionStart` (`source:"clear"`) hook to record a
+per-session carry-in baseline `B` and compute the live part against `total_cost_usd − B` — not
+implemented; only a fresh `claude` process (new id **and** `total_cost_usd` starting at 0) resets `s`.
+
 Data flow:
 
 1. Claude Code spawns `hooks/statusline.js` per render and pipes a JSON status payload on stdin.
