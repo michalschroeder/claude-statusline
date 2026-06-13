@@ -48,7 +48,10 @@ function sinceToTs(s) {
   if (!s) return null;
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
   if (!m) return null;
-  return Math.floor(new Date(+m[1], +m[2] - 1, +m[3]).getTime() / 1000);
+  const d = new Date(+m[1], +m[2] - 1, +m[3]);
+  // Reject rollover: new Date(2026, 12, 40) silently becomes Feb 2027.
+  if (d.getMonth() !== +m[2] - 1 || d.getDate() !== +m[3]) return null;
+  return Math.floor(d.getTime() / 1000);
 }
 
 function truncate(s, width) {

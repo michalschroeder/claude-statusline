@@ -154,6 +154,14 @@ test('viewer: invalid --since rejects with exit 1', async () => {
   );
 });
 
+test('viewer: --since rollover date (2026-13-01) rejects with exit 1 (#32)', async () => {
+  const p = mkProfile();
+  await assert.rejects(
+    runSessions(['--config-dir', p.configDir, '--since', '2026-13-01'], wide()),
+    /--since requires/
+  );
+});
+
 test('viewer: per-session cost + budget-bar footer', async () => {
   const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-vc-'));
   tmpDirs.push(configDir);
