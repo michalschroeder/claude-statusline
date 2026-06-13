@@ -109,6 +109,18 @@ test('getModelCosts: unknown and local models → null', () => {
   assert.equal(getModelCosts(m, 'mistral-7b-q4'), null);
 });
 
+test('getModelCosts: memoized result, isolated per map (issue #36)', () => {
+  const a = buildMap(RAW);
+  const b = buildMap(RAW);
+  // Repeat lookups return the same cached object (no re-resolution).
+  assert.strictEqual(getModelCosts(a, 'claude-opus-4-8'), getModelCosts(a, 'claude-opus-4-8'));
+  // Distinct maps keep distinct caches — never cross-contaminate.
+  assert.notStrictEqual(getModelCosts(a, 'claude-opus-4-8'), getModelCosts(b, 'claude-opus-4-8'));
+  // A miss is memoized as null and stays null.
+  assert.equal(getModelCosts(a, 'gpt-9'), null);
+  assert.equal(getModelCosts(a, 'gpt-9'), null);
+});
+
 test('hashMap: stable + changes when a rate changes', () => {
   const a = hashMap(buildMap(RAW));
   const b = hashMap(buildMap(RAW));
