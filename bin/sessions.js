@@ -33,7 +33,10 @@ function parseArgs(argv) {
     else if (a === '--since') { opts.since = needValue('--since', i); i++; }
     else if (a === '--config-dir') { opts.configDir = needValue('--config-dir', i); i++; }
     else if (a === '--analyze') { opts.analyze = true; } // emit JSON: full-fidelity detail (with a session prefix) or the session list (without)
-    else if (a.startsWith('--')) { /* unknown flag: ignored, as before */ }
+    else if (a.startsWith('--')) {
+      process.stderr.write(`bin/sessions.js: unknown flag '${a}'\n`);
+      process.exit(1);
+    }
     else if (opts.detail === undefined) { opts.detail = a; } // first bare token = session prefix
     else {
       process.stderr.write(`bin/sessions.js: unexpected argument '${a}'\n`);
