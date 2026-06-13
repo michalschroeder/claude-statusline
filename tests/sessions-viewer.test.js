@@ -162,6 +162,14 @@ test('viewer: --since rollover date (2026-13-01) rejects with exit 1 (#32)', asy
   );
 });
 
+test('viewer: unknown flag rejects with exit 1 (#33)', async () => {
+  const p = mkProfile();
+  await assert.rejects(
+    runSessions(['--config-dir', p.configDir, '--bogus'], wide()),
+    /unknown flag/
+  );
+});
+
 test('viewer: per-session cost + budget-bar footer', async () => {
   const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-vc-'));
   tmpDirs.push(configDir);
