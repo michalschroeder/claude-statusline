@@ -265,7 +265,6 @@ function render(data, env) {
     const segments = [];
     const add = (name, value) => segments.push({ name, value });
 
-
     // Model
     add('model', dim(model));
 
@@ -290,7 +289,7 @@ function render(data, env) {
       } catch {}
     }
 
-// Output style (only when non-default)
+    // Output style (only when non-default)
     if (outputStyle && outputStyle.toLowerCase() !== 'default') add('style', dim(`${icons.style} ${outputStyle}`));
 
     // Vim mode
