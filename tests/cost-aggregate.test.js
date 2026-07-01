@@ -89,14 +89,30 @@ test('incremental: unchanged file reuses cached calls; pricing change rebuilds',
 
 test('dirty flag: fresh run dirty; unchanged re-run clean; eviction dirties (#38)', () => {
   const root = mkConfig([{ id: 's1', mtime: '2026-06-10T10:00:00Z', entries: [asst('a', 'm', 4, '2026-06-10T10:00:00Z')] }]);
-  const first = aggregate(root, PRICING);
+  const first = aggregate(root, PRICING, { tz: undefined });
   assert.equal(first.dirty, true, 'first run parses → dirty');
-  const cache = { pricingHash: 'test', files: first.files };
-  const second = aggregate(root, PRICING, { cache });
+  const cache = { pricingHash: 'test', tz: undefined, files: first.files };
+  const second = aggregate(root, PRICING, { tz: undefined, cache });
   assert.equal(second.dirty, false, 'unchanged re-run → clean (skips write)');
   // a previously-cached file gone from candidates must force a write (eviction)
-  const empty = aggregate(mkConfig([]), PRICING, { cache });
+  const empty = aggregate(mkConfig([]), PRICING, { tz: undefined, cache });
   assert.equal(empty.dirty, true, 'cached file disappeared → dirty');
+});
+
+test('opts.tz buckets a boundary call into the tz-local day', () => {
+  // 02:30 UTC on the 11th: the 10th in LA, the 11th in Tokyo.
+  const root = mkConfig([{ id: 's1', entries: [asst('a', 'm', 1, '2026-06-11T02:30:00Z')] }]);
+  assert.deepEqual(Object.keys(aggregate(root, PRICING, { tz: 'America/Los_Angeles' }).perSession.s1.days), ['2026-06-10']);
+  assert.deepEqual(Object.keys(aggregate(root, PRICING, { tz: 'Asia/Tokyo' }).perSession.s1.days), ['2026-06-11']);
+});
+
+test('tz change invalidates the incremental cache (re-buckets stale calls)', () => {
+  const root = mkConfig([{ id: 's1', mtime: '2026-06-11T02:30:00Z', entries: [asst('a', 'm', 1, '2026-06-11T02:30:00Z')] }]);
+  const first = aggregate(root, PRICING, { tz: 'America/Los_Angeles' });
+  assert.equal(first.tz, 'America/Los_Angeles');
+  // Same files, but a different tz → cache is stale, so it must re-parse, not reuse.
+  const second = aggregate(root, PRICING, { tz: 'Asia/Tokyo', cache: { pricingHash: 'test', tz: 'America/Los_Angeles', files: first.files } });
+  assert.deepEqual(Object.keys(second.perSession.s1.days), ['2026-06-11']);
 });
 
 test('readCache/writeCache round-trip', () => {
