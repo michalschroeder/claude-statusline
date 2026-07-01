@@ -377,6 +377,32 @@ test('buildDetail: two main files across project dirs sum to the aggregate total
   assert.equal(mainRow.cost.toFixed(8), (detail.total - detail.subagentTotal).toFixed(8));
 });
 
+test('buildDetail: cross-cwd halves keep distinct turns (per-file turn indices offset, not merged)', () => {
+  const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-sd-xturn-'));
+  tmp.push(cfg);
+  const id = 'sessXTN1';
+  const mainA = path.join(cfg, 'projects', 'pa', id + '.jsonl');
+  const mainB = path.join(cfg, 'projects', 'pb', id + '.jsonl');
+  // Both halves' first prompt is turn 1 within its own file — without the offset
+  // they collide in byPrompt and 'second cwd' folds into the 'first cwd' row.
+  writeJsonl(mainA, [
+    userPrompt('first cwd'),
+    asst('m1', { input_tokens: 1000, output_tokens: 200 }),
+  ], 1000);
+  writeJsonl(mainB, [
+    userPrompt('second cwd'),
+    asst('m2', { input_tokens: 800, output_tokens: 150 }),
+  ], 2000);
+  const detail = buildDetail([mainA, mainB], [], pricing());
+  const userTurns = detail.turns.filter((t) => t.kind === 'user');
+  assert.deepEqual(userTurns.map((t) => t.prompt), ['first cwd', 'second cwd']);
+  assert.equal(new Set(detail.turns.map((t) => t.turnIndex)).size, detail.turns.length);
+  // perCall turnIndex joins back to turns[]
+  const secondCall = detail.perCall.find((c) => c.prompt === 'second cwd');
+  const secondTurn = detail.turns.find((t) => t.prompt === 'second cwd');
+  assert.equal(secondCall.turnIndex, secondTurn.turnIndex);
+});
+
 test('buildDetail: single-file (non-array) signature still works', () => {
   const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-sd-sig-'));
   tmp.push(cfg);
