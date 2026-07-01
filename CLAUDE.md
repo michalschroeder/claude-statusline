@@ -105,8 +105,9 @@ Costs are **recomputed from raw token counts × LiteLLM per-token prices** — n
 
 - `lib/cost-compute.js` — pure per-call math (tokens × prices). 5m cache write = 1.25× input, 1h cache write = 2× input (computed as `cacheWrite × 1.6`), cache read = 0.1× input. Supports a generic long-context (>200K input) `above200k` premium tier per call **when a price entry defines one** — but per Anthropic's current pricing **no Claude model has a >200K premium** (Opus 4.6+/Sonnet 4.6 serve the full 1M at standard rates), so the bundled snapshot defines none and the tier stays dormant. Also exports `calculateCostBreakdown` (itemized per-component cost — `{input, output, cacheWrite, cacheRead, web, total}`; `calculateCost` is its `.total`).
 - `lib/pricing.js` — LiteLLM price table; bundled snapshot `data/model_prices.json` + background fetch at most every 24h (and at most once per hour per *attempt* — a `<STATE>/pricing.last-attempt` stamp throttles retries so a persistently failing fetch, whose `fetchedAt` never advances, doesn't fire on every prompt). **Never fetched from the renderer.** Still extracts `*_above_200k_tokens` premium rates if an upstream entry carries them (dormant for current Claude models).
-- `lib/cost-aggregate.js` — parses transcripts (main session files **and** nested `<session>/subagents/agent-*.jsonl`, whose token usage Anthropic bills — attributed to the parent session; only `agent-*.jsonl` are billed, other sidecar files under `subagents/` are ignored), dedups streaming message ids (within-file + globally across files), buckets each call into local-day keys, maintains an incremental `<STATE>/cost-cache.json` keyed by file mtime/size; cache invalidated on a pricing-hash change. `writeCache` also emits a slim `<STATE>/cost-summary.json` (`{pricingHash, perSession}`, no bulky `files`/`calls` blob) for the renderer; `readSummary` reads it (falling back to the full cache for back-compat).
-- `lib/periods.js` — local-calendar day/week/month window sums over the buckets.
+- `lib/cost-aggregate.js` — parses transcripts (main session files **and** nested `<session>/subagents/agent-*.jsonl`, whose token usage Anthropic bills — attributed to the parent session; only `agent-*.jsonl` are billed, other sidecar files under `subagents/` are ignored), dedups streaming message ids (within-file + globally across files), buckets each call into `<STATUSLINE_TIMEZONE>`-day keys (system-local when unset), maintains an incremental `<STATE>/cost-cache.json` keyed by file mtime/size; cache invalidated on a pricing-hash **or timezone** change (the cache persists its `tz`; a mismatch re-buckets, self-healing on the next refresh). `writeCache` also emits a slim `<STATE>/cost-summary.json` (`{pricingHash, perSession}`, no bulky `files`/`calls` blob) for the renderer; `readSummary` reads it (falling back to the full cache for back-compat).
+- `lib/periods.js` — `<STATUSLINE_TIMEZONE>`-calendar (system-local when unset) day/week/month window sums over the buckets.
+- `lib/timezone.js` — `resolveTimezone(env)` validates `STATUSLINE_TIMEZONE` (IANA name; unset/empty/invalid → `undefined` = system-local, never throws) and `ymd(date, tz)` returns the `{y,m,d}` calendar date in that zone. Both bucketing (`dayKey`) and windowing (`windowStarts`) read it so a call's day and the today/week/month edges are decided under **one** clock — they must agree or the sums drift.
 - `lib/budget.js` — `resolveBudget` (reads `STATUSLINE_MONTHLY_BUDGET`; daily = monthly/30, weekly = monthly×7/30).
 
 The `UserPromptSubmit` hook `hooks/refresh-cost-cache.js` rebuilds `cost-cache.json` (and the slim
@@ -203,6 +204,14 @@ So a 200k model fills cell N at `20k · N` tokens; a 1M model fills cell N at `5
 `STATUSLINE_MONTHLY_BUDGET` env var sets the budget for the cost segment's d/w/m budget-relative
 coloring. Unset → $1000/mo default; `0` → hide d/w/m chips; a number → that monthly budget. Derived:
 daily = monthly/30, weekly = monthly×7/30. Resolved by `lib/budget.js` (`resolveBudget`).
+
+`STATUSLINE_TIMEZONE` env var picks the timezone for cost day-bucketing and the d/w/m windows — an
+IANA name (e.g. `Europe/Warsaw`). Unset/empty/invalid → system-local (unchanged behavior). It's a
+global (account-level) setting: only the statusline reads it, so unlike setting `TZ` in `"env"` it
+doesn't affect other subprocesses. Resolved by `lib/timezone.js` (`resolveTimezone`); a change
+re-buckets on the next `UserPromptSubmit` refresh (cache carries its `tz`). **Tip:** the Enterprise
+spend-limit meter resets at **00:00 UTC on the 1st** (the console shows it in your locale, e.g.
+`2:00 AM GMT+2`), so set `STATUSLINE_TIMEZONE=UTC` to make the `m` chip's month align with that reset.
 
 `STATUSLINE_ICONS=nerd|unicode|ascii` picks the icon set. `nerd` requires a Nerd Font; `unicode` is BMP symbols (no emoji); `ascii` is pure ASCII. Resolved by `resolveIconMode()`: env var wins; else read cached choice from `~/.cache/claude-statusline/icons`; else first-run writes `ascii` to the cache and appends a one-line install hint to the statusline. Per-mode glyphs live in `ICON_SETS` (`effort branch worktree dir duration lines r5h r7d rsep skull style vim agent barFill barEmpty sep skills hr`). Tests force `nerd` via `tests/helpers.js`; `tests/icons.test.js` exercises the other modes.
 

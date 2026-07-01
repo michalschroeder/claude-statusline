@@ -8,6 +8,7 @@ const { resolveStateDir } = require('../lib/state');
 const { dim, bold, green, yellow, red, colorByTier, SESSION_TIERS, BUDGET_TIERS } = require('../lib/color');
 const { readSummary } = require('../lib/cost-aggregate');
 const { sumPeriods } = require('../lib/periods');
+const { resolveTimezone } = require('../lib/timezone');
 const { resolveBudget } = require('../lib/budget');
 const { formatCompact } = require('../lib/format');
 
@@ -366,7 +367,7 @@ function render(data, env) {
       const periodDelta = Math.min(MAX_LIVE_DELTA, rawDelta);
       const costParts = [formatCost(sessionTotal, budgetOptedOut ? '' : 's ')];
       if (!budgetOptedOut) {
-        const { daily, weekly, monthly } = sumPeriods(perSession, new Date());
+        const { daily, weekly, monthly } = sumPeriods(perSession, new Date(), undefined, resolveTimezone(env));
         costParts.push(
           formatPeriodCost(daily + periodDelta, dailyLimit, 'd '),
           formatPeriodCost(weekly + periodDelta, weeklyLimit, 'w '),

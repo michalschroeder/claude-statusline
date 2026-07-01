@@ -30,3 +30,21 @@ test('sumPeriods: excludes a session id', () => {
   };
   assert.equal(sumPeriods(perSession, NOW, 'b').daily, 1);
 });
+
+test('windowStarts: tz shifts the calendar day of the same instant', () => {
+  // 02:30 UTC on the 11th: the 10th in LA (-7), the 11th in Tokyo (+9). The edge
+  // ms is built system-local from that tz-calendar date, so assert against it.
+  const now = new Date('2026-06-11T02:30:00Z');
+  assert.equal(windowStarts(now, 'America/Los_Angeles').dayStart, new Date(2026, 5, 10).getTime());
+  assert.equal(windowStarts(now, 'Asia/Tokyo').dayStart, new Date(2026, 5, 11).getTime());
+});
+
+test('sumPeriods: tz decides whether a boundary spend is still "this month"', () => {
+  // Spend dated June 30; "now" is 02:30 UTC on July 1.
+  const perSession = { a: { days: { '2026-06-30': 5 }, total: 5 } };
+  const now = new Date('2026-07-01T02:30:00Z');
+  // LA (-7): it is still June 30 → month starts June 1 → the spend counts.
+  assert.equal(sumPeriods(perSession, now, undefined, 'America/Los_Angeles').monthly, 5);
+  // Tokyo (+9): it is already July 1 → month starts July 1 → June 30 excluded.
+  assert.equal(sumPeriods(perSession, now, undefined, 'Asia/Tokyo').monthly, 0);
+});
