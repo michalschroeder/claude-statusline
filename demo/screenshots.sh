@@ -29,21 +29,22 @@ render() {
 
 # 1. Fresh session — minimal payload
 render "1. Fresh session" '{
-  "model": {"display_name": "Opus 4.7"},
+  "model": {"display_name": "Opus 4.8"},
   "workspace": {"current_dir": "/home/ms/projects/claude-statusline", "project_dir": "/home/ms/projects/claude-statusline"}
 }'
 
 # 2. Typical mid-session
 render "2. Mid-session (typical)" '{
-  "model": {"display_name": "Sonnet 4.6"},
+  "model": {"display_name": "Sonnet 5"},
   "workspace": {"current_dir": "/home/ms/projects/claude-statusline", "project_dir": "/home/ms/projects/claude-statusline"},
   "cost": {"total_cost_usd": 0.42, "total_duration_ms": 185000, "total_lines_added": 47, "total_lines_removed": 12},
   "context_window": {"total_input_tokens": 18500, "used_percentage": 9}
 }'
 
-# 3. Heavy session — agent, effort, output style, vim, added dirs
-render "3. Heavy session w/ agent" '{
-  "model": {"display_name": "Opus 4.7"},
+# 3. Heavy session — agent, effort, output style, vim, added dirs.
+#    Cost ≥60s so the s-chip carries a dim burn rate ($/h); $6.85 = yellow tier.
+render "3. Heavy session w/ agent (s-chip: burn rate + yellow tier)" '{
+  "model": {"display_name": "Opus 4.8"},
   "effort": {"level": "high"},
   "output_style": {"name": "explanatory"},
   "vim": {"mode": "NORMAL"},
@@ -59,7 +60,7 @@ render "3. Heavy session w/ agent" '{
 
 # 4. Worktree + rate limits
 render "4. Worktree + rate limits" '{
-  "model": {"display_name": "Sonnet 4.6"},
+  "model": {"display_name": "Sonnet 5"},
   "effort": {"level": "medium"},
   "worktree": {"name": "feature-icons"},
   "workspace": {
@@ -71,19 +72,20 @@ render "4. Worktree + rate limits" '{
   "rate_limits": {"five_hour": {"used_percentage": 34}, "seven_day": {"used_percentage": 61}}
 }'
 
-# 5. 1M context — 250k tokens. Bar fills 5/10 cells (calibrated to 500k panic),
-#    label reads 25% (raw used_percentage — 250k of 1M context).
-render "5. 1M model — 250k tokens (5/10 cells, label 25% = 250k of 1M)" '{
-  "model": {"display_name": "Opus 4.7 (1M)"},
+# 5. 1M context — 250k tokens. Bar spans the full 1M window, so 250k fills 2/10 cells
+#    and agrees with the 25% label (250k of 1M).
+render "5. 1M model — 250k tokens (2/10 cells, label 25% = 250k of 1M)" '{
+  "model": {"display_name": "Opus 4.8 (1M)"},
   "effort": {"level": "high"},
   "workspace": {"current_dir": "/home/ms/projects/claude-statusline", "project_dir": "/home/ms/projects/claude-statusline"},
   "cost": {"total_cost_usd": 4.20, "total_duration_ms": 1800000, "total_lines_added": 320, "total_lines_removed": 140},
   "context_window": {"total_input_tokens": 250000, "used_percentage": 25}
 }'
 
-# 6. Danger zone — 1M model right at the 500k panic threshold (borderline panic)
-render "6. Danger zone (1M at 500k panic threshold)" '{
-  "model": {"display_name": "Opus 4.7 (1M)"},
+# 6. Danger zone — 1M model at the 500k panic line: honest half-full bar (5/10) goes
+#    blink-red + skull; the label reads 50% (500k of 1M) and agrees with the fill.
+render "6. Danger zone (1M at 500k danger line — half bar, blink-red + skull)" '{
+  "model": {"display_name": "Opus 4.8 (1M)"},
   "effort": {"level": "high"},
   "workspace": {"current_dir": "/home/ms/projects/claude-statusline", "project_dir": "/home/ms/projects/claude-statusline"},
   "cost": {"total_cost_usd": 14.27, "total_duration_ms": 5400000, "total_lines_added": 1240, "total_lines_removed": 760},
@@ -106,7 +108,7 @@ NOW=$(date +%s)
 
 render "7. With loaded skills" "{
   \"session_id\": \"$SESSION\",
-  \"model\": {\"display_name\": \"Opus 4.7\"},
+  \"model\": {\"display_name\": \"Opus 4.8\"},
   \"effort\": {\"level\": \"high\"},
   \"workspace\": {\"current_dir\": \"/home/ms/projects/claude-statusline\", \"project_dir\": \"/home/ms/projects/claude-statusline\"},
   \"cost\": {\"total_cost_usd\": 3.40, \"total_duration_ms\": 1200000, \"total_lines_added\": 210, \"total_lines_removed\": 64},
