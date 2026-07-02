@@ -26,6 +26,8 @@ function mkConfig(files) {
 }
 
 const asst = (id, model, input, ts) => ({ type: 'assistant', timestamp: ts, message: { id, model, usage: { input_tokens: input } } });
+// Same, plus a top-level requestId (the retry-dedup key).
+const asstR = (id, requestId, model, input, ts) => ({ type: 'assistant', timestamp: ts, requestId, message: { id, model, usage: { input_tokens: input } } });
 
 test('within-file dedup keeps last occurrence per id', () => {
   const root = mkConfig([{ id: 's1', entries: [
@@ -49,6 +51,59 @@ test('global dedup: resumed session replaying ids not double-counted', () => {
   assert.equal(r.byDay['2026-06-10'], 30 + 7);
   assert.equal(r.perSession.s1.total, 30);
   assert.equal(r.perSession.s2.total, 7);
+});
+
+test('cross-file dedup: same id + same requestId counted once', () => {
+  const root = mkConfig([
+    { id: 's1', mtime: '2026-06-10T10:00:00Z', entries: [asstR('msg1', 'reqA', 'm', 30, '2026-06-10T10:00:00Z')] },
+    { id: 's2', mtime: '2026-06-10T11:00:00Z', entries: [asstR('msg1', 'reqA', 'm', 30, '2026-06-10T10:00:00Z')] },
+  ]);
+  assert.equal(aggregate(root, PRICING).byDay['2026-06-10'], 30);
+});
+
+test('cross-file dedup: same id + DIFFERENT requestId is a re-billed retry, counted twice', () => {
+  const root = mkConfig([
+    { id: 's1', mtime: '2026-06-10T10:00:00Z', entries: [asstR('msg1', 'reqA', 'm', 30, '2026-06-10T10:00:00Z')] },
+    { id: 's2', mtime: '2026-06-10T11:00:00Z', entries: [asstR('msg1', 'reqB', 'm', 30, '2026-06-10T11:00:00Z')] },
+  ]);
+  assert.equal(aggregate(root, PRICING).byDay['2026-06-10'], 60);
+});
+
+test('cross-file dedup: same id, no requestId → counted once (legacy behavior)', () => {
+  const root = mkConfig([
+    { id: 's1', mtime: '2026-06-10T10:00:00Z', entries: [asst('msg1', 'm', 30, '2026-06-10T10:00:00Z')] },
+    { id: 's2', mtime: '2026-06-10T11:00:00Z', entries: [asst('msg1', 'm', 30, '2026-06-10T10:00:00Z')] },
+  ]);
+  assert.equal(aggregate(root, PRICING).byDay['2026-06-10'], 30);
+});
+
+test('cross-file dedup: id first seen WITHOUT requestId, then WITH one → counted once', () => {
+  // Regression: an empty Set from the null-first occurrence must not let a later
+  // real requestId re-bill the same call (the ambiguous case falls back to once).
+  const root = mkConfig([
+    { id: 's1', mtime: '2026-06-10T10:00:00Z', entries: [asst('msg1', 'm', 30, '2026-06-10T10:00:00Z')] },
+    { id: 's2', mtime: '2026-06-10T11:00:00Z', entries: [asstR('msg1', 'reqB', 'm', 30, '2026-06-10T11:00:00Z')] },
+  ]);
+  assert.equal(aggregate(root, PRICING).byDay['2026-06-10'], 30);
+});
+
+test('cross-file dedup: id first WITH requestId, then WITHOUT → counted once', () => {
+  const root = mkConfig([
+    { id: 's1', mtime: '2026-06-10T10:00:00Z', entries: [asstR('msg1', 'reqA', 'm', 30, '2026-06-10T10:00:00Z')] },
+    { id: 's2', mtime: '2026-06-10T11:00:00Z', entries: [asst('msg1', 'm', 30, '2026-06-10T11:00:00Z')] },
+  ]);
+  assert.equal(aggregate(root, PRICING).byDay['2026-06-10'], 30);
+});
+
+test('unpricedModels lists unknown models but excludes local/synthetic', () => {
+  const root = mkConfig([{ id: 's1', entries: [
+    asst('a', 'm', 5, '2026-06-10T10:00:00Z'),          // priced
+    asst('b', 'totally-unknown', 5, '2026-06-10T10:00:00Z'), // unpriced → listed
+    asst('c', 'llama3:8b', 5, '2026-06-10T10:00:00Z'),  // local → excluded
+    asst('d', '<synthetic>', 5, '2026-06-10T10:00:00Z'), // synthetic → excluded
+  ] }]);
+  const r = aggregate(root, PRICING);
+  assert.deepEqual(r.unpricedModels, ['totally-unknown']);
 });
 
 test('per-call day bucketing splits across midnight (local)', () => {

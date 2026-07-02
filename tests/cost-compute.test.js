@@ -11,25 +11,24 @@ const BIG = {
   above200k: { input: 20, output: 40, cacheWrite: 8, cacheRead: 2 },
 };
 
-test('calculateCost: uses base rates when prompt ≤ 200K', () => {
-  // prompt = input + cacheRead + cacheCreate = 100000 + 50000 = 150000 (≤200K)
+test('calculateCost: each category below 200K bills flat at base', () => {
+  // No single category exceeds 200K, so the premium tier stays dormant per-category.
   const usage = { input_tokens: 100000, cache_read_input_tokens: 50000, output_tokens: 1 };
   // 100000*10 + 50000*1 + 1*20 = 1,000,000 + 50,000 + 20
   assert.equal(calculateCost(usage, BIG), 1050020);
 });
 
-test('calculateCost: uses above-200K rates when prompt > 200K', () => {
-  // prompt = 150000 + 100000 = 250000 (>200K) → premium rates
-  const usage = { input_tokens: 150000, cache_read_input_tokens: 100000, output_tokens: 1 };
-  // 150000*20 + 100000*2 + 1*40 = 3,000,000 + 200,000 + 40
-  assert.equal(calculateCost(usage, BIG), 3200040);
+test('calculateCost: a category over 200K bills marginally at the premium rate', () => {
+  const usage = { input_tokens: 250000, output_tokens: 1 };
+  // input: first 200000 @10 + excess 50000 @20 = 2,000,000 + 1,000,000; output 1 @20 (below)
+  assert.equal(calculateCost(usage, BIG), 200000 * 10 + 50000 * 20 + 20);
 });
 
-test('calculateCost: threshold counts cached + created input tokens', () => {
-  // input 10000 + cacheRead 150000 + cacheCreate 60000 = 220000 (>200K) → premium
-  const usage = { input_tokens: 10000, cache_read_input_tokens: 150000, cache_creation_input_tokens: 60000 };
-  // premium: 10000*20 + 150000*2 + 60000*8 = 200000 + 300000 + 480000
-  assert.equal(calculateCost(usage, BIG), 980000);
+test('calculateCost: tiering is per-category — only the over-200K category is premium', () => {
+  // input stays flat (≤200K); cache-read alone exceeds 200K and tiers marginally.
+  const usage = { input_tokens: 100000, cache_read_input_tokens: 300000 };
+  // input 100000*10 = 1,000,000; cacheRead 200000*1 + 100000*2 = 200,000 + 200,000
+  assert.equal(calculateCost(usage, BIG), 1000000 + (200000 * 1 + 100000 * 2));
 });
 
 test('calculateCost: no above200k tier → base rates even when huge', () => {
@@ -53,12 +52,33 @@ test('extractCacheCreation: keeps larger of legacy vs split', () => {
   assert.deepEqual(r, { fiveMinute: 700, oneHour: 300 });
 });
 
-test('calculateCost: full formula with 1h×1.6', () => {
+test('calculateCost: full formula with 1h cache write @ input×2.0', () => {
   const usage = { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 1,
     cache_creation: { ephemeral_5m_input_tokens: 1, ephemeral_1h_input_tokens: 1 },
     server_tool_use: { web_search_requests: 1 } };
-  // 10 + 20 + (1*4) + (1*4*1.6) + 1 + 0.01 = 41.41
-  assert.equal(calculateCost(usage, COSTS), 41.41);
+  // input 10 + output 20 + 5m(1*4) + 1h(1*input*2 = 20) + cacheRead 1 + web 0.01 = 55.01
+  assert.equal(calculateCost(usage, COSTS), 55.01);
+});
+
+test('calculateCost: 1h cache write derives from input×2.0, not cacheWrite×1.6', () => {
+  // COSTS.cacheWrite (4) ≠ input×1.25 (12.5): the two derivations diverge here, so
+  // this pins the input×2.0 rule. 1h token alone: 1 * (input 10 * 2) = 20.
+  const usage = { input_tokens: 0, output_tokens: 0,
+    cache_creation: { ephemeral_1h_input_tokens: 1 } };
+  assert.equal(calculateCost(usage, COSTS), 20);
+});
+
+test('calculateCost: fast mode scales the whole call by fastMultiplier', () => {
+  const usage = { input_tokens: 1, output_tokens: 1, server_tool_use: { web_search_requests: 1 } };
+  const std = calculateCost({ ...usage, speed: 'standard' }, { ...COSTS, fastMultiplier: 2 });
+  const fast = calculateCost({ ...usage, speed: 'fast' }, { ...COSTS, fastMultiplier: 2 });
+  assert.equal(std, 10 + 20 + 0.01);       // standard: multiplier not applied
+  assert.equal(fast, (10 + 20 + 0.01) * 2); // fast: entire call (incl. web) ×2
+});
+
+test('calculateCost: missing fastMultiplier treated as 1 even when fast', () => {
+  const usage = { input_tokens: 1, output_tokens: 1, speed: 'fast' };
+  assert.equal(calculateCost(usage, COSTS), 10 + 20); // no fastMultiplier → ×1
 });
 
 test('calculateCost: null costs → 0', () => {
@@ -82,19 +102,19 @@ test('calculateCostBreakdown: components priced and sum to total', () => {
   assert.equal(b.input, 1000 * 10);                       // 10000
   assert.equal(b.output, 500 * 20);                       // 10000
   assert.equal(b.cacheRead, 2000 * 1);                    // 2000
-  assert.equal(b.cacheWrite, 100 * 4 + 50 * 4 * 1.6);     // 400 + 320 = 720
+  assert.equal(b.cacheWrite, 100 * 4 + 50 * (10 * 2));    // 5m 400 + 1h 1000 = 1400
   assert.equal(b.web, 3 * 0.01);                          // 0.03
   assert.equal(b.total, b.input + b.output + b.cacheRead + b.cacheWrite + b.web);
   assert.equal(b.total, calculateCost(usage, COSTS));     // single source of truth
 });
 
-test('calculateCostBreakdown: above-200K tier applies per component', () => {
-  const usage = { input_tokens: 150000, cache_read_input_tokens: 100000, output_tokens: 1 };
-  const b = calculateCostBreakdown(usage, BIG); // premium: input20 output40 cacheRead2
-  assert.equal(b.input, 150000 * 20);
-  assert.equal(b.cacheRead, 100000 * 2);
-  assert.equal(b.output, 1 * 40);
-  assert.equal(b.total, calculateCost(usage, BIG)); // 3200040
+test('calculateCostBreakdown: above-200K tier is marginal, per component', () => {
+  const usage = { input_tokens: 250000, cache_read_input_tokens: 300000, output_tokens: 1 };
+  const b = calculateCostBreakdown(usage, BIG);
+  assert.equal(b.input, 200000 * 10 + 50000 * 20);   // 3,000,000
+  assert.equal(b.cacheRead, 200000 * 1 + 100000 * 2); // 400,000
+  assert.equal(b.output, 1 * 20);                     // below threshold → base rate
+  assert.equal(b.total, calculateCost(usage, BIG));
 });
 
 test('calculateCostBreakdown: null costs/usage → all zeros', () => {

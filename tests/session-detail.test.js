@@ -21,6 +21,8 @@ function pricing() {
 const MODEL = 'claude-opus-4-8'; // present in data/model_prices.json
 const UNPRICED = 'claude-totally-fake-9'; // absent from the price table → $0
 const asst = (id, usage, ts) => ({ type: 'assistant', timestamp: ts || '2026-06-09T01:00:00Z', message: { id, model: MODEL, usage } });
+// Same, plus a top-level requestId (the retry-dedup key shared with cost-aggregate).
+const asstR = (id, requestId, usage, ts) => ({ type: 'assistant', timestamp: ts || '2026-06-09T01:00:00Z', requestId, message: { id, model: MODEL, usage } });
 const userPrompt = (text) => ({ type: 'user', message: { role: 'user', content: text } });
 const toolResult = () => ({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', content: 'ok' }] } });
 
@@ -429,6 +431,40 @@ test('buildDetail: global dedup across main files counts a shared message id onc
   writeJsonl(mainB, [userPrompt('b'), asst('m1', { input_tokens: 1000, output_tokens: 200 }), asst('m2', { input_tokens: 500, output_tokens: 50 })], 2000);
   const detail = buildDetail([mainA, mainB], [], pricing());
   assert.equal(detail.calls, 2); // m1 (once) + m2
+});
+
+test('buildDetail: same id + different requestId re-bills (parity with aggregate COST)', () => {
+  const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-sd-rid-'));
+  tmp.push(cfg);
+  const id = 'sessRID1';
+  const mainA = path.join(cfg, 'projects', 'pa', id + '.jsonl');
+  const mainB = path.join(cfg, 'projects', 'pb', id + '.jsonl');
+  // same message id 'm1', genuinely different requestId across halves → billed twice,
+  // and buildDetail's total must equal the aggregate per-session total (no drift).
+  writeJsonl(mainA, [userPrompt('a'), asstR('m1', 'reqA', { input_tokens: 1000, output_tokens: 200 })], 1000);
+  writeJsonl(mainB, [userPrompt('b'), asstR('m1', 'reqB', { input_tokens: 1000, output_tokens: 200 })], 2000);
+  const px = pricing();
+  const agg = aggregate(cfg, px);
+  const detail = buildDetail([mainA, mainB], [], px);
+  assert.equal(detail.calls, 2); // both retries billed
+  assert.equal(detail.total.toFixed(8), agg.perSession[id].total.toFixed(8));
+});
+
+test('buildDetail: local-model null price is NOT flagged unpriced (parity with aggregate)', () => {
+  const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-sd-local-'));
+  tmp.push(cfg);
+  const main = path.join(cfg, 'projects', 'p', 'sessLOC1.jsonl');
+  writeJsonl(main, [
+    userPrompt('p'),
+    asst('m1', { input_tokens: 1000, output_tokens: 200 }),                             // priced
+    { type: 'assistant', timestamp: '2026-06-09T01:00:00Z', message: { id: 'm2', model: 'llama3:8b', usage: { input_tokens: 9999, output_tokens: 9999 } } }, // local → expected null
+  ]);
+  const px = pricing();
+  const agg = aggregate(cfg, px);
+  const detail = buildDetail(main, [], px);
+  assert.equal(detail.unpriced, 0);           // local model's null price is legitimate
+  assert.deepEqual(detail.unpricedModels, []);
+  assert.deepEqual(agg.unpricedModels, []);   // aggregate agrees — no spurious warning either side
 });
 
 test('buildDetail: unpriced calls are counted, not silently dropped', () => {
