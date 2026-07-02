@@ -102,11 +102,21 @@ function getGitBranch(projectDir) {
 }
 
 /**
- * Format session cost as [prefix]$X.XX with absolute-USD color thresholds.
+ * Format session cost as [prefix]$X.XX with absolute-USD color thresholds,
+ * optionally followed by a dim burn rate ($/h). The rate = cost ÷ elapsed hours,
+ * both straight from the live payload — no state, no subprocess. Shown only once
+ * the session has run ≥60s, below which the divisor is too small to be meaningful
+ * (avoids a "$3600/h" flash in the first second).
  */
-function formatCost(totalCost, prefix = '') {
+function formatCost(totalCost, prefix = '', durationMs = 0) {
   if (totalCost == null || totalCost <= 0) return '';
-  return colorByTier(totalCost, SESSION_TIERS)(prefix + '$' + totalCost.toFixed(2));
+  const chip = colorByTier(totalCost, SESSION_TIERS)(prefix + '$' + totalCost.toFixed(2));
+  if (durationMs >= 60000) {
+    const rate = totalCost / (durationMs / 3600000);
+    const r = rate >= 100 ? Math.round(rate) : rate.toFixed(2);
+    return `${chip} ${dim('$' + r + '/h')}`;
+  }
+  return chip;
 }
 
 /**
@@ -364,7 +374,7 @@ function render(data, env) {
       // otherwise stand as a phantom in "today" forever (#44).
       const sessionTotal = cachedSession + rawDelta;
       const periodDelta = Math.min(MAX_LIVE_DELTA, rawDelta);
-      const costParts = [formatCost(sessionTotal, budgetOptedOut ? '' : 's ')];
+      const costParts = [formatCost(sessionTotal, budgetOptedOut ? '' : 's ', totalDurationMs)];
       if (!budgetOptedOut) {
         const { daily, weekly, monthly } = sumPeriods(perSession, new Date(), undefined, resolveTimezone(env));
         costParts.push(
