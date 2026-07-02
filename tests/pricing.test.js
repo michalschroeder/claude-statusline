@@ -67,6 +67,38 @@ test('buildMap: no above200k key when premium fields absent', () => {
   assert.equal(m['claude-opus-4-8'].above200k, undefined);
 });
 
+test('buildMap: partial above200k stores nulls (no base back-fill)', () => {
+  // Only input premium present; the other categories stay null so their tier is
+  // dormant (calculateCost bills them flat at base) rather than back-filled.
+  const m = buildMap({
+    part: {
+      input_cost_per_token: 0.000003, output_cost_per_token: 0.000015,
+      input_cost_per_token_above_200k_tokens: 0.000006,
+    },
+  });
+  assert.equal(m.part.above200k.input, 0.000006);
+  assert.equal(m.part.above200k.output, null);
+  assert.equal(m.part.above200k.cacheWrite, null);
+  assert.equal(m.part.above200k.cacheRead, null);
+});
+
+test('buildMap: fastMultiplier defaults to 1, reads provider_specific.fast', () => {
+  const m = buildMap({
+    plain: { input_cost_per_token: 1e-6, output_cost_per_token: 2e-6 },
+    quick: { input_cost_per_token: 1e-6, output_cost_per_token: 2e-6, provider_specific: { fast: 4 } },
+    bogus: { input_cost_per_token: 1e-6, output_cost_per_token: 2e-6, provider_specific: { fast: -1 } },
+  });
+  assert.equal(m.plain.fastMultiplier, 1);
+  assert.equal(m.quick.fastMultiplier, 4);
+  assert.equal(m.bogus.fastMultiplier, 1); // non-positive/invalid → 1
+});
+
+test('hashMap: changes when fastMultiplier changes', () => {
+  const base = hashMap(buildMap({ x: { input_cost_per_token: 1e-6, output_cost_per_token: 2e-6 } }));
+  const fast = hashMap(buildMap({ x: { input_cost_per_token: 1e-6, output_cost_per_token: 2e-6, provider_specific: { fast: 2 } } }));
+  assert.notEqual(base, fast);
+});
+
 test('buildMap: bundled snapshot — opus-4-7 present, sonnet-4-6 has NO >200K premium, haiku-4-5 at 4.5 rates', () => {
   const fs = require('fs'); const path = require('path');
   const raw = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'data', 'model_prices.json'), 'utf8'));
