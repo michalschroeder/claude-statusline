@@ -91,12 +91,12 @@ function richInput(stateDir, projectDir, session) {
 // elsewhere in the output (notably ascii '-' which collides between barEmpty,
 // hr, the lines '-1', the tmp dir basename, etc.).
 //
-// richInput renders: 4 filled + 6 empty cells (1M @ 22%), hr rule ≥20 chars,
+// richInput renders: 2 filled + 8 empty cells (1M @ 22% of the full window), hr rule ≥20 chars,
 // branch `main`, worktree `wt-foo`, duration `45s`, rate limits `50%`/`20%`,
 // style `concise`, vim `NORMAL`, agent `feature-dev`.
 const PARITY_CASES = [
   { mode: 'nerd', patterns: {
-      bar:        /█{4}░{6} 22%/,
+      bar:        /█{2}░{8} 22%/,
       hr:         /─{20,}/,
       branch:     /󰘬 main/,
       worktree:   /󰘯 wt-foo/,
@@ -109,7 +109,7 @@ const PARITY_CASES = [
       sep:        /┊/,
     } },
   { mode: 'unicode', patterns: {
-      bar:        /█{4}░{6} 22%/,
+      bar:        /█{2}░{8} 22%/,
       hr:         /─{20,}/,
       branch:     /⎇ main/,
       worktree:   /⊕ wt-foo/,
@@ -122,7 +122,7 @@ const PARITY_CASES = [
       sep:        /┊/,
     } },
   { mode: 'ascii', patterns: {
-      bar:        /#{4}-{6} 22%/,
+      bar:        /#{2}-{8} 22%/,
       hr:         /-{20,}/,
       branch:     /git: main/,
       worktree:   /wt: wt-foo/,

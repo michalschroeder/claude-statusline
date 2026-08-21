@@ -84,13 +84,13 @@ The `nerd` example is the screenshot at the top. GitHub's UI has no Nerd Font, s
 Here's the `unicode` set with the same payload as the "mid-session" panel in that screenshot:
 
 ```text
-Sonnet 4.6 ┊ ⎇ main ┊ ▸ claude-statusline ┊ $0.42 ┊ ⏱ 3m ┊ Δ +47 -12 ┊ ██░░░░░░░░ 22% · 19k
+Sonnet 5 ┊ ⎇ main ┊ ▸ claude-statusline ┊ s $0.42 $8.17/h · d $0.42 · w $0.42 · m $0.42 ┊ ⏱ 3m ┊ Δ +47 -12 ┊ ░░░░░░░░░░ 9% · 19k
 ```
 
 And `ascii`:
 
 ```text
-Sonnet 4.6 | git: main | dir: claude-statusline | $0.42 | t: 3m | d +47 -12 | ##-------- 22% , 19k
+Sonnet 5 | git: main | dir: claude-statusline | s $0.42 $8.17/h , d $0.42 , w $0.42 , m $0.42 | t: 3m | d +47 -12 | ---------- 9% , 19k
 ```
 
 The full glyph table for each mode lives in `ICON_SETS` inside [`hooks/statusline.js`](hooks/statusline.js).
@@ -149,7 +149,7 @@ The d/w/m totals are rebuilt once per prompt by the `UserPromptSubmit` hook (`ho
 
 `STATUSLINE_MONTHLY_BUDGET` controls the budget-relative coloring of the d/w/m chips (daily = monthly/30, weekly = monthly×7/30):
 
-- **unset** → $500/mo default
+- **unset** → $1000/mo default
 - **`0`** → hide the d/w/m chips (session chip stays)
 - **a number** → your monthly budget
 
@@ -159,7 +159,7 @@ The d/w/m totals are rebuilt once per prompt by the `UserPromptSubmit` hook (`ho
 }
 ```
 
-The session chip keeps absolute USD tiers (green <$1, yellow <$5, orange <$10, red ≥$10).
+The session chip keeps absolute USD tiers (green <$5, yellow <$10, orange <$20, red ≥$20). Once the session has run ≥60s it also gets a dim burn-rate suffix `$X/h` (spend ÷ elapsed time, straight from the payload — no state).
 
 > **`/clear` does not reset the `s` chip.** `/clear` starts a new session (new id + transcript), but Claude Code's `cost.total_cost_usd` is cumulative across the whole CLI process and survives the clear — so `s` keeps showing the running total and grows from there (same for the `duration` and `lines` chips). The `d`/`w`/`m` totals already count your pre-clear spend correctly (it still belongs to today), but they also get the current session's live cost folded in — and after a `/clear` that live figure still carries the pre-clear total, so d/w/m over-count by up to $5 (the live-delta cap) for the rest of the post-clear session. Only starting a fresh `claude` process clears this.
 
@@ -212,7 +212,7 @@ newest-first by file mtime. Flags: `--last N` (default 10), `--since YYYY-MM-DD`
 
 Segments, left to right:
 
-- **model** - display name (e.g. `claude-sonnet-4-6`)
+- **model** - display name (e.g. `claude-sonnet-5`)
 - **effort** - effort level, when set
 - **skills** - all unique loaded skills this session, oldest→newest, no truncation
 - **output style** - only shows up when it isn't `default`
@@ -225,7 +225,7 @@ Segments, left to right:
 - **duration** - total session time (s / m / h m)
 - **lines** - lines added and removed
 - **rate limits** - 5h and 7d usage percentages, when the payload includes them
-- **context** - 10-cell bar with per-cell 256-color gradient (forest-green → olive → amber → red), dim-grey empty cells, percentage-of-panic-threshold label, dim absolute token count suffix. The step size and panic threshold scale with the model — see below
+- **context** - 10-cell bar spanning the model's full context window, with per-cell 256-color gradient (forest-green → olive → amber → red), dim-grey empty cells, a `% of the window` label, dim absolute token count suffix. The step size and panic threshold scale with the model — see below
 
 ### Context bar — per-cell gradient
 
@@ -239,20 +239,20 @@ hue:  forest…olive……amber……orange……red……dark-red
 
 A half-full bar fades from forest-green at cell 0 through olive at cell 4. The rightmost filled cell tells you which tier you're in; empty cells are dim grey 240.
 
-**Step size and panic threshold scale with the model:**
+**Step size and panic threshold scale with the model** (the 10 cells always span the full window, so the fill = actual usage):
 
-| Model | Cell step | Panic (blink-red + ``) |
+| Model | Cell step (= window/10) | Panic (blink-red + ``) |
 |---|---|---|
 | 200k | 20k tokens / cell | `≥ 160k` tokens (cell 8 = 80%) |
-| 1M   | 50k tokens / cell | `≥ 500k` tokens (cell 10 = danger line) |
+| 1M   | 100k tokens / cell | `≥ 500k` tokens (cell 5 = danger line) |
 
-The 200k tier panics at 80% to keep the historical "loud blink+skull alarm" early-warning contract. The 1M tier panics only at the explicit 500k danger line — where `/compact` or handoff should already be considered. Past the panic threshold the whole bar blink-reds and gets a `` skull prefix.
+The 200k tier panics at 80% to keep the historical "loud blink+skull alarm" early-warning contract. The 1M tier panics at the explicit 500k danger line — cell 5, i.e. half the bar — where `/compact` or handoff should already be considered. Past the panic threshold the **filled** cells blink-red and a `` skull is prefixed; empty cells stay dim grey, so the bar still honestly reads "how full" (e.g. a half-full blink-red bar at 500k of 1M).
 
 **1M detection**: inferred `total = total_input_tokens / (used_percentage / 100)`. The 1M scale engages only when `800k < total < 1.2M` — a tight band that accepts integer-rounded 1M payloads but rejects cumulative-token leaks that would otherwise promote a 200k model into the 1M tier.
 
 **Percent-only fallback**: when `total_input_tokens` is missing OR the inference is unreliable (`used_percentage == 0` makes the inferred total undefined), the bar fills at 10% per cell with the same ramp; panic kicks in at `≥ 80%` (matches the original contract).
 
-The `N%` label is the raw `used_percentage` from the payload — i.e. the model's actual context usage. On the 1M tier this **decouples** from the bar: the bar is calibrated to the 500k panic threshold while the label always tracks "% of the model's full context window". So 218k tokens on a 1M model renders a 4-cell bar with label `22%` (218k = 22% of 1M, but 44% of the way to the 500k danger line). The bar tells you "how close to the alarm"; the label tells you "how much of the context you've actually consumed".
+The `N%` label is the raw `used_percentage` from the payload — i.e. the model's actual context usage — and the bar fill **agrees** with it on both tiers (both are % of the full window). So 218k tokens on a 1M model renders a 2-cell bar with label `22%` (218k = 22% of the 1M window). The danger line is shown by color (blink-red + skull past 500k), not by a mismatched fill.
 
 **Worktree convention:** when you're in a worktree and the branch name matches `worktree-<name>`, the branch chip is hidden. The worktree chip already says it. The branch chip comes back the moment the branch diverges (manual checkout, detached HEAD, rename).
 
