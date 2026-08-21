@@ -9,7 +9,7 @@ const { dim, bold, green, yellow, red, colorByTier, SESSION_TIERS, BUDGET_TIERS 
 const { readSummary } = require('../lib/cost-aggregate');
 const { sumPeriods } = require('../lib/periods');
 const { resolveTimezone } = require('../lib/timezone');
-const { resolveBudget } = require('../lib/budget');
+const { resolveBudget, resolveCostMultiplier } = require('../lib/budget');
 const { formatCompact } = require('../lib/format');
 
 // Terminal width for the trailing rule. Sizes to the terminal when run
@@ -372,13 +372,20 @@ function render(data, env) {
       // otherwise stand as a phantom in "today" forever (#44).
       const sessionTotal = cachedSession + rawDelta;
       const periodDelta = Math.min(MAX_LIVE_DELTA, rawDelta);
-      const costParts = [formatCost(sessionTotal, budgetOptedOut ? '' : 's ', totalDurationMs)];
+      // Display-time calibration to the plan's own meter (see resolveCostMultiplier).
+      // Applied to the FINAL figures, so the burn rate and every colour threshold —
+      // absolute for `s`, budget-relative for d/w/m — read the calibrated number:
+      // if you calibrate to the meter, the meter is what the budget is measured
+      // against. The MAX_LIVE_DELTA clamp stays on the raw basis (it bounds a
+      // pricing-basis artefact, not a displayed amount).
+      const cm = resolveCostMultiplier(env.STATUSLINE_COST_MULTIPLIER);
+      const costParts = [formatCost(sessionTotal * cm, budgetOptedOut ? '' : 's ', totalDurationMs)];
       if (!budgetOptedOut) {
         const { daily, weekly, monthly } = sumPeriods(perSession, new Date(), undefined, resolveTimezone(env));
         costParts.push(
-          formatPeriodCost(daily + periodDelta, dailyLimit, 'd '),
-          formatPeriodCost(weekly + periodDelta, weeklyLimit, 'w '),
-          formatPeriodCost(monthly + periodDelta, monthlyBudget, 'm '),
+          formatPeriodCost((daily + periodDelta) * cm, dailyLimit, 'd '),
+          formatPeriodCost((weekly + periodDelta) * cm, weeklyLimit, 'w '),
+          formatPeriodCost((monthly + periodDelta) * cm, monthlyBudget, 'm '),
         );
       }
       const costShown = costParts.filter(Boolean);

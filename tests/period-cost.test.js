@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { baseInput, run } = require('./helpers.js');
+const { baseInput, run, runRaw } = require('./helpers.js');
 
 const tmp = [];
 after(() => { for (const d of tmp) fs.rmSync(d, { recursive: true, force: true }); });
@@ -102,3 +102,53 @@ test('budget opt-out (0) → only session chip, no d/w/m', async () => {
   assert.ok(!out.includes('d $'));
   assert.ok(!out.includes('w $'));
 });
+
+// --- STATUSLINE_COST_MULTIPLIER: scales the displayed figures, not the recompute ---
+test('cost multiplier scales s and d/w/m chips', async () => {
+  const xdg = stateWithCache({ other: { days: { [todayKey()]: 2 }, total: 2 } });
+  const i = baseInput();
+  i.session_id = 'current';
+  i.cost = { total_cost_usd: 3 };
+  const base = await run(i, { XDG_STATE_HOME: xdg, STATUSLINE_MONTHLY_BUDGET: '300' });
+  assert.ok(base.includes('s $3.00') && base.includes('d $5.00'), 'baseline');
+  const cal = await run(i, { XDG_STATE_HOME: xdg, STATUSLINE_MONTHLY_BUDGET: '300', STATUSLINE_COST_MULTIPLIER: '1.15' });
+  assert.ok(cal.includes('s $3.45'), 's scaled: 3 × 1.15');
+  assert.ok(cal.includes('d $5.75'), 'd scaled: 5 × 1.15');
+});
+
+test('cost multiplier of 1 (and garbage) leaves output byte-identical', async () => {
+  const xdg = stateWithCache({ other: { days: { [todayKey()]: 2 }, total: 2 } });
+  const i = baseInput();
+  i.session_id = 'current';
+  i.cost = { total_cost_usd: 3 };
+  const base = await run(i, { XDG_STATE_HOME: xdg, STATUSLINE_MONTHLY_BUDGET: '300' });
+  for (const v of ['1', '0', 'abc']) {
+    assert.equal(await run(i, { XDG_STATE_HOME: xdg, STATUSLINE_MONTHLY_BUDGET: '300', STATUSLINE_COST_MULTIPLIER: v }), base, `mult=${v}`);
+  }
+});
+
+test('cost multiplier drives the budget colour, not just the number', async () => {
+  // month $250 of a $300 budget = 83% (under the 90% red line); ×1.15 → $287.50 = 96% → red.
+  const xdg = stateWithCache({ other: { days: { [todayKey()]: 250 }, total: 250 } });
+  const i = baseInput();
+  i.session_id = 'current';
+  i.cost = { total_cost_usd: 0 };
+  const raw = await runRaw(i, { XDG_STATE_HOME: xdg, STATUSLINE_MONTHLY_BUDGET: '300' });
+  const cal = await runRaw(i, { XDG_STATE_HOME: xdg, STATUSLINE_MONTHLY_BUDGET: '300', STATUSLINE_COST_MULTIPLIER: '1.15' });
+  assert.ok(raw.includes('m $250.00') && cal.includes('m $287.50'), 'amounts scaled');
+  const c1 = colorOf(raw, 'm $250.00'), c2 = colorOf(cal, 'm $287.50');
+  assert.ok(c1 && c2, 'both chips carry a colour');
+  assert.notEqual(c1, c2, 'colour tier moves with the calibrated value');
+});
+
+// The colour code opening the run that contains `label`: the last SGR escape
+// before it in the raw (un-stripped) output.
+function colorOf(out, label) {
+  const at = out.indexOf(label);
+  if (at < 0) return null;
+  const before = out.slice(0, at);
+  const last = before.lastIndexOf('\x1b[');
+  if (last < 0) return null;
+  const m = before.slice(last).match(/^\x1b\[([0-9;]+)m/);
+  return m && m[1];
+}
