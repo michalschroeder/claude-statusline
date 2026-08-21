@@ -146,3 +146,12 @@ test('US premium composes with the fast-mode multiplier', () => {
   const usage = { input_tokens: 1000, speed: 'fast', inference_geo: 'us' };
   assert.ok(Math.abs(calculateCost(usage, costs) - 1000 * 1e-6 * 2 * 1.1) < 1e-12);
 });
+
+test('US premium comes from the price entry, falling back to 1.1', () => {
+  const base = { input: 1e-6, output: 0, cacheWrite: 0, cacheRead: 0, webSearch: 0 };
+  const usage = { input_tokens: 1000, inference_geo: 'us' };
+  // entry-supplied rate wins
+  assert.ok(Math.abs(calculateCost(usage, { ...base, usMultiplier: 1.25 }) - 1000e-6 * 1.25) < 1e-12);
+  // absent → the 1.1 fallback (an entry upstream has not annotated)
+  assert.ok(Math.abs(calculateCost(usage, base) - 1000e-6 * 1.1) < 1e-12);
+});

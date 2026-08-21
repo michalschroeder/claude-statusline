@@ -82,21 +82,46 @@ test('buildMap: partial above200k stores nulls (no base back-fill)', () => {
   assert.equal(m.part.above200k.cacheRead, null);
 });
 
-test('buildMap: fastMultiplier defaults to 1, reads provider_specific.fast', () => {
+// The key is `provider_specific_entry`. An earlier version of this test asserted
+// `provider_specific`, a key LiteLLM has never emitted — so it passed while the
+// multiplier it covers was dead in production. Assert against real upstream shape.
+test('buildMap: fastMultiplier defaults to 1, reads provider_specific_entry.fast', () => {
   const m = buildMap({
     plain: { input_cost_per_token: 1e-6, output_cost_per_token: 2e-6 },
-    quick: { input_cost_per_token: 1e-6, output_cost_per_token: 2e-6, provider_specific: { fast: 4 } },
-    bogus: { input_cost_per_token: 1e-6, output_cost_per_token: 2e-6, provider_specific: { fast: -1 } },
+    quick: { input_cost_per_token: 1e-6, output_cost_per_token: 2e-6, provider_specific_entry: { fast: 4 } },
+    bogus: { input_cost_per_token: 1e-6, output_cost_per_token: 2e-6, provider_specific_entry: { fast: -1 } },
+    wrong: { input_cost_per_token: 1e-6, output_cost_per_token: 2e-6, provider_specific: { fast: 4 } },
   });
   assert.equal(m.plain.fastMultiplier, 1);
   assert.equal(m.quick.fastMultiplier, 4);
-  assert.equal(m.bogus.fastMultiplier, 1); // non-positive/invalid → 1
+  assert.equal(m.bogus.fastMultiplier, 1);  // non-positive/invalid → 1
+  assert.equal(m.wrong.fastMultiplier, 1);  // the old, non-existent key is ignored
 });
 
-test('hashMap: changes when fastMultiplier changes', () => {
-  const base = hashMap(buildMap({ x: { input_cost_per_token: 1e-6, output_cost_per_token: 2e-6 } }));
-  const fast = hashMap(buildMap({ x: { input_cost_per_token: 1e-6, output_cost_per_token: 2e-6, provider_specific: { fast: 2 } } }));
-  assert.notEqual(base, fast);
+test('buildMap: usMultiplier reads provider_specific_entry.us, else the 1.1 fallback', () => {
+  const m = buildMap({
+    plain: { input_cost_per_token: 1e-6, output_cost_per_token: 2e-6 },
+    tagged: { input_cost_per_token: 1e-6, output_cost_per_token: 2e-6, provider_specific_entry: { us: 1.25 } },
+    bogus: { input_cost_per_token: 1e-6, output_cost_per_token: 2e-6, provider_specific_entry: { us: 0 } },
+  });
+  // Untagged entries keep the premium: it is a workspace-level charge that applies
+  // whatever the model, and upstream only annotates the newer entries.
+  assert.equal(m.plain.usMultiplier, 1.1);
+  assert.equal(m.tagged.usMultiplier, 1.25);
+  assert.equal(m.bogus.usMultiplier, 1.1);
+});
+
+test('buildMap: real snapshot entries carry both multipliers', () => {
+  const m = buildMap(require('../data/model_prices.json'));
+  assert.equal(m['claude-opus-5'].fastMultiplier, 2, 'opus-5 fast premium is live, not silently 1');
+  assert.equal(m['claude-opus-5'].usMultiplier, 1.1);
+});
+
+test('hashMap: changes when fastMultiplier or usMultiplier changes', () => {
+  const at = (ps) => hashMap(buildMap({ x: { input_cost_per_token: 1e-6, output_cost_per_token: 2e-6, ...(ps ? { provider_specific_entry: ps } : {}) } }));
+  const base = at(null);
+  assert.notEqual(base, at({ fast: 2 }));
+  assert.notEqual(base, at({ us: 1.3 }));
 });
 
 test('buildMap: bundled snapshot — opus-4-7 present, sonnet-4-6 has NO >200K premium, haiku-4-5 at 4.5 rates', () => {
