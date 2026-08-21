@@ -110,6 +110,18 @@ Costs are **recomputed from raw token counts × LiteLLM per-token prices** — n
 - `lib/timezone.js` — `resolveTimezone(env)` validates `STATUSLINE_TIMEZONE` (IANA name; unset/empty/invalid → `undefined` = system-local, never throws) and `ymd(date, tz)` returns the `{y,m,d}` calendar date in that zone. Both bucketing (`dayKey`) and windowing (`windowStarts`) read it so a call's day and the today/week/month edges are decided under **one** clock — they must agree or the sums drift.
 - `lib/budget.js` — `resolveBudget` (reads `STATUSLINE_MONTHLY_BUDGET`; daily = monthly/30, weekly = monthly×7/30).
 
+**Append-only archive.** `files` is rebuilt from what exists on disk, but Claude Code prunes
+transcripts at `cleanupPeriodDays` (default 30) — so a pruned transcript's spend would vanish from
+d/w/m (the `m` chip loses day 1 on the 31st). `cost-cache.json` therefore also carries
+`archived: {path: {sessionId, days}}`: when a previously-cached file drops out of the candidate set
+**and no longer exists on disk** (`existsSync` — a file that merely aged past `sinceMtimeMs` is left
+alone, it returns on a full run), its day-sums are moved to `archived` and folded into
+`byDay`/`perSession` on every later run. Archived entries are **not** repriced or re-bucketed by a
+pricing-hash or timezone change and survive cache invalidation — the source file is gone, so the
+cost recorded at parse time is the only figure available. Dedup does not span archived entries; that
+would require a deleted transcript's message ids to reappear in a live one. Forward-looking only: it
+cannot recover history pruned before the archive shipped. Covered by `tests/cost-archive.test.js`.
+
 The `UserPromptSubmit` hook `hooks/refresh-cost-cache.js` rebuilds `cost-cache.json` (and the slim
 `cost-summary.json`) over the last 40 days, off the render hot path. The renderer reads the slim
 summary (`readSummary`, only when the `cost` segment is enabled — keeps the read off the hot path
@@ -226,7 +238,7 @@ spend-limit meter resets at **00:00 UTC on the 1st** (the console shows it in yo
 
 `tests/helpers.js` exposes `run(input)` (spawns `statusline.js`, strips ANSI) and `baseInput()` (minimal valid payload). One test file per segment. When changing a segment, update its `tests/*.test.js`; when adding one, add a new file rather than expanding an existing one.
 
-The cost pipeline is covered by `tests/cost-compute.test.js`, `tests/pricing.test.js`, `tests/budget.test.js`, `tests/periods.test.js`, `tests/cost-aggregate.test.js`, `tests/refresh-cost-cache.test.js`, and `tests/period-cost.test.js` (renderer d/w/m chips). The `cost` segment is covered by `tests/cost.test.js` (session absolute thresholds). `tests/cleanup-hook.test.js` is an **integration** test that spawns the bash `SessionEnd` hook to verify skill-log removal/pruning; it `skip`s gracefully when `jq` is absent. The session viewer has `tests/sessions-viewer.test.js` (transcript-sourced listing, day grouping, full id,
+The cost pipeline is covered by `tests/cost-compute.test.js`, `tests/pricing.test.js`, `tests/budget.test.js`, `tests/periods.test.js`, `tests/cost-aggregate.test.js`, `tests/cost-archive.test.js`, `tests/refresh-cost-cache.test.js`, and `tests/period-cost.test.js` (renderer d/w/m chips). The `cost` segment is covered by `tests/cost.test.js` (session absolute thresholds). `tests/cleanup-hook.test.js` is an **integration** test that spawns the bash `SessionEnd` hook to verify skill-log removal/pruning; it `skip`s gracefully when `jq` is absent. The session viewer has `tests/sessions-viewer.test.js` (transcript-sourced listing, day grouping, full id,
 budget-bar footer, `--last`/`--since`) and `tests/sessions-format.test.js` (pure formatting helpers:
 relative time, day labels, bar fill, truncate); `lib/transcript.js` has `tests/transcript.test.js`.
 The session detail view has `tests/session-detail.test.js` (`buildDetail`: dedup parity with
