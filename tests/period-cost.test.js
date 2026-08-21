@@ -152,3 +152,35 @@ function colorOf(out, label) {
   const m = before.slice(last).match(/^\x1b\[([0-9;]+)m/);
   return m && m[1];
 }
+
+// --- `?` marker: the totals include a call we could not price exactly ---
+function stateWithSummary(perSession, extra) {
+  const xdg = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-shaky-')); tmp.push(xdg);
+  const dir = path.join(xdg, 'claude-statusline');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'cost-summary.json'),
+    JSON.stringify({ pricingHash: 'h', perSession, ...extra }));
+  return xdg;
+}
+
+test('cost group is marked `?` when a model was unpriced or approximated', async () => {
+  const ps = { other: { days: { [todayKey()]: 2 }, total: 2 } };
+  const i = baseInput();
+  i.session_id = 'current';
+  i.cost = { total_cost_usd: 0 };
+  const clean = await run(i, { XDG_STATE_HOME: stateWithSummary(ps, {}), STATUSLINE_MONTHLY_BUDGET: '300' });
+  assert.ok(clean.includes('d $2.00') && !clean.includes('?'), 'no marker when everything priced');
+
+  for (const extra of [{ unpricedModels: ['claude-opus-6'] }, { approxModels: ['claude-opus-6'] }]) {
+    const out = await run(i, { XDG_STATE_HOME: stateWithSummary(ps, extra), STATUSLINE_MONTHLY_BUDGET: '300' });
+    assert.ok(out.includes('?'), `marked for ${Object.keys(extra)[0]}`);
+  }
+});
+
+test('`?` marker is absent on an older summary that predates the fields', async () => {
+  const xdg = stateWithSummary({ other: { days: { [todayKey()]: 2 }, total: 2 } }, {});
+  const i = baseInput();
+  i.session_id = 'current';
+  i.cost = { total_cost_usd: 0 };
+  assert.ok(!(await run(i, { XDG_STATE_HOME: xdg, STATUSLINE_MONTHLY_BUDGET: '300' })).includes('?'));
+});

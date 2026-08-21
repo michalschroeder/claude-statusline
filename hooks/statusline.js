@@ -389,7 +389,14 @@ function render(data, env) {
         );
       }
       const costShown = costParts.filter(Boolean);
-      if (costShown.length) add('cost', costShown.join(` ${dim(icons.rsep)} `));
+      // Mark a total we can't fully stand behind: some call in the cache was billed
+      // $0 (model missing from the price table) or estimated from its family's rates
+      // because the model is newer than the table. The refresh hook has already
+      // asked for a price refresh, so this usually clears itself within a prompt or
+      // two — but while it shows, the number is a floor, not a figure.
+      const shaky = ((summary && summary.unpricedModels) || []).length
+        + ((summary && summary.approxModels) || []).length;
+      if (costShown.length) add('cost', costShown.join(` ${dim(icons.rsep)} `) + (shaky ? dim('?') : ''));
     }
 
     // Duration
