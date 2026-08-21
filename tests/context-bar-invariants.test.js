@@ -27,8 +27,8 @@ const isPanic = (raw) => raw.includes(PANIC_CODE);
 
 // ─── Bar-vs-panic invariant ──────────────────────────────────────────────────
 // The contract: panic fires exactly when the bar would otherwise reach panicCell.
-//   200k tier: panicCell=8 → panic iff tokens >= 160_000
-//   1M tier:   panicCell=10 → panic iff tokens >= 500_000
+//   200k tier: panicCell=8 (20k/cell) → panic iff tokens >= 160_000
+//   1M tier:   panicCell=5 (100k/cell) → panic iff tokens >= 500_000
 //   percent fallback:       panic iff displayPct >= 80
 
 test('invariant: 200k tier — panic iff tokens >= 160k (sweep 0..200k step 5k)', async () => {

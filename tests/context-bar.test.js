@@ -23,7 +23,8 @@ function inp200k(tokens) {
 }
 function inp1M(tokens) {
   const i = baseInput();
-  // usedPct = tokens / 10_000 ⇒ inferred total = 1M → 1M tier.
+  // usedPct = tokens / 10_000 ⇒ inferred total = 1M → 1M tier. Bar spans the full 1M
+  // window (100k/cell), so fill = actual usage: 500k → 5 cells, matching the 50% label.
   i.context_window = { used_percentage: tokens / 10_000, total_input_tokens: tokens };
   return i;
 }
@@ -120,48 +121,50 @@ test('200k: 200_000 tokens → panic blink + skull', async () => {
   assert.ok(stripAnsi(raw).includes(SKULL));
 });
 
-// ─── 1M model — 50k tokens / cell, panic at ≥500k ────────────────────────────
+// ─── 1M model — 100k tokens / cell (full window), panic at ≥500k (cell 5) ─────
+// Bar fill = actual usage: 500k reads as a half-full bar and agrees with the "50%"
+// label. The 500k danger line is conveyed by blink-red + skull, not a fake-full bar.
 
-test('1M: 49_999 tokens → 0 cells', async () => {
-  const raw = await runRaw(inp1M(49_999));
+test('1M: 99_999 tokens → 0 cells', async () => {
+  const raw = await runRaw(inp1M(99_999));
   assert.ok(!raw.includes(cellCode(0)));
 });
 
-test('1M: 50_000 tokens → 1 cell', async () => {
-  const raw = await runRaw(inp1M(50_000));
+test('1M: 100_000 tokens → 1 cell', async () => {
+  const raw = await runRaw(inp1M(100_000));
   assert.ok(raw.includes(cellCode(0)));
   assert.ok(!raw.includes(cellCode(1)));
 });
 
-test('1M: 250_000 tokens → 5 cells', async () => {
+test('1M: 250_000 tokens (25%) → 2 cells, no panic', async () => {
   const raw = await runRaw(inp1M(250_000));
-  assert.ok(raw.includes(cellCode(4)));
-  assert.ok(!raw.includes(cellCode(5)));
+  assert.ok(raw.includes(cellCode(1)));
+  assert.ok(!raw.includes(cellCode(2)));
+  assert.ok(!raw.includes(PANIC_CODE));
 });
 
-test('1M: 400_000 tokens → 8 cells, no panic (1M tier panics only at 500k)', async () => {
+test('1M: 400_000 tokens → 4 cells, no panic (1M tier panics only at 500k)', async () => {
   const raw = await runRaw(inp1M(400_000));
-  assert.ok(raw.includes(cellCode(7)));
-  assert.ok(!raw.includes(cellCode(8)));
+  assert.ok(raw.includes(cellCode(3)));
+  assert.ok(!raw.includes(cellCode(4)));
   assert.ok(!raw.includes(PANIC_CODE));
 });
 
-test('1M: 450_000 tokens → 9 cells, no panic', async () => {
-  const raw = await runRaw(inp1M(450_000));
-  assert.ok(raw.includes(cellCode(8)));
-  assert.ok(!raw.includes(cellCode(9)));
-  assert.ok(!raw.includes(PANIC_CODE));
-});
-
-test('1M: 499_999 tokens → 9 cells, no panic', async () => {
+test('1M: 499_999 tokens → 4 cells, no panic', async () => {
   const raw = await runRaw(inp1M(499_999));
+  assert.ok(raw.includes(cellCode(3)));
+  assert.ok(!raw.includes(cellCode(4)));
   assert.ok(!raw.includes(PANIC_CODE));
 });
 
-test('1M: 500_000 tokens → panic blink + skull', async () => {
+test('1M: 500_000 tokens (50%) → panic, honest half-full bar (5 cells)', async () => {
   const raw = await runRaw(inp1M(500_000));
   assert.ok(raw.includes(PANIC_CODE));
   assert.ok(stripAnsi(raw).includes(SKULL));
+  assert.ok(stripAnsi(raw).includes('50%'));
+  // 5 blink-red cells + 5 dim-grey empties — the bar still reads "half used".
+  assert.equal(stripAnsi(raw).match(/█/g).length, 5);
+  assert.ok(raw.includes(EMPTY_CODE));
 });
 
 test('1M: 900_000 tokens → panic; label shows raw used_percentage (90%)', async () => {
@@ -170,13 +173,12 @@ test('1M: 900_000 tokens → panic; label shows raw used_percentage (90%)', asyn
   assert.ok(stripAnsi(raw).includes('90%'));
 });
 
-test('1M: 218k tokens (22% of 1M) → label "22%" with bar at 4 cells', async () => {
-  // Regression: previously the label read "43%" (% of 500k panic) — confusing because
-  // the user's mental model is "% of the model's context window".
+test('1M: 218k tokens (22% of 1M) → label "22%" with bar at 2 cells', async () => {
+  // The label and bar now agree: 218k is 22% of the 1M window → 2 filled cells.
   const raw = await runRaw(inp1M(218_000));
   assert.ok(stripAnsi(raw).includes('22%'));
-  assert.ok(raw.includes(cellCode(3)));
-  assert.ok(!raw.includes(cellCode(4)));
+  assert.ok(raw.includes(cellCode(1)));
+  assert.ok(!raw.includes(cellCode(2)));
 });
 
 // ─── 1M detection band — tightened to (800k, 1.2M) ───────────────────────────
@@ -201,12 +203,12 @@ test('detection: inferred totalCtx 800k (lower edge) → still 200k tier', async
 
 test('detection: inferred totalCtx 850k → 1M tier engages', async () => {
   // usedPct=20, tokens=170k → inferred 850k. Inside (800k, 1.2M).
-  // 1M tier: 170k tokens → floor(170/50)=3 cells, no panic.
+  // 1M tier (full-window scale): 170k tokens → floor(170/100)=1 cell, no panic.
   const i = baseInput();
   i.context_window = { used_percentage: 20, total_input_tokens: 170_000 };
   const raw = await runRaw(i);
-  assert.ok(raw.includes(cellCode(2)));
-  assert.ok(!raw.includes(cellCode(3)));
+  assert.ok(raw.includes(cellCode(0)));
+  assert.ok(!raw.includes(cellCode(1)));
   assert.ok(!raw.includes(PANIC_CODE));
 });
 
@@ -237,8 +239,8 @@ test('usedPct=0 with non-zero tokens → percent-only fallback (no premature col
 // ─── displayPct floor: no "100%" without panic ───────────────────────────────
 
 test('1M: 499_500 tokens (just below panic) → label "50%" (raw usedPct), no panic', async () => {
-  // displayPct = round(usedPct) = round(49.95) = 50. Bar fills 9 cells but label
-  // shows actual context usage, not "% of panic".
+  // displayPct = round(usedPct) = round(49.95) = 50. Bar fills floor(499.5/100)=4 cells;
+  // panic is at cell 5 (500k), so this is one cell short — no blink/skull yet.
   const raw = await runRaw(inp1M(499_500));
   assert.ok(stripAnsi(raw).includes('50%'));
   assert.ok(!raw.includes(PANIC_CODE));
