@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { buildMap, isUsablePriceTable, getModelCosts, hashMap, loadPricing } = require('../lib/pricing');
+const { buildMap, isUsablePriceTable, getModelCosts, hashMap, loadPricing, requestFetch } = require('../lib/pricing');
 
 const tmp = [];
 after(() => { for (const d of tmp) fs.rmSync(d, { recursive: true, force: true }); });
@@ -268,4 +268,59 @@ test('loadPricing: fresh pricing.json (success TTL closed) never stamps', () => 
     JSON.stringify({ fetchedAt: Date.now(), raw: RAW }));
   loadPricing(stateDir, { allowFetch: true });
   assert.equal(fs.existsSync(path.join(stateDir, STAMP)), false); // 24h gate short-circuits the throttle
+});
+
+// --- Self-healing: unknown models resolve approximately, and trigger a refetch ---
+test('familyFallback: an unseen generation inherits the newest known tier rates', () => {
+  const m = buildMap(require('../data/model_prices.json'));
+  const future = getModelCosts(m, 'claude-opus-6-20261101');
+  const known = getModelCosts(m, 'claude-opus-5');
+  assert.equal(future.input, known.input, 'inherits the newest Opus rates');
+  assert.equal(future.approximate, true, 'flagged so consumers can mark it');
+  assert.equal(known.approximate, undefined, 'the map entry itself stays unflagged');
+});
+
+test('familyFallback: only claude-<tier>-<n>, never other providers or local models', () => {
+  const m = buildMap(require('../data/model_prices.json'));
+  for (const k of ['gpt-5', 'ollama/llama3:8b', 'llama-3-70b', 'claude-instant']) {
+    assert.equal(getModelCosts(m, k), null, k);
+  }
+});
+
+test('familyFallback: picks the highest version, not the first or longest key', () => {
+  const m = buildMap({
+    'claude-zeta-4': { input_cost_per_token: 4e-6, output_cost_per_token: 1e-5 },
+    'claude-zeta-10': { input_cost_per_token: 1e-5, output_cost_per_token: 2e-5 },
+    'claude-zeta-9-9': { input_cost_per_token: 9e-6, output_cost_per_token: 2e-5 },
+  });
+  assert.equal(getModelCosts(m, 'claude-zeta-11').input, 1e-5, '10 > 9-9 > 4 numerically');
+});
+
+test('requestFetch: honours the 1h stamp throttle, and staleAfter gates the TTL', () => {
+  const fs = require('fs'), os = require('os'), path = require('path');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-rf-'));
+  const saved = process.env.STATUSLINE_PRICING_NO_FETCH;
+  delete process.env.STATUSLINE_PRICING_NO_FETCH;
+  // staleAfter in the future → not due yet, no attempt
+  assert.equal(requestFetch(dir, { staleAfter: Date.now() + 60000 }), false);
+  assert.equal(fs.existsSync(path.join(dir, 'pricing.last-attempt')), false);
+  // staleAfter 0 → due now (this is the unknown-model path); stamps and fires
+  assert.equal(requestFetch(dir, { staleAfter: 0 }), true);
+  assert.ok(fs.existsSync(path.join(dir, 'pricing.last-attempt')));
+  // immediately again → throttled, even though staleAfter says due
+  assert.equal(requestFetch(dir, { staleAfter: 0 }), false);
+  if (saved !== undefined) process.env.STATUSLINE_PRICING_NO_FETCH = saved;
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('requestFetch: STATUSLINE_PRICING_NO_FETCH blocks even the unknown-model path', () => {
+  const fs = require('fs'), os = require('os'), path = require('path');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-rf2-'));
+  const saved = process.env.STATUSLINE_PRICING_NO_FETCH;
+  process.env.STATUSLINE_PRICING_NO_FETCH = '1';
+  assert.equal(requestFetch(dir, { staleAfter: 0 }), false);
+  assert.equal(fs.existsSync(path.join(dir, 'pricing.last-attempt')), false, 'no attempt stamped');
+  if (saved === undefined) delete process.env.STATUSLINE_PRICING_NO_FETCH;
+  else process.env.STATUSLINE_PRICING_NO_FETCH = saved;
+  fs.rmSync(dir, { recursive: true, force: true });
 });

@@ -163,6 +163,24 @@ The session chip keeps absolute USD tiers (green <$5, yellow <$10, orange <$20, 
 
 > **`/clear` does not reset the `s` chip.** `/clear` starts a new session (new id + transcript), but Claude Code's `cost.total_cost_usd` is cumulative across the whole CLI process and survives the clear — so `s` keeps showing the running total and grows from there (same for the `duration` and `lines` chips). The `d`/`w`/`m` totals already count your pre-clear spend correctly (it still belongs to today), but they also get the current session's live cost folded in — and after a `/clear` that live figure still carries the pre-clear total, so d/w/m over-count by up to $5 (the live-delta cap) for the rest of the post-clear session. Only starting a fresh `claude` process clears this.
 
+### Staying accurate without updating the repo
+
+Prices are fetched from LiteLLM into your own state dir, at most once a day, in the background — so
+an old clone still gets current rates without a `git pull`.
+
+Two things keep that working when a *new model* ships:
+
+- **The fetch is triggered by need, not just by the clock.** Seeing a model it can't price exactly,
+  the refresh hook asks for a price refresh immediately rather than waiting out the 24h timer (still
+  capped at one attempt an hour, and skipped entirely if `STATUSLINE_PRICING_NO_FETCH` is set).
+- **An unknown generation is estimated, not zeroed.** `claude-opus-6` in the window before LiteLLM
+  carries it inherits the newest known Opus rates instead of billing $0.
+
+While any total includes an unpriced or estimated call, the cost chips carry a dim `?` — the number
+is a floor, not a figure. It clears itself once the refreshed table lands.
+
+Code changes still need a `git pull`; only pricing is self-maintaining.
+
 ### Matching your plan's billing page
 
 These costs are **API-equivalent**: tokens × published per-token rates. If your plan bills through a
