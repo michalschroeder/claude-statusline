@@ -121,3 +121,28 @@ test('calculateCostBreakdown: null costs/usage → all zeros', () => {
   const z = calculateCostBreakdown(null, null);
   assert.deepEqual(z, { input: 0, output: 0, cacheWrite: 0, cacheRead: 0, web: 0, total: 0 });
 });
+
+// --- US-only inference premium (data-residency workspaces) ---
+test('inference_geo "us" bills the whole call at 1.1x', () => {
+  const costs = { input: 1e-6, output: 2e-6, cacheWrite: 1.25e-6, cacheRead: 1e-7, webSearch: 0.01 };
+  const usage = { input_tokens: 1000, output_tokens: 500, cache_read_input_tokens: 2000,
+    cache_creation_input_tokens: 400, server_tool_use: { web_search_requests: 1 } };
+  const base = calculateCost(usage, costs);
+  const us = calculateCost({ ...usage, inference_geo: 'us' }, costs);
+  assert.ok(Math.abs(us - base * 1.1) < 1e-12, 'flat 1.1x over every component');
+});
+
+test('inference_geo "global" / "not_available" / absent are unpriced', () => {
+  const costs = { input: 1e-6, output: 0, cacheWrite: 0, cacheRead: 0, webSearch: 0 };
+  const usage = { input_tokens: 1000 };
+  const base = calculateCost(usage, costs);
+  for (const geo of ['global', 'not_available', undefined, null]) {
+    assert.equal(calculateCost({ ...usage, inference_geo: geo }, costs), base, `geo=${geo}`);
+  }
+});
+
+test('US premium composes with the fast-mode multiplier', () => {
+  const costs = { input: 1e-6, output: 0, cacheWrite: 0, cacheRead: 0, webSearch: 0, fastMultiplier: 2 };
+  const usage = { input_tokens: 1000, speed: 'fast', inference_geo: 'us' };
+  assert.ok(Math.abs(calculateCost(usage, costs) - 1000 * 1e-6 * 2 * 1.1) < 1e-12);
+});
