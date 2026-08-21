@@ -163,6 +163,27 @@ The session chip keeps absolute USD tiers (green <$1, yellow <$5, orange <$10, r
 
 > **`/clear` does not reset the `s` chip.** `/clear` starts a new session (new id + transcript), but Claude Code's `cost.total_cost_usd` is cumulative across the whole CLI process and survives the clear — so `s` keeps showing the running total and grows from there (same for the `duration` and `lines` chips). The `d`/`w`/`m` totals already count your pre-clear spend correctly (it still belongs to today), but they also get the current session's live cost folded in — and after a `/clear` that live figure still carries the pre-clear total, so d/w/m over-count by up to $5 (the live-delta cap) for the rest of the post-clear session. Only starting a fresh `claude` process clears this.
 
+### Matching your plan's billing page
+
+These costs are **API-equivalent**: tokens × published per-token rates. If your plan bills through a
+consumption meter rather than a per-token invoice — Enterprise plans do — that meter is an
+org-level *valuation* and will read higher. On one Enterprise account it has run consistently ~15%
+above our figure on identical tokens (June: $98.37 vs $85.16; August: $558 vs $485.77).
+
+`STATUSLINE_COST_MULTIPLIER` scales the displayed figures so they line up with what you're billed:
+
+```json
+"env": {
+  "STATUSLINE_COST_MULTIPLIER": "1.15"
+}
+```
+
+Unset (or anything ≤0 / non-numeric) means `1` — no change at all. Find your own factor by dividing
+your billing page's month-to-date by the `m` chip; don't copy the 1.15 above, it's one account's
+number. The multiplier is display-only: the underlying recompute stays API-equivalent, and the
+viewer's `--analyze` JSON and detail view stay on the raw basis. Colours and the burn rate follow the
+calibrated figure, so budget thresholds mean what your bill means.
+
 The [session viewer](#session-viewer) (`bin/sessions.js`) also shows a per-session COST column and a today/week/month footer, using the same recomputed costs.
 
 ## Session viewer

@@ -9,7 +9,7 @@ const { loadPricing } = require('../lib/pricing');
 const { aggregate, readCache } = require('../lib/cost-aggregate');
 const { buildDetail } = require('../lib/session-detail');
 const { sumPeriods } = require('../lib/periods');
-const { resolveBudget } = require('../lib/budget');
+const { resolveBudget, resolveCostMultiplier } = require('../lib/budget');
 const { resolveStateDir } = require('../lib/state');
 const { formatCompact } = require('../lib/format');
 
@@ -393,6 +393,13 @@ function main() {
   // Period totals + budget (footer in text mode, top-level fields in JSON mode).
   const budget = resolveBudget(process.env.STATUSLINE_MONTHLY_BUDGET);
   const per = sumPeriods(agg.perSession, new Date());
+  // Display-time calibration (STATUSLINE_COST_MULTIPLIER), matching the renderer so
+  // the two surfaces can't disagree. Rendered rows + footer only — the --analyze
+  // JSON and the detail view stay on the raw API-equivalent basis, since those are
+  // analysis surfaces an agent reasons about, not a spend readout.
+  const cm = resolveCostMultiplier(process.env.STATUSLINE_COST_MULTIPLIER);
+  const costOfShown = (id) => costOf(id) * cm;
+  const perShown = { daily: per.daily * cm, weekly: per.weekly * cm, monthly: per.monthly * cm };
   const emitJson = (rs) => process.stdout.write(
     JSON.stringify(listPayload(rs, costOf, per, budget), null, 2) + '\n');
 
@@ -442,7 +449,7 @@ function main() {
     }
     const clockCell = dim(clock(r.ts));
     const relCell = dim(relativeTime(nowSec, r.ts).padStart(REL_W));
-    const cost = costOf(r.id);
+    const cost = costOfShown(r.id);
     const plainCost = (cost > 0 ? '$' + cost.toFixed(2) : '—').padStart(COST_W);
     const costCell = cost > 0 ? colorByTier(cost, SESSION_TIERS)(plainCost) : dim(plainCost);
     const titleText = truncate(title || '—', titleWidth);
@@ -461,15 +468,15 @@ function main() {
   out.push('');
   if (budgetOptedOut) {
     out.push(
-      dim('today ') + money(per.daily) + dim(' · week ') + money(per.weekly) +
-      dim(' · month ') + money(per.monthly)
+      dim('today ') + money(perShown.daily) + dim(' · week ') + money(perShown.weekly) +
+      dim(' · month ') + money(perShown.monthly)
     );
   } else {
     const BAR_W = 8;
     const periods = [
-      ['today', per.daily, dLimit],
-      ['week', per.weekly, wLimit],
-      ['month', per.monthly, mBudget],
+      ['today', perShown.daily, dLimit],
+      ['week', perShown.weekly, wLimit],
+      ['month', perShown.monthly, mBudget],
     ];
     const amtW = Math.max(...periods.map(([, s]) => money(s).length));
     for (const [label, spent, limit] of periods) {

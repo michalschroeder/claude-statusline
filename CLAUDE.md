@@ -217,6 +217,25 @@ So a 200k model fills cell N at `20k · N` tokens; a 1M model fills cell N at `5
 coloring. Unset → $1000/mo default; `0` → hide d/w/m chips; a number → that monthly budget. Derived:
 daily = monthly/30, weekly = monthly×7/30. Resolved by `lib/budget.js` (`resolveBudget`).
 
+`STATUSLINE_COST_MULTIPLIER` scales the **displayed** cost figures (the `s`/`d`/`w`/`m` chips and
+the viewer's rendered rows + footer) by a constant. Unset/empty/non-numeric/≤0 → `1` (exact no-op —
+output is byte-identical). Resolved by `lib/budget.js` (`resolveCostMultiplier`).
+
+Purpose: our recompute is **API-equivalent** (tokens × published per-token rates). A plan's own meter
+may value the same tokens differently — an Enterprise consumption meter is an org-level valuation,
+not a per-token invoice, and has been measured at ~1.15× our figure on identical tokens across two
+separate months (June 2026: $98.37 vs $85.16; August 2026: $558 vs $485.77 — ratios 1.155 and 1.149,
+stable despite very different model mixes, which is what rules out a mispriced component and points
+at a flat plan-level markup). The knob calibrates the **display** without touching the recompute,
+which stays the honest API-equivalent basis. There is deliberately **no** default other than 1 and no
+auto-detection: two samples from one account is not a basis for shipping a global constant.
+
+Applied to the FINAL figures, so the burn rate and every colour threshold — absolute for `s`,
+budget-relative for d/w/m — read the calibrated number. The `MAX_LIVE_DELTA` clamp stays on the raw
+basis (it bounds a pricing-basis artefact, not a displayed amount). The viewer's `--analyze` JSON and
+its per-session detail view stay **raw**: those are analysis surfaces an agent reasons about, not
+spend readouts. Covered by `tests/budget.test.js` and `tests/period-cost.test.js`.
+
 `STATUSLINE_TIMEZONE` env var picks the timezone for cost day-bucketing and the d/w/m windows — an
 IANA name (e.g. `Europe/Warsaw`). Unset/empty/invalid → system-local (unchanged behavior). It's a
 global (account-level) setting: only the statusline reads it, so unlike setting `TZ` in `"env"` it
