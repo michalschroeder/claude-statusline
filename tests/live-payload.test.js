@@ -41,8 +41,7 @@ test('fixture: full payload renders all expected segments', async () => {
   assert.match(plain, /feature-dev/, 'agent name');
   assert.match(plain, /context-bar-tiers/, 'worktree name');
   assert.match(plain, /󰘬 feature\/widget/, 'branch chip with diverged branch');
-  assert.match(plain, new RegExp(`󰉋 ${path.basename(tmpDir)}`), 'dir basename');
-  assert.match(plain, /\+dir docs/, 'added_dirs basename');
+  assert.match(plain, new RegExp(`󰉋 ${path.basename(tmpDir)} \\+ docs`), 'dir + added_dirs basename');
   assert.match(plain, /\$2\.47/, 'cost');
   assert.match(plain, /1h 2m/, 'duration formatting');
   assert.match(plain, /\+142/, 'lines added');

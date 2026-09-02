@@ -130,8 +130,7 @@ Segment names:
 | `branch` | git branch |
 | `worktree` | worktree name |
 | `agent` | agent name |
-| `dir` | directory label |
-| `addeddirs` | +N added dirs |
+| `dir` | directory label, plus any added dirs |
 | `cost` | session + daily/weekly/monthly cost |
 | `duration` | session duration |
 | `lines` | +added -removed |
