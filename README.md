@@ -126,7 +126,6 @@ Segment names:
 | `model` | display name |
 | `effort` | effort level |
 | `skills` | all unique loaded skills, oldest→newest |
-| `style` | output style (non-default) |
 | `vim` | vim mode |
 | `branch` | git branch |
 | `worktree` | worktree name |
@@ -233,7 +232,6 @@ Segments, left to right:
 - **model** - display name (e.g. `claude-sonnet-5`)
 - **effort** - effort level, when set
 - **skills** - all unique loaded skills this session, oldest→newest, no truncation
-- **output style** - only shows up when it isn't `default`
 - **vim mode** - when vim mode is on
 - **branch** - current git branch. Read straight from `.git/HEAD`, no subprocess. Handles worktree indirection. Truncated past 50 chars
 - **worktree** - worktree name, when you're in one

@@ -10,7 +10,6 @@
   },
   "effort": { "level": "high" },
   "thinking": { "enabled": true },
-  "output_style": { "name": "concise" },
   "vim": { "mode": "NORMAL" },
   "agent": { "name": "feature-dev" },
   "worktree": { "name": "context-bar-tiers" },

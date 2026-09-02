@@ -182,7 +182,6 @@ Each segment is emitted only when its source field is present/non-empty. Separat
 |---|---|---|
 | model | `model.display_name` | dim; fallback `Claude` |
 | effort | `effort.level` | yellow `󰾅` |
-| output style (`style`) | `output_style.name` | `󰏘`; only when not `default` |
 | vim mode (`vim`) | `vim.mode` | `` |
 | branch | parsed from `.git/HEAD` (no subprocess) | `󰘬`, truncated >50 chars (`first30...lastN`); supports worktree `gitdir:` indirection and detached HEAD (short hash) |
 | worktree | `worktree.name`, falls back to `workspace.git_worktree` | `󰘯`; covers plain `git worktree add` worktrees, not only `--worktree` sessions |
@@ -220,7 +219,7 @@ So a 200k model fills cell N at `20k · N` tokens; a 1M model fills cell N at `1
 
 ## Configuration
 
-`STATUSLINE_SEGMENTS` env var (set via `"env"` in `~/.claude/settings.json`) is an optional comma-separated allowlist that also controls render order. Unset/empty = render all. Names are the literal `add(name, …)` keys — the full set is `model`, `effort`, `style`, `vim`, `branch`, `worktree`, `agent`, `dir`, `addeddirs`, `cost`, `duration`, `lines`, `ratelimits`, `context` (parenthesized in the segment column above where the human label differs). Unknown names are silently ignored — a typo like `output style` just never renders, with no error. Each segment is tagged via `add(name, value)`; filter applied just before joining.
+`STATUSLINE_SEGMENTS` env var (set via `"env"` in `~/.claude/settings.json`) is an optional comma-separated allowlist that also controls render order. Unset/empty = render all. Names are the literal `add(name, …)` keys — the full set is `model`, `effort`, `vim`, `branch`, `worktree`, `agent`, `dir`, `addeddirs`, `cost`, `duration`, `lines`, `ratelimits`, `context` (parenthesized in the segment column above where the human label differs). Unknown names are silently ignored — a typo just never renders, with no error. Each segment is tagged via `add(name, value)`; filter applied just before joining.
 
 **Auto-wrap (default).** With no `;` in `STATUSLINE_SEGMENTS` (including unset), active segments are greedy-wrapped onto as many lines as needed to fit the real terminal width — breaking only at segment boundaries, never mid-chip. A sparse session (few active segments) still renders as a single line; only a session with enough active segments to actually overflow spills onto more lines. Width comes from `getTerminalWidth()`: real TTY `columns`, else the `COLUMNS` env var (Claude Code's TUI sets this on the piped statusline command to the real pane width — same fallback chain as `bin/sessions.js`), else 80.
 
@@ -257,7 +256,7 @@ re-buckets on the next `UserPromptSubmit` refresh (cache carries its `tz`). **Ti
 spend-limit meter resets at **00:00 UTC on the 1st** (the console shows it in your locale, e.g.
 `2:00 AM GMT+2`), so set `STATUSLINE_TIMEZONE=UTC` to make the `m` chip's month align with that reset.
 
-`STATUSLINE_ICONS=nerd|unicode|ascii` picks the icon set. `nerd` requires a Nerd Font; `unicode` is BMP symbols (no emoji); `ascii` is pure ASCII. Resolved by `resolveIconMode()`: env var wins; else read cached choice from `~/.cache/claude-statusline/icons`; else first-run writes `ascii` to the cache and appends a one-line install hint to the statusline. Per-mode glyphs live in `ICON_SETS` (`effort branch worktree dir duration lines r5h r7d rsep skull style vim agent barFill barEmpty sep skills hr`). Tests force `nerd` via `tests/helpers.js`; `tests/icons.test.js` exercises the other modes.
+`STATUSLINE_ICONS=nerd|unicode|ascii` picks the icon set. `nerd` requires a Nerd Font; `unicode` is BMP symbols (no emoji); `ascii` is pure ASCII. Resolved by `resolveIconMode()`: env var wins; else read cached choice from `~/.cache/claude-statusline/icons`; else first-run writes `ascii` to the cache and appends a one-line install hint to the statusline. Per-mode glyphs live in `ICON_SETS` (`effort branch worktree dir duration lines r5h r7d rsep skull vim agent barFill barEmpty sep skills hr`). Tests force `nerd` via `tests/helpers.js`; `tests/icons.test.js` exercises the other modes.
 
 ## Conventions
 

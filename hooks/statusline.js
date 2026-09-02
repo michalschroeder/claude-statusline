@@ -56,17 +56,17 @@ const dimCyan = (s) => `\x1b[2;36m${s}\x1b[0m`;
 const ICON_SETS = {
   nerd:    { effort: '󰾅', branch: '󰘬', worktree: '󰘯', dir: '󰉋', duration: '󰔛',
              lines: '󰷈', r5h: '󰔚 5h', r7d: '󰃭 7d', rsep: '·', skull: '󰚌',
-             style: '󰏘', vim: '', agent: '󰚩',
+             vim: '', agent: '󰚩',
              barFill: '█', barEmpty: '░',
              sep: '┊', skills: '', hr: '─' },
   unicode: { effort: '⚡', branch: '⎇', worktree: '⊕', dir: '▸',  duration: '⏱',
              lines: 'Δ', r5h: '5h', r7d: '7d', rsep: '·', skull: '‼',
-             style: '❖', vim: 'V', agent: '◉',
+             vim: 'V', agent: '◉',
              barFill: '█', barEmpty: '░',
              sep: '┊', skills: '✦', hr: '─' },
   ascii:   { effort: '!', branch: 'git:', worktree: 'wt:', dir: 'dir:', duration: 't:',
              lines: 'd', r5h: '5h', r7d: '7d', rsep: ',', skull: '!!',
-             style: 'S', vim: 'V', agent: '@',
+             vim: 'V', agent: '@',
              barFill: '#', barEmpty: '-',
              sep: '|', skills: '*', hr: '-' },
 };
@@ -287,7 +287,6 @@ function render(data, env) {
     const effortLevel = data.effort?.level;
     const vimMode = data.vim?.mode;
     const agentName = data.agent?.name;
-    const outputStyle = data.output_style?.name;
     const rateLimitFiveHour = data.rate_limits?.five_hour?.used_percentage;
     const rateLimitSevenDay = data.rate_limits?.seven_day?.used_percentage;
     const totalDurationMs = data.cost?.total_duration_ms;
@@ -323,9 +322,6 @@ function render(data, env) {
         }
       } catch {}
     }
-
-    // Output style (only when non-default)
-    if (outputStyle && outputStyle.toLowerCase() !== 'default') add('style', dim(`${icons.style} ${outputStyle}`));
 
     // Vim mode
     if (vimMode) add('vim', dim(`${icons.vim} ${vimMode}`));
