@@ -12,11 +12,38 @@ const { resolveTimezone } = require('../lib/timezone');
 const { resolveBudget, resolveCostMultiplier } = require('../lib/budget');
 const { formatCompact } = require('../lib/format');
 
-// Terminal width for the trailing rule. Sizes to the terminal when run
-// interactively; Claude Code pipes stdout so columns is undefined there and
-// we fall back to 80 (rule is a fixed-width separator, not full-bleed).
+// Terminal width, for the trailing rule and for wrapping segments onto
+// multiple lines. Real TTY columns wins; else COLUMNS env (Claude Code's TUI
+// sets this on the piped statusline command to the actual pane width — same
+// fallback chain as bin/sessions.js); else 80.
 function getTerminalWidth() {
-  return process.stdout.columns || 80;
+  return process.stdout.columns || parseInt(process.env.COLUMNS, 10) || 80;
+}
+
+const stripAnsi = (s) => s.replace(/\x1b\[[0-9;]*m/g, '');
+
+// Greedy-wrap segment strings into lines that fit `width`, breaking only
+// between segments (never mid-segment). Measures visible (ANSI-stripped)
+// length. Produces a single line when everything fits — matches the old
+// unconditional single-line output for short/sparse sessions.
+function wrapSegments(items, sepPlain, width) {
+  const lines = [];
+  let cur = [];
+  let curLen = 0;
+  for (const item of items) {
+    const itemLen = stripAnsi(item).length;
+    const addLen = cur.length ? sepPlain.length + itemLen : itemLen;
+    if (cur.length && curLen + addLen > width) {
+      lines.push(cur);
+      cur = [item];
+      curLen = itemLen;
+    } else {
+      cur.push(item);
+      curLen += addLen;
+    }
+  }
+  if (cur.length) lines.push(cur);
+  return lines;
 }
 
 // ANSI helpers — dim/bold/green/yellow/red + colorByTier are imported from
@@ -332,8 +359,9 @@ function render(data, env) {
     }
     add('dir', dim(`${icons.dir} ${dirLabel}`));
 
-    // Added dirs
-    if (addedDirs?.length) add('addeddirs', dim(`+${addedDirs.length}dir`));
+    // Added dirs — name it when there's exactly one, else fall back to a count
+    if (addedDirs?.length === 1) add('addeddirs', dim(`+dir ${path.basename(addedDirs[0])}`));
+    else if (addedDirs?.length > 1) add('addeddirs', dim(`+${addedDirs.length}dir`));
 
     // Cost group: session (s) + daily/weekly/monthly, joined by the dim `·`
     // separator (like rate limits). Session uses absolute $ thresholds; d/w/m are
@@ -353,11 +381,18 @@ function render(data, env) {
     // (#44); the `s` chip uses the full delta (it's the whole-session figure).
     // Parse the allowlist once: null = render all, else the ordered name list.
     // Both the cost gate and the final filter/order step read this — keep it
-    // single-sourced so the two can't drift (#37).
+    // single-sourced so the two can't drift (#37). `;` splits the value into
+    // separate output lines, each still comma-separated; a plain comma-only
+    // value (no `;`) renders as a single line — unchanged for existing configs.
     const segFilter = env.STATUSLINE_SEGMENTS;
-    const allowed = segFilter && segFilter.trim()
-      ? segFilter.split(',').map((s) => s.trim()).filter(Boolean)
+    const lineGroups = segFilter && segFilter.includes(';')
+      ? segFilter.split(';').map((line) => line.split(',').map((s) => s.trim()).filter(Boolean)).filter((g) => g.length)
       : null;
+    const allowed = lineGroups
+      ? lineGroups.flat()
+      : segFilter && segFilter.trim()
+        ? segFilter.split(',').map((s) => s.trim()).filter(Boolean)
+        : null;
     const segEnabled = (n) => !allowed || allowed.includes(n);
     if (segEnabled('cost')) {
       const { budgetOptedOut, monthly: monthlyBudget, daily: dailyLimit, weekly: weeklyLimit } =
@@ -426,21 +461,32 @@ function render(data, env) {
     }
 
     // Optional allowlist + order via STATUSLINE_SEGMENTS env var (parsed once above).
-    let final;
-    if (allowed) {
-      const byName = new Map(segments.map((s) => [s.name, s.value]));
-      final = allowed.map((n) => byName.get(n)).filter((v) => v);
+    const byName = new Map(segments.map((s) => [s.name, s.value]));
+    const sep = ` ${dim(icons.sep)} `;
+    const sepPlain = ` ${icons.sep} `;
+    const width = Math.max(20, getTerminalWidth());
+    let out;
+    if (lineGroups) {
+      // Explicit `;`-separated groups: a fixed, user-chosen layout \u2014 always
+      // that many lines, regardless of width.
+      out = lineGroups
+        .map((group) => group.map((n) => byName.get(n)).filter((v) => v).join(sep))
+        .filter((line) => line)
+        .join('\n');
     } else {
-      final = segments.map((s) => s.value);
+      // Default: one line, wrapping onto more only when the active segments
+      // actually overflow the real terminal width \u2014 short/sparse sessions
+      // stay single-line, long ones break at segment boundaries instead of
+      // wrapping mid-chip.
+      const final = allowed ? allowed.map((n) => byName.get(n)).filter((v) => v) : segments.map((s) => s.value);
+      out = wrapSegments(final, sepPlain, width)
+        .map((line) => line.join(sep))
+        .join('\n');
     }
-
-    // Join all segments with dimmed separator
-    let out = final.join(` ${dim(icons.sep)} `);
     if (iconHint) {
       out += `  ${dim('[icons=ascii; set STATUSLINE_ICONS=nerd|unicode|ascii \u2014 see README]')}`;
     }
 
-    const width = Math.max(20, getTerminalWidth());
     const rule = dim(icons.hr.repeat(width));
     out += `\n${rule}`;
     if (allSkills.length) {

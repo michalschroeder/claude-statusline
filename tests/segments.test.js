@@ -74,3 +74,33 @@ test('absent segments stay absent under filter', async () => {
   assert.match(out, /Claude/);
   assert.doesNotMatch(out, /\$/);
 });
+
+test('STATUSLINE_SEGMENTS with ; splits into separate lines', async () => {
+  const out = await run(richInput(), {
+    STATUSLINE_SEGMENTS: 'model;cost,duration',
+  });
+  const lines = out.split('\n');
+  assert.match(lines[0], /Claude/);
+  assert.doesNotMatch(lines[0], /\$0\.50/);
+  assert.match(lines[1], /\$0\.50/);
+  assert.match(lines[1], /1m/);
+  // trailing rule (and any skills chip) still follow the grouped lines
+  assert.ok(lines.length > 2);
+});
+
+test('STATUSLINE_SEGMENTS line groups drop empty lines', async () => {
+  const input = baseInput(); // no cost/context segments available
+  const out = await run(input, {
+    STATUSLINE_SEGMENTS: 'model;cost;dir',
+  });
+  const lines = out.split('\n');
+  assert.match(lines[0], /Claude/);
+  assert.match(lines[1], /tmp/); // 'cost' line dropped (no cost data) -> 'dir' is line 2
+});
+
+test('STATUSLINE_SEGMENTS without ; still renders a single line (back-compat)', async () => {
+  const out = await run(richInput(), { STATUSLINE_SEGMENTS: 'model,cost' });
+  const firstLine = out.split('\n')[0];
+  assert.match(firstLine, /Claude/);
+  assert.match(firstLine, /\$0\.50/);
+});
