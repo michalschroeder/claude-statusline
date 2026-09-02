@@ -41,18 +41,17 @@ render "2. Mid-session (typical)" '{
   "context_window": {"total_input_tokens": 18500, "used_percentage": 9}
 }'
 
-# 3. Heavy session — agent, effort, output style, vim, added dirs.
+# 3. Heavy session — agent, effort, vim, added dirs.
 #    Cost ≥60s so the s-chip carries a dim burn rate ($/h); $6.85 = yellow tier.
 render "3. Heavy session w/ agent (s-chip: burn rate + yellow tier)" '{
   "model": {"display_name": "Opus 4.8"},
   "effort": {"level": "high"},
-  "output_style": {"name": "explanatory"},
   "vim": {"mode": "NORMAL"},
   "agent": {"name": "code-reviewer"},
   "workspace": {
     "current_dir": "/home/ms/projects/claude-statusline",
     "project_dir": "/home/ms/projects/claude-statusline",
-    "added_dirs": ["/tmp/notes", "/var/log"]
+    "added_dirs": ["/tmp/notes"]
   },
   "cost": {"total_cost_usd": 6.85, "total_duration_ms": 2640000, "total_lines_added": 412, "total_lines_removed": 188},
   "context_window": {"total_input_tokens": 116000, "used_percentage": 58}

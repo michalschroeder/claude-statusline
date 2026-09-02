@@ -75,7 +75,6 @@ function richInput(stateDir, projectDir, session) {
   i.workspace = { current_dir: projectDir, project_dir: projectDir };
   i.session_id = session;
   i.effort = { level: 'high' };
-  i.output_style = { name: 'concise' };
   i.vim = { mode: 'NORMAL' };
   i.agent = { name: 'feature-dev' };
   i.worktree = { name: 'wt-foo' };
@@ -93,7 +92,7 @@ function richInput(stateDir, projectDir, session) {
 //
 // richInput renders: 2 filled + 8 empty cells (1M @ 22% of the full window), hr rule ≥20 chars,
 // branch `main`, worktree `wt-foo`, duration `45s`, rate limits `50%`/`20%`,
-// style `concise`, vim `NORMAL`, agent `feature-dev`.
+// vim `NORMAL`, agent `feature-dev`.
 const PARITY_CASES = [
   { mode: 'nerd', patterns: {
       bar:        /█{2}░{8} 22%/,
@@ -102,7 +101,6 @@ const PARITY_CASES = [
       worktree:   /󰘯 wt-foo/,
       duration:   /󰔛 45s/,
       rateLimits: /󰔚 5h 50% · 󰃭 7d 20%/,
-      style:      /󰏘 concise/,
       vim:        / NORMAL/,
       agent:      /󰚩 feature-dev/,
       skills:     / loaded skills:/,
@@ -115,7 +113,6 @@ const PARITY_CASES = [
       worktree:   /⊕ wt-foo/,
       duration:   /⏱ 45s/,
       rateLimits: /5h 50% · 7d 20%/,
-      style:      /❖ concise/,
       vim:        /V NORMAL/,
       agent:      /◉ feature-dev/,
       skills:     /✦ loaded skills:/,
@@ -128,7 +125,6 @@ const PARITY_CASES = [
       worktree:   /wt: wt-foo/,
       duration:   /t: 45s/,
       rateLimits: /5h 50% , 7d 20%/,
-      style:      /S concise/,
       vim:        /V NORMAL/,
       agent:      /@ feature-dev/,
       skills:     /\* loaded skills:/,

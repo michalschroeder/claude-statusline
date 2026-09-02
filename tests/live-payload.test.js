@@ -37,7 +37,6 @@ test('fixture: full payload renders all expected segments', async () => {
   // segment-mapping has drifted.
   assert.match(plain, /Opus 4.7/, 'model');
   assert.match(plain, /high/, 'effort level');
-  assert.match(plain, /concise/, 'output_style');
   assert.match(plain, /NORMAL/, 'vim mode');
   assert.match(plain, /feature-dev/, 'agent name');
   assert.match(plain, /context-bar-tiers/, 'worktree name');
