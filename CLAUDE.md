@@ -186,8 +186,7 @@ Each segment is emitted only when its source field is present/non-empty. Separat
 | branch | parsed from `.git/HEAD` (no subprocess) | `󰘬`, truncated >50 chars (`first30...lastN`); supports worktree `gitdir:` indirection and detached HEAD (short hash) |
 | worktree | `worktree.name`, falls back to `workspace.git_worktree` | `󰘯`; covers plain `git worktree add` worktrees, not only `--worktree` sessions |
 | agent | `agent.name` | bold; `󰚩` |
-| dir | `workspace.current_dir` basename | `󰉋`; when inside `.../.claude/worktrees/<name>/`, shows parent project name |
-| added dirs (`addeddirs`) | `workspace.added_dirs` | `+dir <basename>` when exactly 1, else `+Ndir` |
+| dir | `workspace.current_dir` basename, plus `workspace.added_dirs` | `󰉋`; when inside `.../.claude/worktrees/<name>/`, shows parent project name. Any added dirs fold in as a suffix: `+ <basename>` for exactly 1, else `+Ndir` |
 | cost | `cost.total_cost_usd` + `cost-summary.json` | s/d/w/m chip group joined by dim `·`. `s` = this session's recomputed spend (cached recomputed total + live delta), absolute USD thresholds (green <$5, yellow <$10, orange <$20, red ≥$20), omitted when ≤0. Once the session has run ≥60s a dim burn rate `$X/h` (= `total_cost_usd ÷ elapsed hours`, ≥$100/h rounded to integer) is appended to `s` — no state, straight from the payload. `d`/`w`/`m` = today / this week / this month = **all sessions' recomputed, day-bucketed spend (from `cost-summary.json`) + the current session's live delta (`max(0, live − cached total)`) folded into the current windows**, budget-relative coloring via `STATUSLINE_MONTHLY_BUDGET`. d/w/m hidden when `STATUSLINE_MONTHLY_BUDGET=0` |
 | duration | `cost.total_duration_ms` | `󰔛`; `Ns` / `Nm` / `Nh Nm` |
 | lines | `cost.total_lines_added` / `total_lines_removed` | `󰷈 +A -R` (green/red) |
@@ -219,7 +218,7 @@ So a 200k model fills cell N at `20k · N` tokens; a 1M model fills cell N at `1
 
 ## Configuration
 
-`STATUSLINE_SEGMENTS` env var (set via `"env"` in `~/.claude/settings.json`) is an optional comma-separated allowlist that also controls render order. Unset/empty = render all. Names are the literal `add(name, …)` keys — the full set is `model`, `effort`, `vim`, `branch`, `worktree`, `agent`, `dir`, `addeddirs`, `cost`, `duration`, `lines`, `ratelimits`, `context` (parenthesized in the segment column above where the human label differs). Unknown names are silently ignored — a typo just never renders, with no error. Each segment is tagged via `add(name, value)`; filter applied just before joining.
+`STATUSLINE_SEGMENTS` env var (set via `"env"` in `~/.claude/settings.json`) is an optional comma-separated allowlist that also controls render order. Unset/empty = render all. Names are the literal `add(name, …)` keys — the full set is `model`, `effort`, `vim`, `branch`, `worktree`, `agent`, `dir`, `cost`, `duration`, `lines`, `ratelimits`, `context` (parenthesized in the segment column above where the human label differs). Unknown names are silently ignored — a typo just never renders, with no error. Each segment is tagged via `add(name, value)`; filter applied just before joining.
 
 **Auto-wrap (default).** With no `;` in `STATUSLINE_SEGMENTS` (including unset), active segments are greedy-wrapped onto as many lines as needed to fit the real terminal width — breaking only at segment boundaries, never mid-chip. A sparse session (few active segments) still renders as a single line; only a session with enough active segments to actually overflow spills onto more lines. Width comes from `getTerminalWidth()`: real TTY `columns`, else the `COLUMNS` env var (Claude Code's TUI sets this on the piped statusline command to the real pane width — same fallback chain as `bin/sessions.js`), else 80.
 

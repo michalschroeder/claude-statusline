@@ -353,11 +353,12 @@ function render(data, env) {
       const idx = dir.indexOf(marker);
       if (idx !== -1) dirLabel = path.basename(dir.slice(0, idx));
     }
-    add('dir', dim(`${icons.dir} ${dirLabel}`));
-
-    // Added dirs — name it when there's exactly one, else fall back to a count
-    if (addedDirs?.length === 1) add('addeddirs', dim(`+dir ${path.basename(addedDirs[0])}`));
-    else if (addedDirs?.length > 1) add('addeddirs', dim(`+${addedDirs.length}dir`));
+    // Added dirs fold into the dir chip: named when there's exactly one
+    // (`main + added`), else a count suffix (avoids unbounded width for many).
+    let dirSuffix = '';
+    if (addedDirs?.length === 1) dirSuffix = ` + ${path.basename(addedDirs[0])}`;
+    else if (addedDirs?.length > 1) dirSuffix = ` +${addedDirs.length}dir`;
+    add('dir', dim(`${icons.dir} ${dirLabel}${dirSuffix}`));
 
     // Cost group: session (s) + daily/weekly/monthly, joined by the dim `·`
     // separator (like rate limits). Session uses absolute $ thresholds; d/w/m are
