@@ -139,6 +139,20 @@ Segment names:
 
 Unknown names get dropped. Segments with no data don't render anyway.
 
+### Line wrapping
+
+By default, active segments greedy-wrap onto as many lines as needed to fit your real terminal width — a short/sparse session stays on one line, a long one breaks at segment boundaries (never mid-chip) instead of wrapping raggedly in the terminal. Width comes from the real TTY columns, or the `COLUMNS` env var Claude Code sets on the piped statusline command, or 80 as a last resort.
+
+To force a fixed manual layout instead of auto-wrapping, use `;` in `STATUSLINE_SEGMENTS` to split segments into specific lines (`,` still separates segments within a line):
+
+```json
+"env": {
+  "STATUSLINE_SEGMENTS": "model,effort,vim,branch,worktree,agent,dir;cost,duration,lines,ratelimits,context"
+}
+```
+
+This always renders exactly two lines, regardless of width.
+
 ## Cost tracking
 
 The cost segment shows a session chip (`s $X.XX`) plus daily, weekly, and monthly chips (`d`/`w`/`m`) covering spend across all sessions. Costs are **recomputed from raw token counts × LiteLLM per-token prices** — never trusting Claude Code's reported `cost.total_cost_usd`. The price table ships as a bundled snapshot (`data/model_prices.json`) and is refreshed in the background at most once every 24h.
@@ -235,7 +249,7 @@ Segments, left to right:
 - **branch** - current git branch. Read straight from `.git/HEAD`, no subprocess. Handles worktree indirection. Truncated past 50 chars
 - **worktree** - worktree name, when you're in one
 - **agent** - agent name, when set
-- **dir** - basename of the current directory. Inside `.claude/worktrees/<name>/` it shows the parent project's name instead
+- **dir** - basename of the current directory. Inside `.claude/worktrees/<name>/` it shows the parent project's name instead. Any added dirs (`--add-dir`) fold in as a suffix: `+ <basename>` for exactly one, else `+Ndir`
 - **cost** - a chip group: `s` (this session) plus `d`/`w`/`m` (today / this week / this month, across all sessions). See [Cost tracking](#cost-tracking)
 - **duration** - total session time (s / m / h m)
 - **lines** - lines added and removed
