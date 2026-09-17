@@ -1,109 +1,69 @@
 # Setup prompt for Claude Code
 
-Paste everything below the `---` into a Claude Code session. It is self-contained — Claude Code will install the statusline and (optionally) the skills-logging hooks into your Claude Code settings.
+Paste everything below the `---` into a Claude Code session. It is self-contained: Claude Code will clone the repo, edit your settings and, if you want, wire up the skills-logging and cost-cache hooks.
 
 ---
 
-You are setting up the `claude-statusline` renderer + hooks for me. Do the steps below in order. Be concise; don't ask before each step — only ask where the prompt explicitly says to. At the end, print one short summary of what was changed.
+Set up the `claude-statusline` renderer + hooks for me. Do the steps in order. Be concise. Ask only when a wrong guess would touch my config or my preferences; otherwise proceed. Print one short summary at the end.
 
-## 0. Resolve the config dir
+## 0. Config dir
 
-Claude Code's settings live at `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json`. Resolve that path once and use it everywhere below — refer to it as `<CONFIG_DIR>` and the settings file as `<CONFIG_DIR>/settings.json`. Do not hardcode `~/.claude`.
+Claude Code's settings live at `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json`. Resolve that once, call it `<CONFIG_DIR>`, use it everywhere below, even where the README shows `~/.claude`.
 
-## 1. Repo location
+## 1. Repo + prerequisites
 
-1. If the current working directory looks like a clone of `claude-statusline` (contains `hooks/statusline.js`), use it as `<REPO>` and skip to step 2.
-2. Otherwise, **ask me where to clone it.** Suggest `~/projects/claude-statusline` as a default but wait for my answer. Then clone:
+1. If the cwd is already a clone (contains `hooks/statusline.js`), use it as `<REPO>`. Otherwise **ask me where to clone**, suggesting `~/projects/claude-statusline`, then:
    ```sh
    git clone https://github.com/michalschroeder/claude-statusline.git <chosen-path>
    ```
-   Use the absolute path as `<REPO>` everywhere below.
-
-3. Verify Node 18+ is available: `node --version`. If missing, stop and tell me to install Node 18+. Also check `command -v jq` — `jq` is required for the settings.json edit below and for the skill-logging hooks at runtime; if missing, tell me to install it (`apt install jq` / `brew install jq` / equivalent) before continuing.
-
-4. Sanity-check the renderer works:
+   `<REPO>` is the absolute path.
+2. `node --version` must be 18+. If not, stop and tell me to install Node.
+3. `command -v jq`. Optional: only the skills-logging hooks need it at runtime. If missing, say so (`apt install jq` / `brew install jq`) and continue.
+4. Sanity check:
    ```sh
    echo '{"model":{"display_name":"Claude"},"workspace":{"current_dir":"/tmp","project_dir":"/tmp"}}' | node <REPO>/hooks/statusline.js
    ```
-   It should print a single ANSI-colored line. If it errors, stop.
+   Expect one ANSI-colored line plus a dim rule. A one-line "icons" hint may follow because `STATUSLINE_ICONS` isn't set yet; that's fine. If the renderer fails, fix or report it before touching settings.
 
-## 2. Pick icon mode
+## 2. Icon mode
 
-Three sets are available via the `STATUSLINE_ICONS` env var:
+`STATUSLINE_ICONS` picks the set:
 
-- **`nerd`** — prettiest; **requires a [Nerd Font](https://github.com/ryanoasis/nerd-fonts) installed AND selected as the terminal font.** The repo author uses `JetBrainsMono Nerd Font`, but any official Nerd Font works — they're all patched `--complete`, so they all carry the Material Design Icons glyphs the statusline uses. If no Nerd Font is selected in the terminal, `nerd` glyphs render as tofu/boxes.
-- **`unicode`** — works in any modern Unicode-capable font (almost every desktop terminal). No extra install.
-- **`ascii`** — pure ASCII, works anywhere.
+- `nerd`: prettiest, **needs a [Nerd Font](https://github.com/ryanoasis/nerd-fonts) installed AND selected as the terminal font**, else glyphs render as boxes. Any official Nerd Font works.
+- `unicode`: any modern terminal font, no install.
+- `ascii`: works anywhere.
 
-Ask me which mode I want. Before recommending `nerd`, explicitly ask whether my terminal is already configured with a Nerd Font; if not, tell me to grab one from the [Nerd Fonts repo](https://github.com/ryanoasis/nerd-fonts) and set it as my terminal font first, or pick `unicode`/`ascii` instead. Remember the choice as `<ICONS>`.
+Ask me which. Before offering `nerd`, ask whether my terminal already uses a Nerd Font; if not, tell me to set one up first or pick `unicode`/`ascii`. Call the choice `<ICONS>`.
 
 ## 3. Edit `<CONFIG_DIR>/settings.json`
 
-Create the file as `{}` if missing. **Merge** — do not overwrite existing keys. Preserve any unrelated `statusLine`, `hooks`, `env`, etc.; only add what's missing.
+Create as `{}` if missing. **Merge**: every existing key, including other `hooks`/`env` content, must survive intact. The only key you may replace is `statusLine`, and only after I say yes (3.1). Edit with a JSON-aware tool so the file stays valid JSON: `jq` (write to a tmpfile, then `mv`), or Node if `jq` is absent.
 
-Use `jq` for the edit (atomic write via tmpfile + `mv`). If `jq` is unavailable, parse the JSON in Node, mutate, and write it back — never hand-edit with sed.
+`<REPO>/README.md` under **Install** is the reference for the JSON *shape* of every key below; don't invent fields. Its file paths use `~/.claude`; substitute `<CONFIG_DIR>`.
 
-### 3a. `statusLine` (required)
+1. `statusLine` (required): `{"type":"command","command":"node <REPO>/hooks/statusline.js"}`. If a `statusLine` pointing at a different command already exists, ask me before replacing it.
+2. `env.STATUSLINE_ICONS` (required): `<ICONS>`. Leave other `env` keys alone.
+3. Hooks (optional). Ask me whether to install them. If yes, add entries to the `hooks.<event>` arrays so that afterwards each command appears exactly once in its event array and existing entries are untouched:
+   - `PreToolUse`, matcher `Skill` → `<REPO>/hooks/log-skill.sh`
+   - `UserPromptSubmit`, no matcher, two commands → `<REPO>/hooks/log-slash-skill.sh` and `node <REPO>/hooks/refresh-cost-cache.js`
+   - `SessionEnd`, no matcher → `<REPO>/hooks/cleanup-skills-log.sh`
 
-```json
-"statusLine": {
-  "type": "command",
-  "command": "node <REPO>/hooks/statusline.js"
-}
-```
+   The three `.sh` hooks power the loaded-skills line (need `jq`). `refresh-cost-cache.js` rebuilds the daily/weekly/monthly cost cache once per prompt; without it the `d`/`w`/`m` chips never update (the session chip still works). The statusline itself works with none of them.
+4. `chmod +x <REPO>/hooks/*.sh`
 
-If a `statusLine` already exists pointing at a different command, ask me before replacing it.
-
-### 3b. `env.STATUSLINE_ICONS` (required)
-
-Set `env.STATUSLINE_ICONS` to `<ICONS>`. Leave other `env` keys alone.
-
-### 3c. Hooks (optional — required only for the "loaded skills" chip)
-
-Ask me whether to install the skill-logging hooks. If yes, append (don't replace) these three entries. Each lives under `hooks.<event>` as an array — append a new array element rather than overwriting existing matchers.
-
-- `hooks.PreToolUse` — entry with `"matcher": "Skill"`, command `<REPO>/hooks/log-skill.sh`
-- `hooks.UserPromptSubmit` — entry with no matcher and **two** commands: `<REPO>/hooks/log-slash-skill.sh` AND `node <REPO>/hooks/refresh-cost-cache.js`
-- `hooks.SessionEnd` — entry with no matcher, command `<REPO>/hooks/cleanup-skills-log.sh`
-
-The `PreToolUse`/`UserPromptSubmit` slash-logger hooks plus the `SessionEnd` hook write/clean the skills log — they only power the skills chip. The second `UserPromptSubmit` command, `refresh-cost-cache.js`, rebuilds the daily/weekly/monthly cost cache once per prompt; without it the d/w/m cost chips won't update (the session cost chip still works). The statusline works without any of these.
-
-Shape of each entry:
-```json
-{ "matcher": "Skill", "hooks": [{ "type": "command", "command": "<REPO>/hooks/log-skill.sh" }] }
-```
-The `UserPromptSubmit` entry has no matcher and lists both commands:
-```json
-{ "hooks": [
-  { "type": "command", "command": "<REPO>/hooks/log-slash-skill.sh" },
-  { "type": "command", "command": "node <REPO>/hooks/refresh-cost-cache.js" }
-]}
-```
-(`SessionEnd` is the same single-command shape as `PreToolUse` but with no matcher.)
-
-Before appending, scan the existing array — if an identical command is already registered, skip it (idempotent).
-
-The skill-logger hooks need `jq` at runtime. Check `command -v jq`; if missing, tell me to install it (`apt install jq` / `brew install jq` / etc.) but continue — the statusline itself works without `jq`.
-
-### 3d. Make hook scripts executable
-
-```sh
-chmod +x <REPO>/hooks/*.sh
-```
+Install only what makes the statusline render. Tuning vars (`STATUSLINE_SEGMENTS`, `STATUSLINE_MONTHLY_BUDGET`, `STATUSLINE_TIMEZONE`, `STATUSLINE_COST_MULTIPLIER`) and symlinks into `<CONFIG_DIR>/hooks/` are mine to add later from the README; defaults already render everything.
 
 ## 4. Verify
 
-1. Show me the new keys added to `<CONFIG_DIR>/settings.json` (pretty-printed with `jq`).
-2. Re-run the sanity-check echo from step 1.4.
-3. Tell me to restart Claude Code (or open a new session) for the statusline + hooks to take effect.
+1. Show the keys you added to `<CONFIG_DIR>/settings.json`, pretty-printed.
+2. Re-run the sanity check from step 1.4.
+3. Tell me to restart Claude Code (or open a new session) so the statusline and hooks take effect.
 
-## 5. Summary to print at the end
+## 5. Summary
 
-- Config dir resolved (and whether from `CLAUDE_CONFIG_DIR` or default)
-- Repo path used
-- Icon mode chosen (and reminder if `nerd` was chosen but font not yet installed)
-- Whether skill-logging hooks were installed (yes/no, plus whether `jq` is present)
-- Path to settings file edited
+- Config dir (and whether it came from `CLAUDE_CONFIG_DIR` or the default)
+- Repo path
+- Icon mode (plus a reminder if `nerd` and the font isn't set up yet)
+- Hooks installed yes/no, and whether `jq` is present
+- Settings file edited
 - "Next step: restart Claude Code"
-
-That's it. Don't add anything I didn't ask for — no `STATUSLINE_SEGMENTS` (let it default to "render all"), no symlinks into `<CONFIG_DIR>/hooks/`.
