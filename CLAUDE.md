@@ -172,7 +172,11 @@ Data flow:
    - `hooks/cleanup-skills-log.sh` — `SessionEnd`, removes the session's skill log and prunes stale skill logs older than 30 days (for sessions that crashed without firing `SessionEnd`).
    Log format: `<unix_ts> <skill_name>` per line. Renderer reads last entries, dedupes; strips `plugin:` prefix.
 
-When any skills are logged the renderer emits 4 lines: segments, dim `─` rule, `{icons.skills} loaded skills: a, b, c, ...` (all uniques, oldest→newest, no truncation), dim `─` rule. Rule width = terminal columns (min 20, no upper cap). With no skills logged, just the single segment line is printed (no skills chip on line 1).
+The renderer **always** appends a trailing dim `─` rule after the segment line(s). When any
+skills are logged it emits two further lines: `{icons.skills} loaded skills: a, b, c, ...` (all
+uniques, oldest→newest, no truncation) followed by a second dim `─` rule. Rule width = terminal
+columns (min 20, no upper cap). Skills are **not** a segment — `STATUSLINE_SEGMENTS` cannot
+reorder or hide them.
 
 ## Supported segments (rendered left-to-right)
 
