@@ -1,0 +1,42 @@
+name: sync-prices
+# Daily: pull current Claude rates from upstream LiteLLM into data/model_prices.json
+# and open (or update) a PR when they drift. Tests run here because a PR opened
+# with GITHUB_TOKEN does not trigger the `tests` workflow.
+on:
+  schedule:
+    - cron: '0 22 * * *' # 22:00 UTC daily
+  workflow_dispatch:
+permissions:
+  contents: write
+  pull-requests: write
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with: { node-version: '20' }
+      - id: sync
+        run: |
+          {
+            echo 'changes<<CHANGES'
+            node scripts/sync-prices.js
+            echo 'CHANGES'
+          } >> "$GITHUB_OUTPUT"
+      - run: node --test tests/*.test.js
+      - uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        with:
+          branch: chore/sync-prices
+          delete-branch: true
+          commit-message: |
+            chore(pricing): sync bundled snapshot with upstream LiteLLM
+
+            ${{ steps.sync.outputs.changes }}
+          title: 'chore(pricing): sync bundled snapshot with upstream LiteLLM'
+          body: |
+            Automated sync of `data/model_prices.json` against
+            https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json
+
+            ${{ steps.sync.outputs.changes }}
+
+            Tests passed in the workflow run (`tests` does not fire on bot PRs).

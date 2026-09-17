@@ -218,6 +218,8 @@ While any total includes an unpriced or estimated call, the cost chips carry a d
 
 Code changes still need a `git pull`. Only pricing is self-maintaining.
 
+The bundled snapshot itself is kept current by a daily GitHub Actions run (`.github/workflows/sync-prices.yml`, 22:00 UTC): `scripts/sync-prices.js` mirrors upstream rates into `data/model_prices.json`, adds any newer Claude generation, and opens a PR when something drifted. So a fresh clone starts from rates at most a day old.
+
 ### Matching your plan's billing page
 
 These costs are API-equivalent: tokens × published per-token rates. If your plan bills through a consumption meter rather than a per-token invoice, as Enterprise plans do, that meter is an org-level valuation and will read higher. On one Enterprise account it has run consistently about 15% above our figure on identical tokens (June: $98.37 vs $85.16; August: $558 vs $485.77).
@@ -316,6 +318,7 @@ The list form gives you sessions, period totals and the monthly budget. The deta
 - `bin/sessions.js` - the [session viewer](#session-viewer). Standalone, not part of rendering.
 - `lib/` - the shared pure modules: cost math, pricing table, transcript parsing, period windows, timezone, budget, state-dir resolution, color.
 - `data/model_prices.json` - bundled LiteLLM price snapshot, the fallback when a fetch hasn't happened yet.
+- `scripts/sync-prices.js` - syncs that snapshot with upstream LiteLLM. Run daily by `.github/workflows/sync-prices.yml`, which opens a PR on drift.
 - `tests/` - `node --test tests/*.test.js`. No build step, no dependencies, Node stdlib only.
 
 ## How it works
