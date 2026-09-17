@@ -192,7 +192,7 @@ The d/w/m totals are rebuilt once per prompt by the `UserPromptSubmit` hook (`ho
 
 The session chip keeps absolute USD tiers: green under $5, yellow under $10, orange under $20, red at $20 and above. Once the session has run 60s or more it also gets a dim burn-rate suffix `$X/h`, which is spend ÷ elapsed time straight from the payload, with no state kept.
 
-> **`/clear` does not reset the `s` chip.** `/clear` starts a new session with a new id and transcript, but Claude Code's `cost.total_cost_usd` is cumulative across the whole CLI process and survives the clear. So `s` keeps showing the running total and grows from there, and the same goes for the `duration` and `lines` chips. The `d`/`w`/`m` totals already count your pre-clear spend correctly, since it still belongs to today, but they also get the current session's live cost folded in. After a `/clear` that live figure still carries the pre-clear total, so d/w/m over-count by up to $5, the live-delta cap, for the rest of the post-clear session. Only starting a fresh `claude` process clears this.
+> **`/clear` resets the `s` chip.** Since Claude Code v2.1.211, `/clear` starts a new session and zeroes the payload's cost, duration and lines totals, so `s`, `duration` and `lines` start fresh. The `d`/`w`/`m` totals keep your pre-clear spend, since it still belongs to today. On older Claude Code these fields accumulated across `/clear` for the life of the process.
 
 ### Timezone
 
@@ -372,7 +372,7 @@ Every rendered statusline ends with a dim horizontal rule. When any skills have 
  loaded skills: brainstorming, test-driven-development, writing-plans
 ```
 
-That's all unique skills, oldest to newest, with no truncation and `plugin:` prefixes stripped. It isn't a segment, so `STATUSLINE_SEGMENTS` can't reorder or hide it.
+That's all unique skills, oldest to newest, with no truncation. It isn't a segment, so `STATUSLINE_SEGMENTS` can't reorder or hide it.
 
 The source is `<STATE>/skills/<session>.log`, one `<timestamp> <skill-name>` per line, written by the two bash hooks. The slash-command logger only records a `/name` prompt when that skill actually exists under `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/` or `<cwd>/.agents/skills/`, so a typo'd slash command doesn't show up as a loaded skill.
 
