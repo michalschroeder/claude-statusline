@@ -10,7 +10,7 @@ No build step, no linter, no package.json — pure Node stdlib (Node 18+).
 
 ## Architecture
 
-Single-process statusline renderer plus two bash logging hooks.
+Single-process statusline renderer plus three bash skill-log hooks and one Node cost-refresh hook.
 
 **State dir** (`<STATE>` below): resolved identically by the renderer and all three hooks as `${XDG_STATE_HOME:-$HOME/.local/state}/claude-statusline/<profile>`. Data **always lives in our own XDG namespace — never inside `CLAUDE_CONFIG_DIR`**, which is Claude Code's own managed dir (full of generic-named subdirs it prunes via `.last-cleanup`); writing there risks colliding with a future CC feature. `CLAUDE_CONFIG_DIR` is used only as a **per-subscription key**: its path (leading `/` stripped, remaining `/`→`_`, e.g. `/home/u/.claude-x` → `home_u_.claude-x`) becomes the `<profile>` subdir, so distinct subscriptions/profiles keep separate skill logs. When `CLAUDE_CONFIG_DIR` is unset (single-profile users), `<profile>` is empty → flat `…/claude-statusline/` layout, unchanged. The renderer (`hooks/statusline.js`, `replace(/^\//,'').replace(/\//g,'_')`) and the bash hooks (`${CLAUDE_CONFIG_DIR#/}` then `${profile//\//_}`) must produce the same profile string — covered by `tests/state-dir.test.js`.
 
@@ -145,22 +145,14 @@ the session isn't yet cached is the reported total. Trade-off: a genuine >$5 sin
 under-counts the d/w/m windows until the next `UserPromptSubmit` refresh corrects it — a bounded,
 self-healing error.
 
-**`/clear` does NOT reset the `s` chip** (nor `duration`/`lines`). `/clear` mints a *new*
-`session_id` + new transcript (old one preserved/resumable), so our recomputed `cachedSession`
-for the fresh id is ~$0 — but Claude's `cost.total_cost_usd` is **process-cumulative** (it does not
-reset on `/clear`; confirmed via CC docs + issues #3019/#37451). Since the new session isn't cached
-yet, `s = cachedSession + rawDelta = 0 + (total_cost_usd − 0)` = the whole process's lifetime cost,
-so right after `/clear` the `s` chip still shows the pre-clear total and only *grows* from there.
-`duration` (`total_duration_ms`) and `lines` (`total_lines_added/removed`) are the same
-process-cumulative payload fields and likewise survive `/clear`. The **cache-based `d/w/m` base is
-correct** (pre-clear spend counts once via the old session's day-buckets), but the **live-delta fold
-double-counts the carry-in**: `periodDelta = min($5, rawDelta)` and `rawDelta = total_cost_usd −
-cachedSession[newId]` never sheds the carry-in (total_cost_usd is process-cumulative, cachedSession
-is per-session), so after a `/clear` d/w/m carry a *standing* phantom of `min($5, pre-clear process
-cost)` for the lifetime of the post-clear session — the same #44 mechanism, just at its clamp ceiling
-rather than self-healing. Resetting `s` on `/clear` would require a `SessionStart` (`source:"clear"`) hook to record a
-per-session carry-in baseline `B` and compute the live part against `total_cost_usd − B` — not
-implemented; only a fresh `claude` process (new id **and** `total_cost_usd` starting at 0) resets `s`.
+**`/clear` resets the `s` chip** (and `duration`/`lines`). Since Claude Code v2.1.211 `/clear`
+mints a new `session_id` **and** resets the payload's `cost.total_cost_usd` /
+`total_duration_ms` / `total_lines_*` to zero (docs: code.claude.com/docs/en/costs.md — "These totals
+reset when `/clear` starts a new session"). The fresh id has no cache entry, so `s = 0 + total_cost_usd`
+starts at $0 and the live-delta fold into d/w/m carries no pre-clear spend. No `/clear` handling exists
+in our code; the reset is entirely Claude Code's. Before v2.1.211 these fields were
+process-cumulative, so `s` survived `/clear` and d/w/m carried a standing phantom of
+`min(MAX_LIVE_DELTA, pre-clear cost)` — obsolete on current CC.
 
 Data flow:
 
@@ -170,7 +162,7 @@ Data flow:
    - `hooks/log-skill.sh` — `PreToolUse` matcher=`Skill`, logs the invoked skill name.
    - `hooks/log-slash-skill.sh` — `UserPromptSubmit`, parses `/<skill>` from prompts; logs only when the skill exists under `$CLAUDE_CONFIG_DIR/skills/` or `./.agents/skills/`.
    - `hooks/cleanup-skills-log.sh` — `SessionEnd`, removes the session's skill log and prunes stale skill logs older than 30 days (for sessions that crashed without firing `SessionEnd`).
-   Log format: `<unix_ts> <skill_name>` per line. Renderer reads last entries, dedupes; strips `plugin:` prefix.
+   Log format: `<unix_ts> <skill_name>` per line. Renderer reads all entries, dedupes (names kept verbatim).
 
 The renderer **always** appends a trailing dim `─` rule after the segment line(s). When any
 skills are logged it emits two further lines: `{icons.skills} loaded skills: a, b, c, ...` (all
