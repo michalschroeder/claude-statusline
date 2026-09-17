@@ -26,6 +26,15 @@
       "us": 1.1
     }
   },
+  "claude-mythos-5-1": {
+    "input_cost_per_token": 0.00001,
+    "output_cost_per_token": 0.00005,
+    "cache_creation_input_token_cost": 0.0000125,
+    "cache_read_input_token_cost": 0.00000025,
+    "provider_specific_entry": {
+      "us": 1.1
+    }
+  },
   "claude-opus-5": {
     "input_cost_per_token": 0.000005,
     "output_cost_per_token": 0.000025,
@@ -83,7 +92,10 @@
     "input_cost_per_token": 0.000003,
     "output_cost_per_token": 0.000015,
     "cache_creation_input_token_cost": 0.00000375,
-    "cache_read_input_token_cost": 0.0000003
+    "cache_read_input_token_cost": 0.0000003,
+    "provider_specific_entry": {
+      "us": 1.1
+    }
   },
   "claude-sonnet-4-5": {
     "input_cost_per_token": 0.000003,
