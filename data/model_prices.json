@@ -79,6 +79,15 @@
     "cache_creation_input_token_cost": 0.00000625,
     "cache_read_input_token_cost": 0.0000005
   },
+  "claude-opus-5-5": {
+    "input_cost_per_token": 0.000004,
+    "output_cost_per_token": 0.00002,
+    "cache_creation_input_token_cost": 0.000005,
+    "cache_read_input_token_cost": 0.0000002,
+    "provider_specific_entry": {
+      "fast": 2
+    }
+  },
   "claude-sonnet-5": {
     "input_cost_per_token": 0.000002,
     "output_cost_per_token": 0.00001,
