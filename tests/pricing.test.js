@@ -272,7 +272,11 @@ test('loadPricing: fresh pricing.json (success TTL closed) never stamps', () => 
 
 // --- Self-healing: unknown models resolve approximately, and trigger a refetch ---
 test('familyFallback: an unseen generation inherits the newest known tier rates', () => {
-  const m = buildMap(require('../data/model_prices.json'));
+  // Synthetic map: the bundled snapshot gains new generations via the daily sync.
+  const m = buildMap({
+    'claude-opus-4-8': { input_cost_per_token: 5e-6, output_cost_per_token: 2.5e-5 },
+    'claude-opus-5': { input_cost_per_token: 4e-6, output_cost_per_token: 2e-5 },
+  });
   const future = getModelCosts(m, 'claude-opus-6-20261101');
   const known = getModelCosts(m, 'claude-opus-5');
   assert.equal(future.input, known.input, 'inherits the newest Opus rates');
