@@ -55,17 +55,17 @@ const dimCyan = (s) => `\x1b[2;36m${s}\x1b[0m`;
 // ascii: pure ASCII (works on any terminal/font).
 const ICON_SETS = {
   nerd:    { effort: '󰾅', branch: '󰘬', worktree: '󰘯', dir: '󰉋', duration: '󰔛',
-             lines: '󰷈', r5h: '󰔚 5h', r7d: '󰃭 7d', rsep: '·', skull: '󰚌',
+             lines: '󰷈', r5h: '󰔚 5h', r7d: '󰃭 7d', rspend: '󰖄', rreset: '↻', rsep: '·', skull: '󰚌',
              vim: '', agent: '󰚩',
              barFill: '█', barEmpty: '░',
              sep: '┊', skills: '', hr: '─' },
   unicode: { effort: '⚡', branch: '⎇', worktree: '⊕', dir: '▸',  duration: '⏱',
-             lines: 'Δ', r5h: '5h', r7d: '7d', rsep: '·', skull: '‼',
+             lines: 'Δ', r5h: '5h', r7d: '7d', rspend: 'spend', rreset: '↻', rsep: '·', skull: '‼',
              vim: 'V', agent: '◉',
              barFill: '█', barEmpty: '░',
              sep: '┊', skills: '✦', hr: '─' },
   ascii:   { effort: '!', branch: 'git:', worktree: 'wt:', dir: 'dir:', duration: 't:',
-             lines: 'd', r5h: '5h', r7d: '7d', rsep: ',', skull: '!!',
+             lines: 'd', r5h: '5h', r7d: '7d', rspend: 'spend', rreset: 'reset', rsep: ',', skull: '!!',
              vim: 'V', agent: '@',
              barFill: '#', barEmpty: '-',
              sep: '|', skills: '*', hr: '-' },
@@ -166,6 +166,30 @@ function formatDuration(ms, icon) {
   const h = Math.floor(m / 60);
   const rem = m % 60;
   return rem > 0 ? `${icon} ${h}h ${rem}m` : `${icon} ${h}h`;
+}
+
+/**
+ * Format the Claude apps gateway spend limit (`rate_limits.spend_limit`):
+ * `$used/$limit <period> ↻ Mon D` on CC ≥2.1.284, else `N% ↻ Mon D` (2.1.251+
+ * sends only used_percentage/resets_at). Reset date in STATUSLINE_TIMEZONE.
+ * Colour by % used: dim <80, yellow ≥80, red ≥100.
+ */
+function formatSpendLimit(sl, icons, tz) {
+  if (!sl) return '';
+  const usd = (v) => '$' + (v >= 100 ? Math.round(v) : v.toFixed(2));
+  const hasUsd = typeof sl.used_usd === 'number' && sl.limit_usd > 0;
+  const pct = sl.used_percentage ?? (hasUsd ? (sl.used_usd / sl.limit_usd) * 100 : null);
+  let body;
+  if (hasUsd) body = `${usd(sl.used_usd)}/${usd(sl.limit_usd)}${sl.period ? ` ${sl.period}` : ''}`;
+  else if (pct != null) body = `${Math.round(pct)}%`;
+  else return '';
+  if (sl.resets_at > 0) {
+    const date = new Intl.DateTimeFormat('en-US', { timeZone: tz, month: 'short', day: 'numeric' })
+      .format(new Date(sl.resets_at * 1000));
+    body += ` ${icons.rreset} ${date}`;
+  }
+  const color = pct >= 100 ? red : pct >= 80 ? yellow : dim;
+  return color(`${icons.rspend} ${body}`);
 }
 
 // Context-bar palette (256-color, muted "ramp B" — forest-green → dark-red).
@@ -289,6 +313,7 @@ function render(data, env) {
     const agentName = data.agent?.name;
     const rateLimitFiveHour = data.rate_limits?.five_hour?.used_percentage;
     const rateLimitSevenDay = data.rate_limits?.seven_day?.used_percentage;
+    const spendLimit = data.rate_limits?.spend_limit;
     const totalDurationMs = data.cost?.total_duration_ms;
     const addedDirs = data.workspace?.added_dirs;
     const worktreeName = data.worktree?.name || data.workspace?.git_worktree;
@@ -392,8 +417,11 @@ function render(data, env) {
         : null;
     const segEnabled = (n) => !allowed || allowed.includes(n);
     if (segEnabled('cost')) {
+      // A gateway spend limit is the real monthly budget — use it over the env.
+      // Only a monthly period: a weekly limit would skew the d/w/m derivation.
+      const limitUsd = /month/i.test(spendLimit?.period || '') ? spendLimit.limit_usd : undefined;
       const { budgetOptedOut, monthly: monthlyBudget, daily: dailyLimit, weekly: weeklyLimit } =
-        resolveBudget(env.STATUSLINE_MONTHLY_BUDGET);
+        resolveBudget(env.STATUSLINE_MONTHLY_BUDGET, limitUsd);
       const summary = readSummary(stateDir);
       const perSession = (summary && summary.perSession) || {};
       const cachedSession = (session && perSession[session] && perSession[session].total) || 0;
@@ -441,13 +469,13 @@ function render(data, env) {
     if (linesRemoved > 0) addedParts.push(red(`-${linesRemoved}`));
     if (addedParts.length > 0) add('lines', `${icons.lines} ${addedParts.join(' ')}`);
 
-    // Rate limits (Claude.ai Pro/Max) — merged into one segment
-    if (rateLimitFiveHour != null || rateLimitSevenDay != null) {
-      const parts = [];
-      if (rateLimitFiveHour != null) parts.push(`${icons.r5h} ${Math.round(rateLimitFiveHour)}%`);
-      if (rateLimitSevenDay != null) parts.push(`${icons.r7d} ${Math.round(rateLimitSevenDay)}%`);
-      add('ratelimits', dim(parts.join(` ${icons.rsep} `)));
-    }
+    // Rate limits (Claude.ai Pro/Max 5h/7d + gateway spend limit) — merged into one segment
+    const rateParts = [];
+    if (rateLimitFiveHour != null) rateParts.push(dim(`${icons.r5h} ${Math.round(rateLimitFiveHour)}%`));
+    if (rateLimitSevenDay != null) rateParts.push(dim(`${icons.r7d} ${Math.round(rateLimitSevenDay)}%`));
+    const spendStr = formatSpendLimit(spendLimit, icons, resolveTimezone(env));
+    if (spendStr) rateParts.push(spendStr);
+    if (rateParts.length) add('ratelimits', rateParts.join(dim(` ${icons.rsep} `)));
 
     // Context bar (with input token count appended)
     const ctxBar = buildContextBar(usedPct, inputTokens, icons);

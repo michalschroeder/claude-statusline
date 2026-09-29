@@ -28,6 +28,17 @@ test('garbage / negative → 1000 fallback', () => {
   assert.equal(resolveBudget('500abc').monthly, 1000);
 });
 
+test('limitUsd (gateway spend limit) wins over env and default', () => {
+  assert.equal(resolveBudget('300', 500).monthly, 500);
+  assert.equal(resolveBudget(undefined, 500).monthly, 500);
+  assert.equal(resolveBudget('300', undefined).monthly, 300);
+  assert.equal(resolveBudget('300', 0).monthly, 300);
+});
+
+test('limitUsd does not cancel the env 0 opt-out', () => {
+  assert.equal(resolveBudget('0', 500).budgetOptedOut, true);
+});
+
 // --- STATUSLINE_COST_MULTIPLIER: display-time calibration to a plan's meter ---
 const { resolveCostMultiplier } = require('../lib/budget');
 

@@ -6,7 +6,7 @@ My Claude Code statusline and the hooks that feed it. One compact ANSI line with
 
 ![statusline scenarios](screenshot-demo.png)
 
-To reproduce that locally, run `bash demo/screenshots.sh`.
+To reproduce that locally, run `bash demo/screenshots.sh`. `bash demo/screenshot-png.sh` regenerates the PNG (needs Chrome/Chromium, ImageMagick and JetBrainsMono Nerd Font).
 
 ## Requirements
 
@@ -122,7 +122,7 @@ Everything is configured with environment variables, set under `env` in `~/.clau
 |---|---|---|
 | `STATUSLINE_SEGMENTS` | all segments | allowlist plus render order; a `;` forces a fixed multi-line layout. See [Segments](#segments) |
 | `STATUSLINE_ICONS` | `ascii` on first run | `nerd` / `unicode` / `ascii`. See [Icons](#icons) |
-| `STATUSLINE_MONTHLY_BUDGET` | `1000` | monthly budget driving d/w/m chip colors; `0` hides those chips |
+| `STATUSLINE_MONTHLY_BUDGET` | `1000` | monthly budget driving d/w/m chip colors; `0` hides those chips. A gateway spend limit (`limit_usd`) takes precedence |
 | `STATUSLINE_COST_MULTIPLIER` | `1` | scales the displayed cost to match a plan meter. See [Matching your plan's billing page](#matching-your-plans-billing-page) |
 | `STATUSLINE_TIMEZONE` | system local | IANA zone deciding the day/week/month cost boundaries. See [Timezone](#timezone) |
 | `STATUSLINE_PRICING_NO_FETCH` | unset | set it to anything to block the background price fetch and stay on the bundled snapshot |
@@ -155,7 +155,7 @@ Segment names:
 | `cost` | session + daily/weekly/monthly cost |
 | `duration` | session duration |
 | `lines` | +added -removed |
-| `ratelimits` | 5h / 7d usage % |
+| `ratelimits` | 5h / 7d usage %, gateway spend limit |
 | `context` | context bar + input token count |
 
 Unknown names get dropped. Segments with no data don't render anyway.
@@ -182,7 +182,7 @@ The cost segment shows a session chip (`s $X.XX`) plus daily, weekly and monthly
 
 The d/w/m totals are rebuilt once per prompt by the `UserPromptSubmit` hook (`hooks/refresh-cost-cache.js`), off the render hot path. The renderer just reads the cache and folds in the current session's live cost.
 
-`STATUSLINE_MONTHLY_BUDGET` controls the budget-relative coloring of the d/w/m chips, where daily = monthly/30 and weekly = monthly×7/30. Unset gives you the $1000/mo default, `0` hides the d/w/m chips and keeps the session chip, and a number sets your own budget:
+`STATUSLINE_MONTHLY_BUDGET` controls the budget-relative coloring of the d/w/m chips, where daily = monthly/30 and weekly = monthly×7/30. Unset gives you the $1000/mo default, `0` hides the d/w/m chips and keeps the session chip, and a number sets your own budget. Behind a Claude apps gateway with a monthly spend limit, the payload's `rate_limits.spend_limit.limit_usd` is used instead of the env value (`0` still hides the chips):
 
 ```json
 "env": {
@@ -335,7 +335,7 @@ Segments, left to right:
 - **cost** - a chip group: `s` for this session, plus `d`/`w`/`m` for today, this week and this month across all sessions. See [Cost tracking](#cost-tracking)
 - **duration** - total session time (s / m / h m)
 - **lines** - lines added and removed
-- **rate limits** - 5h and 7d usage percentages, when the payload includes them
+- **rate limits** - 5h and 7d usage percentages, when the payload includes them. Behind a Claude apps gateway with a spend limit (CC ≥ 2.1.251) a spend chip follows: `󰖄 $271/$500 this month ↻ Oct 1` (dollars need CC ≥ 2.1.284, older versions show `󰖄 54% ↻ Oct 1`), yellow at ≥80% and red at ≥100%. The reset date follows `STATUSLINE_TIMEZONE`. A direct claude.ai login gets no spend-limit field, even when `/usage` shows one
 - **context** - 10-cell bar spanning the model's full context window, with a per-cell 256-color gradient from forest-green through olive and amber to red, dim-grey empty cells, a `% of the window` label and a dim absolute token count. The step size and panic threshold scale with the model, as below
 
 ### Context bar

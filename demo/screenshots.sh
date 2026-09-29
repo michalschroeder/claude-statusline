@@ -128,7 +128,22 @@ render "6. Danger zone (1M at 500k danger line — half bar, blink-red + skull)"
   "rate_limits": {"five_hour": {"used_percentage": 88}, "seven_day": {"used_percentage": 74}}
 }'
 
-# 7. With loaded skills (writes a temp skills log keyed to a fake session id)
+# 7. Claude apps gateway spend limit — dollar chip after the (absent) 5h/7d, yellow
+#    at ≥80%; limit_usd ($1000) doubles as the monthly budget for the d/w/m colours.
+#    Resets on the 1st of next month, 00:00 UTC.
+RESET=$(date -u -d "$(date -u +%Y-%m-01) +1 month" +%s)
+seed_cost demo-7 5.60
+render "7. Gateway spend limit (\$ used/limit, yellow ≥80%, limit_usd = budget)" "{
+  \"session_id\": \"demo-7\",
+  \"model\": {\"display_name\": \"Opus 5\"},
+  \"effort\": {\"level\": \"high\"},
+  \"workspace\": {\"current_dir\": \"/home/ms/projects/claude-statusline\", \"project_dir\": \"/home/ms/projects/claude-statusline\"},
+  \"cost\": {\"total_cost_usd\": 5.60, \"total_duration_ms\": 2100000, \"total_lines_added\": 150, \"total_lines_removed\": 42},
+  \"context_window\": {\"total_input_tokens\": 64000, \"used_percentage\": 32},
+  \"rate_limits\": {\"spend_limit\": {\"used_percentage\": 88.01, \"resets_at\": $RESET, \"used_usd\": 880.06, \"limit_usd\": 1000, \"period\": \"this month\"}}
+}"
+
+# 8. With loaded skills (writes a temp skills log keyed to a fake session id)
 SESSION="demo-$$"
 STATE_DIR="$STATE_ROOT/skills"
 mkdir -p "$STATE_DIR"
@@ -142,7 +157,7 @@ NOW=$(date +%s)
 } > "$LOG"
 
 seed_cost "$SESSION" 3.40
-render "7. With loaded skills" "{
+render "8. With loaded skills" "{
   \"session_id\": \"$SESSION\",
   \"model\": {\"display_name\": \"Opus 5\"},
   \"effort\": {\"level\": \"high\"},
