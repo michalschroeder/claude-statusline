@@ -172,13 +172,14 @@ function formatDuration(ms, icon) {
  * `$used/$limit <period> ↻ Mon D` on CC ≥2.1.284, else `N% ↻ Mon D` (2.1.251+
  * sends only used_percentage/resets_at). Reset date in UTC: the limit resets
  * 00:00 UTC on the 1st, which local time west of UTC would show as the 30th/31st.
- * Colour by % used (derived from usd when used_percentage is absent): dim <80,
+ * Colour by % used (from usd when present, else used_percentage): dim <80,
  * yellow ≥80, red ≥100. % floored so the text never reads "100%" before red.
  */
 function formatSpendLimit(sl, icons) {
   if (!sl) return '';
   const hasUsd = typeof sl.used_usd === 'number' && sl.limit_usd > 0;
-  const pct = sl.used_percentage ?? (hasUsd ? sl.used_usd / sl.limit_usd * 100 : null);
+  // usd form: colour from the same figures the text shows, so they can't disagree.
+  const pct = hasUsd ? sl.used_usd / sl.limit_usd * 100 : sl.used_percentage;
   let body;
   if (hasUsd) body = `${money(sl.used_usd)}/${money(sl.limit_usd)}${sl.period ? ` ${sl.period}` : ''}`;
   else if (pct != null) body = `${Math.floor(pct)}%`;

@@ -11,7 +11,7 @@ const { buildDetail } = require('../lib/session-detail');
 const { sumPeriods } = require('../lib/periods');
 const { resolveBudget, resolveCostMultiplier } = require('../lib/budget');
 const { resolveStateDir } = require('../lib/state');
-const { formatCompact, money, MONTHS: MON } = require('../lib/format');
+const { formatCompact, money, MONTHS } = require('../lib/format');
 
 function parseArgs(argv) {
   const opts = { last: null, since: null, configDir: undefined, detail: undefined, analyze: false };
@@ -99,7 +99,7 @@ function dayKey(ts) {
 // 'Mon Jun 09' for a day header.
 function dayLabel(ts) {
   const d = new Date(ts * 1000);
-  return `${DOW[d.getDay()]} ${MON[d.getMonth()]} ${pad2(d.getDate())}`;
+  return `${DOW[d.getDay()]} ${MONTHS[d.getMonth()]} ${pad2(d.getDate())}`;
 }
 
 // Local HH:MM.
@@ -449,7 +449,7 @@ function main() {
     const clockCell = dim(clock(r.ts));
     const relCell = dim(relativeTime(nowSec, r.ts).padStart(REL_W));
     const cost = costOfShown(r.id);
-    const plainCost = (cost > 0 ? '$' + cost.toFixed(2) : '—').padStart(COST_W);
+    const plainCost = (cost > 0 ? money(cost) : '—').padStart(COST_W);
     const costCell = cost > 0 ? colorByTier(cost, SESSION_TIERS)(plainCost) : dim(plainCost);
     const titleText = truncate(title || '—', titleWidth);
     let line = `${INDENT}${clockCell}${GAP}${relCell}${GAP}${costCell}${GAP}`;
