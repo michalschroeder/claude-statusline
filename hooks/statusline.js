@@ -8,9 +8,9 @@ const { resolveStateDir } = require('../lib/state');
 const { dim, bold, green, yellow, red, colorByTier, SESSION_TIERS, BUDGET_TIERS } = require('../lib/color');
 const { readSummary } = require('../lib/cost-aggregate');
 const { sumPeriods } = require('../lib/periods');
-const { resolveTimezone, ymd } = require('../lib/timezone');
+const { resolveTimezone } = require('../lib/timezone');
 const { resolveBudget, resolveCostMultiplier } = require('../lib/budget');
-const { formatCompact } = require('../lib/format');
+const { formatCompact, money, MONTHS } = require('../lib/format');
 
 // Terminal width, for the trailing rule and for wrapping segments onto
 // multiple lines. Real TTY columns wins; else COLUMNS env (Claude Code's TUI
@@ -128,10 +128,6 @@ function getGitBranch(projectDir) {
   }
 }
 
-// Dollar amount for the burn rate and spend-limit chip: cents dropped at ≥$100.
-const usd = (v) => '$' + (v >= 100 ? Math.round(v) : v.toFixed(2));
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
 /**
  * Format session cost as [prefix]$X.XX with absolute-USD color thresholds,
  * optionally followed by a dim burn rate ($/h). The rate = cost ÷ elapsed hours,
@@ -141,9 +137,10 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
  */
 function formatCost(totalCost, prefix = '', durationMs = 0) {
   if (totalCost == null || totalCost <= 0) return '';
-  const chip = colorByTier(totalCost, SESSION_TIERS)(prefix + '$' + totalCost.toFixed(2));
+  const chip = colorByTier(totalCost, SESSION_TIERS)(prefix + money(totalCost));
   if (durationMs >= 60000) {
-    return `${chip} ${dim(usd(totalCost / (durationMs / 3600000)) + '/h')}`;
+    const rate = totalCost / (durationMs / 3600000);
+    return `${chip} ${dim((rate >= 100 ? '$' + Math.round(rate) : money(rate)) + '/h')}`;
   }
   return chip;
 }
@@ -153,7 +150,7 @@ function formatCost(totalCost, prefix = '', durationMs = 0) {
  */
 function formatPeriodCost(cost, limit, prefix) {
   if (!cost || cost <= 0) return '';
-  return colorByTier(cost / limit, BUDGET_TIERS)(prefix + '$' + cost.toFixed(2));
+  return colorByTier(cost / limit, BUDGET_TIERS)(prefix + money(cost));
 }
 
 /**
@@ -173,21 +170,22 @@ function formatDuration(ms, icon) {
 /**
  * Format the Claude apps gateway spend limit (`rate_limits.spend_limit`):
  * `$used/$limit <period> ↻ Mon D` on CC ≥2.1.284, else `N% ↻ Mon D` (2.1.251+
- * sends only used_percentage/resets_at). Reset date in STATUSLINE_TIMEZONE.
- * Colour by % used: dim <80, yellow ≥80, red ≥100.
+ * sends only used_percentage/resets_at). Reset date in UTC: the limit resets
+ * 00:00 UTC on the 1st, which local time west of UTC would show as the 30th/31st.
+ * Colour by % used (derived from usd when used_percentage is absent): dim <80,
+ * yellow ≥80, red ≥100. % floored so the text never reads "100%" before red.
  */
-function formatSpendLimit(sl, icons, env) {
+function formatSpendLimit(sl, icons) {
   if (!sl) return '';
-  const pct = sl.used_percentage;
+  const hasUsd = typeof sl.used_usd === 'number' && sl.limit_usd > 0;
+  const pct = sl.used_percentage ?? (hasUsd ? sl.used_usd / sl.limit_usd * 100 : null);
   let body;
-  if (typeof sl.used_usd === 'number' && sl.limit_usd > 0) {
-    body = `${usd(sl.used_usd)}/${usd(sl.limit_usd)}${sl.period ? ` ${sl.period}` : ''}`;
-  } else if (pct != null) body = `${Math.round(pct)}%`;
+  if (hasUsd) body = `${money(sl.used_usd)}/${money(sl.limit_usd)}${sl.period ? ` ${sl.period}` : ''}`;
+  else if (pct != null) body = `${Math.floor(pct)}%`;
   else return '';
   if (sl.resets_at > 0) {
-    // ymd + static month names: no Intl (ICU init ~15ms) when the tz is unset.
-    const { m, d } = ymd(new Date(sl.resets_at * 1000), resolveTimezone(env));
-    body += ` ${icons.rreset} ${MONTHS[m - 1]} ${d}`;
+    const r = new Date(sl.resets_at * 1000);
+    body += ` ${icons.rreset} ${MONTHS[r.getUTCMonth()]} ${r.getUTCDate()}`;
   }
   const color = pct >= 100 ? red : pct >= 80 ? yellow : dim;
   return color(`${icons.rspend} ${body}`);
@@ -472,7 +470,7 @@ function render(data, env) {
       const rateParts = [];
       if (rateLimitFiveHour != null) rateParts.push(dim(`${icons.r5h} ${Math.round(rateLimitFiveHour)}%`));
       if (rateLimitSevenDay != null) rateParts.push(dim(`${icons.r7d} ${Math.round(rateLimitSevenDay)}%`));
-      const spendStr = formatSpendLimit(spendLimit, icons, env);
+      const spendStr = formatSpendLimit(spendLimit, icons);
       if (spendStr) rateParts.push(spendStr);
       if (rateParts.length) add('ratelimits', rateParts.join(dim(` ${icons.rsep} `)));
     }

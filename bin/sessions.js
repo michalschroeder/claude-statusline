@@ -11,7 +11,7 @@ const { buildDetail } = require('../lib/session-detail');
 const { sumPeriods } = require('../lib/periods');
 const { resolveBudget, resolveCostMultiplier } = require('../lib/budget');
 const { resolveStateDir } = require('../lib/state');
-const { formatCompact } = require('../lib/format');
+const { formatCompact, money, MONTHS: MON } = require('../lib/format');
 
 function parseArgs(argv) {
   const opts = { last: null, since: null, configDir: undefined, detail: undefined, analyze: false };
@@ -67,8 +67,6 @@ function truncate(s, width) {
   return cps.slice(0, Math.max(0, width - 1)).join('') + '…';
 }
 
-const money = (c) => '$' + c.toFixed(2);
-
 // Compact token count, sharing the renderer's formatter (lib/format.js) so a
 // given magnitude renders the same here and in the statusline. formatCompact
 // returns '' for ≤0; the viewer's numeric columns want a literal "0".
@@ -90,7 +88,6 @@ function relativeTime(nowSec, ts) {
 }
 
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const pad2 = (n) => String(n).padStart(2, '0');
 
 // Local calendar-day key for grouping rows.

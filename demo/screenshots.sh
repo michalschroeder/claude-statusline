@@ -12,7 +12,7 @@ THICK=$(printf '━%.0s' $(seq 1 "$COLS"))
 THIN=$(printf '─%.0s' $(seq 1 "$COLS"))
 
 # Isolated state for the demo: a temp XDG_STATE_HOME so the seeded cost summary
-# and scenario 7's skills log don't touch the user's real state. Cleaned up on exit.
+# and scenario 8's skills log don't touch the user's real state. Cleaned up on exit.
 DEMO_STATE=$(mktemp -d)
 export XDG_STATE_HOME="$DEMO_STATE"
 trap 'rm -rf "$DEMO_STATE"' EXIT
@@ -131,7 +131,8 @@ render "6. Danger zone (1M at 500k danger line — half bar, blink-red + skull)"
 # 7. Claude apps gateway spend limit — dollar chip after the (absent) 5h/7d, yellow
 #    at ≥80%; limit_usd ($1000) doubles as the monthly budget for the d/w/m colours.
 #    Resets on the 1st of next month, 00:00 UTC.
-RESET=$(date -u -d "$(date -u +%Y-%m-01) +1 month" +%s)
+# node, not `date -d` (GNU-only; BSD/macOS date would leave RESET empty → invalid JSON).
+RESET=$(node -e 'const d = new Date(); console.log(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1) / 1000)')
 seed_cost demo-7 5.60
 render "7. Gateway spend limit (\$ used/limit, yellow ≥80%, limit_usd = budget)" "{
   \"session_id\": \"demo-7\",

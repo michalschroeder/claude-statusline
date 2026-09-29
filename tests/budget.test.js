@@ -39,6 +39,13 @@ test('monthly spend_limit.limit_usd wins over env and default', () => {
 test('non-monthly spend_limit period is ignored', () => {
   assert.equal(resolveBudget('300', { limit_usd: 500, period: 'this week' }).monthly, 300);
   assert.equal(resolveBudget('300', { limit_usd: 500 }).monthly, 300);
+  assert.equal(resolveBudget('300', { limit_usd: 500, period: 'every 3 months' }).monthly, 300);
+});
+
+test('monthly period variants accepted', () => {
+  for (const period of ['this month', 'Monthly', 'per month', 'month']) {
+    assert.equal(resolveBudget('300', { limit_usd: 500, period }).monthly, 500, period);
+  }
 });
 
 test('spend_limit does not cancel the env 0 opt-out', () => {

@@ -182,7 +182,7 @@ The cost segment shows a session chip (`s $X.XX`) plus daily, weekly and monthly
 
 The d/w/m totals are rebuilt once per prompt by the `UserPromptSubmit` hook (`hooks/refresh-cost-cache.js`), off the render hot path. The renderer just reads the cache and folds in the current session's live cost.
 
-`STATUSLINE_MONTHLY_BUDGET` controls the budget-relative coloring of the d/w/m chips, where daily = monthly/30 and weekly = monthly×7/30. Unset gives you the $1000/mo default, `0` hides the d/w/m chips and keeps the session chip, and a number sets your own budget. Behind a Claude apps gateway with a monthly spend limit, the payload's `rate_limits.spend_limit.limit_usd` is used instead of the env value (`0` still hides the chips):
+`STATUSLINE_MONTHLY_BUDGET` controls the budget-relative coloring of the d/w/m chips, where daily = monthly/30 and weekly = monthly×7/30. Unset gives you the $1000/mo default, `0` hides the d/w/m chips and keeps the session chip, and a number sets your own budget. Behind a Claude apps gateway with a monthly spend limit (`period` such as `this month`), the payload's `rate_limits.spend_limit.limit_usd` is used instead of the env value (`0` still hides the chips):
 
 ```json
 "env": {
@@ -335,7 +335,7 @@ Segments, left to right:
 - **cost** - a chip group: `s` for this session, plus `d`/`w`/`m` for today, this week and this month across all sessions. See [Cost tracking](#cost-tracking)
 - **duration** - total session time (s / m / h m)
 - **lines** - lines added and removed
-- **rate limits** - 5h and 7d usage percentages, when the payload includes them. Behind a Claude apps gateway with a spend limit (CC ≥ 2.1.251) a spend chip follows: `󰖄 $271/$500 this month ↻ Oct 1` (dollars need CC ≥ 2.1.284, older versions show `󰖄 54% ↻ Oct 1`), yellow at ≥80% and red at ≥100%. The reset date follows `STATUSLINE_TIMEZONE`. A direct claude.ai login gets no spend-limit field, even when `/usage` shows one
+- **rate limits** - 5h and 7d usage percentages, when the payload includes them. Behind a Claude apps gateway with a spend limit (CC ≥ 2.1.251) a spend chip follows: `󰖄 $271.40/$500.00 this month ↻ Oct 1` (dollars need CC ≥ 2.1.284, older versions show `󰖄 54% ↻ Oct 1`), yellow at ≥80% and red at ≥100%. The reset date is in UTC, the timezone the limit resets in. A direct claude.ai login gets no spend-limit field, even when `/usage` shows one
 - **context** - 10-cell bar spanning the model's full context window, with a per-cell 256-color gradient from forest-green through olive and amber to red, dim-grey empty cells, a `% of the window` label and a dim absolute token count. The step size and panic threshold scale with the model, as below
 
 ### Context bar
