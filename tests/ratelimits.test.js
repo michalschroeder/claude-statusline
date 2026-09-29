@@ -73,3 +73,20 @@ test('spend limit: reset date in UTC, not STATUSLINE_TIMEZONE', async () => {
   const out = await run(withSpend(full()), { STATUSLINE_TIMEZONE: 'America/Los_Angeles', TZ: 'America/Los_Angeles' });
   assert.match(out, /↻ Oct 1/);
 });
+
+test('spend limit: string limit_usd falls back to %, statusline survives', async () => {
+  const out = await run(withSpend({ used_percentage: 2, used_usd: 10, limit_usd: '500', period: 'this month' }));
+  assert.match(out, /Claude/);
+  assert.match(out, /󰖄 2%/);
+});
+
+test('spend limit: amount rounding to the limit renders red', async () => {
+  const raw = await runRaw(withSpend(full({ used_usd: 999.996, limit_usd: 1000 })));
+  assert.ok(raw.includes('\x1b[31m󰖄 $1000.00/$1000.00'));
+});
+
+test('spend limit: non-monthly period shows local date + time', async () => {
+  const at = Date.UTC(2026, 8, 30, 7, 5) / 1000;
+  const out = await run(withSpend(full({ period: 'today', resets_at: at })), { TZ: 'America/Los_Angeles' });
+  assert.match(out, /today ↻ Sep 30 00:05/);
+});

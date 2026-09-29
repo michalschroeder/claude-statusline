@@ -129,12 +129,12 @@ render "6. Danger zone (1M at 500k danger line — half bar, blink-red + skull)"
 }'
 
 # 7. Claude apps gateway spend limit — dollar chip after the (absent) 5h/7d, yellow
-#    at ≥80%; limit_usd ($1000) doubles as the monthly budget for the d/w/m colours.
+#    at ≥80%; with STATUSLINE_MONTHLY_BUDGET unset, limit_usd ($1000) is the d/w/m budget.
 #    Resets on the 1st of next month, 00:00 UTC.
 # node, not `date -d` (GNU-only; BSD/macOS date would leave RESET empty → invalid JSON).
 RESET=$(node -e 'const d = new Date(); console.log(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1) / 1000)')
 seed_cost demo-7 5.60
-render "7. Gateway spend limit (\$ used/limit, yellow ≥80%, limit_usd = budget)" "{
+render "7. Gateway spend limit (\$ used/limit, yellow ≥80%, limit_usd = default budget)" "{
   \"session_id\": \"demo-7\",
   \"model\": {\"display_name\": \"Opus 5\"},
   \"effort\": {\"level\": \"high\"},

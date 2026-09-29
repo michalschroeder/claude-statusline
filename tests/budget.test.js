@@ -28,24 +28,29 @@ test('garbage / negative → 1000 fallback', () => {
   assert.equal(resolveBudget('500abc').monthly, 1000);
 });
 
-test('monthly spend_limit.limit_usd wins over env and default', () => {
+test('explicit env beats monthly spend_limit.limit_usd, which beats the default', () => {
   const sl = (limit_usd, period = 'this month') => ({ limit_usd, period });
-  assert.equal(resolveBudget('300', sl(500)).monthly, 500);
+  assert.equal(resolveBudget('300', sl(500)).monthly, 300);
   assert.equal(resolveBudget(undefined, sl(500)).monthly, 500);
+  assert.equal(resolveBudget('abc', sl(500)).monthly, 500);
   assert.equal(resolveBudget('300', undefined).monthly, 300);
   assert.equal(resolveBudget('300', sl(0)).monthly, 300);
 });
 
 test('non-monthly spend_limit period is ignored', () => {
-  assert.equal(resolveBudget('300', { limit_usd: 500, period: 'this week' }).monthly, 300);
-  assert.equal(resolveBudget('300', { limit_usd: 500 }).monthly, 300);
-  assert.equal(resolveBudget('300', { limit_usd: 500, period: 'every 3 months' }).monthly, 300);
+  assert.equal(resolveBudget(undefined, { limit_usd: 500, period: 'this week' }).monthly, 1000);
+  assert.equal(resolveBudget(undefined, { limit_usd: 500 }).monthly, 1000);
+  assert.equal(resolveBudget(undefined, { limit_usd: 500, period: 'every 3 months' }).monthly, 1000);
 });
 
 test('monthly period variants accepted', () => {
   for (const period of ['this month', 'Monthly', 'per month', 'month']) {
-    assert.equal(resolveBudget('300', { limit_usd: 500, period }).monthly, 500, period);
+    assert.equal(resolveBudget(undefined, { limit_usd: 500, period }).monthly, 500, period);
   }
+});
+
+test('non-numeric limit_usd is ignored', () => {
+  assert.equal(resolveBudget(undefined, { limit_usd: '500', period: 'this month' }).monthly, 1000);
 });
 
 test('spend_limit does not cancel the env 0 opt-out', () => {
