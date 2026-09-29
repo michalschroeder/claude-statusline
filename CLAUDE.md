@@ -184,10 +184,10 @@ Each segment is emitted only when its source field is present/non-empty. Separat
 | worktree | `worktree.name`, falls back to `workspace.git_worktree` | `󰘯`; covers plain `git worktree add` worktrees, not only `--worktree` sessions |
 | agent | `agent.name` | bold; `󰚩` |
 | dir | `workspace.current_dir` basename, plus `workspace.added_dirs` | `󰉋`; when inside `.../.claude/worktrees/<name>/`, shows parent project name. Any added dirs fold in as a suffix: `+ <basename>` for exactly 1, else `+Ndir` |
-| cost | `cost.total_cost_usd` + `cost-summary.json` | s/d/w/m chip group joined by dim `·`. `s` = this session's recomputed spend (cached recomputed total + live delta), absolute USD thresholds (green <$5, yellow <$10, orange <$20, red ≥$20), omitted when ≤0. Once the session has run ≥60s a dim burn rate `$X/h` (= `total_cost_usd ÷ elapsed hours`, ≥$100/h rounded to integer) is appended to `s` — no state, straight from the payload. `d`/`w`/`m` = today / this week / this month = **all sessions' recomputed, day-bucketed spend (from `cost-summary.json`) + the current session's live delta (`max(0, live − cached total)`) folded into the current windows**, budget-relative coloring via `STATUSLINE_MONTHLY_BUDGET`. d/w/m hidden when `STATUSLINE_MONTHLY_BUDGET=0` |
+| cost | `cost.total_cost_usd` + `cost-summary.json` | s/d/w/m chip group joined by dim `·`. `s` = this session's recomputed spend (cached recomputed total + live delta), absolute USD thresholds (green <$5, yellow <$10, orange <$20, red ≥$20), omitted when ≤0. Once the session has run ≥60s a dim burn rate `$X/h` (= `total_cost_usd ÷ elapsed hours`, ≥$100/h rounded to integer) is appended to `s` — no state, straight from the payload. `d`/`w`/`m` = today / this week / this month = **all sessions' recomputed, day-bucketed spend (from `cost-summary.json`) + the current session's live delta (`max(0, live − cached total)`) folded into the current windows**, budget-relative coloring via `STATUSLINE_MONTHLY_BUDGET` (unset → a monthly gateway `spend_limit.limit_usd`, else $1000 — see Configuration). d/w/m hidden when `STATUSLINE_MONTHLY_BUDGET=0` |
 | duration | `cost.total_duration_ms` | `󰔛`; `Ns` / `Nm` / `Nh Nm` |
 | lines | `cost.total_lines_added` / `total_lines_removed` | `󰷈 +A -R` (green/red) |
-| rate limits (`ratelimits`) | `rate_limits.five_hour.used_percentage`, `rate_limits.seven_day.used_percentage` | `󰔚 5h N%`, `󰃭 7d N%`, joined with `·` |
+| rate limits (`ratelimits`) | `rate_limits.five_hour.used_percentage`, `rate_limits.seven_day.used_percentage`, `rate_limits.spend_limit` | `󰔚 5h N%`, `󰃭 7d N%`, `󰖄 $used/$limit <period> ↻ Mon D` (`N%` form pre-2.1.284), joined with `·`. Spend chip = Claude apps gateway only (never on a direct claude.ai login); dim <80%, yellow ≥80, red ≥100 (from usd when present, else `used_percentage`); reset date in UTC for a monthly period, else local `Mon D HH:MM` — details in `formatSpendLimit` |
 | context | `context_window.used_percentage` (falls back to `100 − remaining_percentage`), `context_window.total_input_tokens` | 10-cell block bar with per-cell coloring (256-color "ramp B": forest → olive → amber → red), dim grey empty cells, `N%` of panic threshold, followed by dim compact input tokens `Xk󰁝`. Replaces the prior standalone `tokens` segment — single segment name `context` |
 
 ### Context bar — per-cell palette and thresholds
@@ -222,7 +222,10 @@ So a 200k model fills cell N at `20k · N` tokens; a 1M model fills cell N at `1
 **Manual override.** `;` in `STATUSLINE_SEGMENTS` splits the value into a *fixed* set of output lines (each still comma-separated within itself) instead of auto-wrapping — e.g. `model,effort;cost,duration` always renders as exactly two lines, regardless of width. An empty line (all its names filtered/absent) is dropped rather than leaving a blank row. The trailing rule + skills chip always follow the last rendered line.
 
 `STATUSLINE_MONTHLY_BUDGET` env var sets the budget for the cost segment's d/w/m budget-relative
-coloring. Unset → $1000/mo default; `0` → hide d/w/m chips; a number → that monthly budget. Derived:
+coloring. Unset → $1000/mo default; `0` → hide d/w/m chips; a number → that monthly budget. In the
+renderer a gateway `rate_limits.spend_limit.limit_usd` replaces the $1000 default (env unset/invalid;
+an explicit env budget still wins) when its `period` is monthly (`this month`/`monthly`/`per month`, not `every 3 months`; `resolveBudget(raw, spendLimit)`; a weekly limit would skew the d/w/m derivation); the env
+`0` opt-out still hides d/w/m. The viewer has no payload, so it stays on env → $1000. Derived:
 daily = monthly/30, weekly = monthly×7/30. Resolved by `lib/budget.js` (`resolveBudget`).
 
 `STATUSLINE_COST_MULTIPLIER` scales the **displayed** cost figures (the `s`/`d`/`w`/`m` chips and
@@ -252,7 +255,7 @@ re-buckets on the next `UserPromptSubmit` refresh (cache carries its `tz`). **Ti
 spend-limit meter resets at **00:00 UTC on the 1st** (the console shows it in your locale, e.g.
 `2:00 AM GMT+2`), so set `STATUSLINE_TIMEZONE=UTC` to make the `m` chip's month align with that reset.
 
-`STATUSLINE_ICONS=nerd|unicode|ascii` picks the icon set. `nerd` requires a Nerd Font; `unicode` is BMP symbols (no emoji); `ascii` is pure ASCII. Resolved by `resolveIconMode()`: env var wins; else read cached choice from `~/.cache/claude-statusline/icons`; else first-run writes `ascii` to the cache and appends a one-line install hint to the statusline. Per-mode glyphs live in `ICON_SETS` (`effort branch worktree dir duration lines r5h r7d rsep skull vim agent barFill barEmpty sep skills hr`). Tests force `nerd` via `tests/helpers.js`; `tests/icons.test.js` exercises the other modes.
+`STATUSLINE_ICONS=nerd|unicode|ascii` picks the icon set. `nerd` requires a Nerd Font; `unicode` is BMP symbols (no emoji); `ascii` is pure ASCII. Resolved by `resolveIconMode()`: env var wins; else read cached choice from `~/.cache/claude-statusline/icons`; else first-run writes `ascii` to the cache and appends a one-line install hint to the statusline. Per-mode glyphs live in `ICON_SETS` (`effort branch worktree dir duration lines r5h r7d rspend rreset rsep skull vim agent barFill barEmpty sep skills hr`). Tests force `nerd` via `tests/helpers.js`; `tests/icons.test.js` exercises the other modes.
 
 ## Conventions
 
@@ -265,7 +268,7 @@ spend-limit meter resets at **00:00 UTC on the 1st** (the console shows it in yo
 
 `tests/helpers.js` exposes `run(input)` (spawns `statusline.js`, strips ANSI) and `baseInput()` (minimal valid payload). One test file per segment. When changing a segment, update its `tests/*.test.js`; when adding one, add a new file rather than expanding an existing one.
 
-The cost pipeline is covered by `tests/cost-compute.test.js`, `tests/pricing.test.js`, `tests/budget.test.js`, `tests/periods.test.js`, `tests/cost-aggregate.test.js`, `tests/cost-archive.test.js`, `tests/refresh-cost-cache.test.js`, `tests/sync-prices.test.js` (snapshot sync policy + serializer), and `tests/period-cost.test.js` (renderer d/w/m chips). The `cost` segment is covered by `tests/cost.test.js` (session absolute thresholds). `tests/cleanup-hook.test.js` is an **integration** test that spawns the bash `SessionEnd` hook to verify skill-log removal/pruning; it `skip`s gracefully when `jq` is absent. The session viewer has `tests/sessions-viewer.test.js` (transcript-sourced listing, day grouping, full id,
+The cost pipeline is covered by `tests/cost-compute.test.js`, `tests/pricing.test.js`, `tests/budget.test.js`, `tests/periods.test.js`, `tests/cost-aggregate.test.js`, `tests/cost-archive.test.js`, `tests/refresh-cost-cache.test.js`, `tests/sync-prices.test.js` (snapshot sync policy + serializer), and `tests/period-cost.test.js` (renderer d/w/m chips). The `cost` segment is covered by `tests/cost.test.js` (session absolute thresholds). The `ratelimits` spend chip is covered by `tests/ratelimits.test.js`. `tests/cleanup-hook.test.js` is an **integration** test that spawns the bash `SessionEnd` hook to verify skill-log removal/pruning; it `skip`s gracefully when `jq` is absent. The session viewer has `tests/sessions-viewer.test.js` (transcript-sourced listing, day grouping, full id,
 budget-bar footer, `--last`/`--since`) and `tests/sessions-format.test.js` (pure formatting helpers:
 relative time, day labels, bar fill, truncate); `lib/transcript.js` has `tests/transcript.test.js`.
 The session detail view has `tests/session-detail.test.js` (`buildDetail`: dedup parity with

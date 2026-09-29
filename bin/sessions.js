@@ -11,7 +11,7 @@ const { buildDetail } = require('../lib/session-detail');
 const { sumPeriods } = require('../lib/periods');
 const { resolveBudget, resolveCostMultiplier } = require('../lib/budget');
 const { resolveStateDir } = require('../lib/state');
-const { formatCompact } = require('../lib/format');
+const { formatCompact, money, MONTHS } = require('../lib/format');
 
 function parseArgs(argv) {
   const opts = { last: null, since: null, configDir: undefined, detail: undefined, analyze: false };
@@ -67,8 +67,6 @@ function truncate(s, width) {
   return cps.slice(0, Math.max(0, width - 1)).join('') + '…';
 }
 
-const money = (c) => '$' + c.toFixed(2);
-
 // Compact token count, sharing the renderer's formatter (lib/format.js) so a
 // given magnitude renders the same here and in the statusline. formatCompact
 // returns '' for ≤0; the viewer's numeric columns want a literal "0".
@@ -90,7 +88,6 @@ function relativeTime(nowSec, ts) {
 }
 
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const pad2 = (n) => String(n).padStart(2, '0');
 
 // Local calendar-day key for grouping rows.
@@ -102,7 +99,7 @@ function dayKey(ts) {
 // 'Mon Jun 09' for a day header.
 function dayLabel(ts) {
   const d = new Date(ts * 1000);
-  return `${DOW[d.getDay()]} ${MON[d.getMonth()]} ${pad2(d.getDate())}`;
+  return `${DOW[d.getDay()]} ${MONTHS[d.getMonth()]} ${pad2(d.getDate())}`;
 }
 
 // Local HH:MM.
@@ -393,6 +390,8 @@ function main() {
   // Period totals + budget (footer in text mode, top-level fields in JSON mode).
   const budget = resolveBudget(process.env.STATUSLINE_MONTHLY_BUDGET);
   const per = sumPeriods(agg.perSession, new Date());
+  // No payload here, so no gateway spend_limit: the budget stays env → $1000 even
+  // where the renderer colours against limit_usd.
   // Display-time calibration (STATUSLINE_COST_MULTIPLIER), matching the renderer so
   // the two surfaces can't disagree. Rendered rows + footer only — the --analyze
   // JSON and the detail view stay on the raw API-equivalent basis, since those are
@@ -450,7 +449,7 @@ function main() {
     const clockCell = dim(clock(r.ts));
     const relCell = dim(relativeTime(nowSec, r.ts).padStart(REL_W));
     const cost = costOfShown(r.id);
-    const plainCost = (cost > 0 ? '$' + cost.toFixed(2) : '—').padStart(COST_W);
+    const plainCost = (cost > 0 ? money(cost) : '—').padStart(COST_W);
     const costCell = cost > 0 ? colorByTier(cost, SESSION_TIERS)(plainCost) : dim(plainCost);
     const titleText = truncate(title || '—', titleWidth);
     let line = `${INDENT}${clockCell}${GAP}${relCell}${GAP}${costCell}${GAP}`;

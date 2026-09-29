@@ -141,6 +141,46 @@ test('cost multiplier drives the budget colour, not just the number', async () =
   assert.notEqual(c1, c2, 'colour tier moves with the calibrated value');
 });
 
+// --- gateway spend limit: limit_usd is the monthly budget unless the env sets one ---
+function withSpendLimit(spend_limit) {
+  const i = baseInput();
+  i.session_id = 'current';
+  i.cost = { total_cost_usd: 0 };
+  i.rate_limits = { spend_limit };
+  return i;
+}
+const month250 = () => stateWithCache({ other: { days: { [todayKey()]: 250 }, total: 250 } });
+
+const GW = { used_usd: 250, limit_usd: 260, period: 'this month' };
+
+test('limit_usd (monthly) replaces the $1000 default for colouring', async () => {
+  // month $250: of default $1000 = 25%; of limit_usd $260 = 96% (red).
+  // Budget env pinned empty: an inherited value would (rightly) win over limit_usd.
+  const env = { XDG_STATE_HOME: month250(), STATUSLINE_MONTHLY_BUDGET: '' };
+  const dflt = await runRaw(withSpendLimit(undefined), env);
+  const gw = await runRaw(withSpendLimit(GW), env);
+  assert.notEqual(colorOf(dflt, 'm $250.00'), '31');
+  assert.equal(colorOf(gw, 'm $250.00'), '31');
+});
+
+test('explicit STATUSLINE_MONTHLY_BUDGET beats limit_usd', async () => {
+  // month $250 of env $300 = 83% (orange), not red against limit_usd $260.
+  const out = await runRaw(withSpendLimit(GW), { XDG_STATE_HOME: month250(), STATUSLINE_MONTHLY_BUDGET: '300' });
+  assert.equal(colorOf(out, 'm $250.00'), '38;5;208');
+});
+
+test('limit_usd for a non-monthly period is ignored for the budget', async () => {
+  const out = await runRaw(withSpendLimit({ ...GW, period: 'this week' }), { XDG_STATE_HOME: month250(), STATUSLINE_MONTHLY_BUDGET: '' });
+  assert.notEqual(colorOf(out, 'm $250.00'), '31');
+});
+
+test('STATUSLINE_MONTHLY_BUDGET=0 still hides d/w/m when limit_usd is present', async () => {
+  const xdg = month250();
+  const out = await run(withSpendLimit(GW),
+    { XDG_STATE_HOME: xdg, STATUSLINE_MONTHLY_BUDGET: '0' });
+  assert.doesNotMatch(out, /m \$250/);
+});
+
 // The colour code opening the run that contains `label`: the last SGR escape
 // before it in the raw (un-stripped) output.
 function colorOf(out, label) {
