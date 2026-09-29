@@ -8,7 +8,7 @@ const { resolveStateDir } = require('../lib/state');
 const { dim, bold, green, yellow, red, colorByTier, SESSION_TIERS, BUDGET_TIERS } = require('../lib/color');
 const { readSummary } = require('../lib/cost-aggregate');
 const { sumPeriods } = require('../lib/periods');
-const { resolveTimezone } = require('../lib/timezone');
+const { resolveTimezone, ymd } = require('../lib/timezone');
 const { resolveBudget, resolveCostMultiplier } = require('../lib/budget');
 const { formatCompact } = require('../lib/format');
 
@@ -128,6 +128,10 @@ function getGitBranch(projectDir) {
   }
 }
 
+// Dollar amount for the burn rate and spend-limit chip: cents dropped at ≥$100.
+const usd = (v) => '$' + (v >= 100 ? Math.round(v) : v.toFixed(2));
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
 /**
  * Format session cost as [prefix]$X.XX with absolute-USD color thresholds,
  * optionally followed by a dim burn rate ($/h). The rate = cost ÷ elapsed hours,
@@ -139,9 +143,7 @@ function formatCost(totalCost, prefix = '', durationMs = 0) {
   if (totalCost == null || totalCost <= 0) return '';
   const chip = colorByTier(totalCost, SESSION_TIERS)(prefix + '$' + totalCost.toFixed(2));
   if (durationMs >= 60000) {
-    const rate = totalCost / (durationMs / 3600000);
-    const r = rate >= 100 ? Math.round(rate) : rate.toFixed(2);
-    return `${chip} ${dim('$' + r + '/h')}`;
+    return `${chip} ${dim(usd(totalCost / (durationMs / 3600000)) + '/h')}`;
   }
   return chip;
 }
@@ -174,19 +176,18 @@ function formatDuration(ms, icon) {
  * sends only used_percentage/resets_at). Reset date in STATUSLINE_TIMEZONE.
  * Colour by % used: dim <80, yellow ≥80, red ≥100.
  */
-function formatSpendLimit(sl, icons, tz) {
+function formatSpendLimit(sl, icons, env) {
   if (!sl) return '';
-  const usd = (v) => '$' + (v >= 100 ? Math.round(v) : v.toFixed(2));
-  const hasUsd = typeof sl.used_usd === 'number' && sl.limit_usd > 0;
-  const pct = sl.used_percentage ?? (hasUsd ? (sl.used_usd / sl.limit_usd) * 100 : null);
+  const pct = sl.used_percentage;
   let body;
-  if (hasUsd) body = `${usd(sl.used_usd)}/${usd(sl.limit_usd)}${sl.period ? ` ${sl.period}` : ''}`;
-  else if (pct != null) body = `${Math.round(pct)}%`;
+  if (typeof sl.used_usd === 'number' && sl.limit_usd > 0) {
+    body = `${usd(sl.used_usd)}/${usd(sl.limit_usd)}${sl.period ? ` ${sl.period}` : ''}`;
+  } else if (pct != null) body = `${Math.round(pct)}%`;
   else return '';
   if (sl.resets_at > 0) {
-    const date = new Intl.DateTimeFormat('en-US', { timeZone: tz, month: 'short', day: 'numeric' })
-      .format(new Date(sl.resets_at * 1000));
-    body += ` ${icons.rreset} ${date}`;
+    // ymd + static month names: no Intl (ICU init ~15ms) when the tz is unset.
+    const { m, d } = ymd(new Date(sl.resets_at * 1000), resolveTimezone(env));
+    body += ` ${icons.rreset} ${MONTHS[m - 1]} ${d}`;
   }
   const color = pct >= 100 ? red : pct >= 80 ? yellow : dim;
   return color(`${icons.rspend} ${body}`);
@@ -417,11 +418,8 @@ function render(data, env) {
         : null;
     const segEnabled = (n) => !allowed || allowed.includes(n);
     if (segEnabled('cost')) {
-      // A gateway spend limit is the real monthly budget — use it over the env.
-      // Only a monthly period: a weekly limit would skew the d/w/m derivation.
-      const limitUsd = /month/i.test(spendLimit?.period || '') ? spendLimit.limit_usd : undefined;
       const { budgetOptedOut, monthly: monthlyBudget, daily: dailyLimit, weekly: weeklyLimit } =
-        resolveBudget(env.STATUSLINE_MONTHLY_BUDGET, limitUsd);
+        resolveBudget(env.STATUSLINE_MONTHLY_BUDGET, spendLimit);
       const summary = readSummary(stateDir);
       const perSession = (summary && summary.perSession) || {};
       const cachedSession = (session && perSession[session] && perSession[session].total) || 0;
@@ -470,12 +468,14 @@ function render(data, env) {
     if (addedParts.length > 0) add('lines', `${icons.lines} ${addedParts.join(' ')}`);
 
     // Rate limits (Claude.ai Pro/Max 5h/7d + gateway spend limit) — merged into one segment
-    const rateParts = [];
-    if (rateLimitFiveHour != null) rateParts.push(dim(`${icons.r5h} ${Math.round(rateLimitFiveHour)}%`));
-    if (rateLimitSevenDay != null) rateParts.push(dim(`${icons.r7d} ${Math.round(rateLimitSevenDay)}%`));
-    const spendStr = formatSpendLimit(spendLimit, icons, resolveTimezone(env));
-    if (spendStr) rateParts.push(spendStr);
-    if (rateParts.length) add('ratelimits', rateParts.join(dim(` ${icons.rsep} `)));
+    if (segEnabled('ratelimits')) {
+      const rateParts = [];
+      if (rateLimitFiveHour != null) rateParts.push(dim(`${icons.r5h} ${Math.round(rateLimitFiveHour)}%`));
+      if (rateLimitSevenDay != null) rateParts.push(dim(`${icons.r7d} ${Math.round(rateLimitSevenDay)}%`));
+      const spendStr = formatSpendLimit(spendLimit, icons, env);
+      if (spendStr) rateParts.push(spendStr);
+      if (rateParts.length) add('ratelimits', rateParts.join(dim(` ${icons.rsep} `)));
+    }
 
     // Context bar (with input token count appended)
     const ctxBar = buildContextBar(usedPct, inputTokens, icons);

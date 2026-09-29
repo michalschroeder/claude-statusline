@@ -393,6 +393,8 @@ function main() {
   // Period totals + budget (footer in text mode, top-level fields in JSON mode).
   const budget = resolveBudget(process.env.STATUSLINE_MONTHLY_BUDGET);
   const per = sumPeriods(agg.perSession, new Date());
+  // No payload here, so no gateway spend_limit: the budget stays env → $1000 even
+  // where the renderer colours against limit_usd.
   // Display-time calibration (STATUSLINE_COST_MULTIPLIER), matching the renderer so
   // the two surfaces can't disagree. Rendered rows + footer only — the --analyze
   // JSON and the detail view stay on the raw API-equivalent basis, since those are

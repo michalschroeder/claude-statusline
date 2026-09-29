@@ -28,15 +28,21 @@ test('garbage / negative → 1000 fallback', () => {
   assert.equal(resolveBudget('500abc').monthly, 1000);
 });
 
-test('limitUsd (gateway spend limit) wins over env and default', () => {
-  assert.equal(resolveBudget('300', 500).monthly, 500);
-  assert.equal(resolveBudget(undefined, 500).monthly, 500);
+test('monthly spend_limit.limit_usd wins over env and default', () => {
+  const sl = (limit_usd, period = 'this month') => ({ limit_usd, period });
+  assert.equal(resolveBudget('300', sl(500)).monthly, 500);
+  assert.equal(resolveBudget(undefined, sl(500)).monthly, 500);
   assert.equal(resolveBudget('300', undefined).monthly, 300);
-  assert.equal(resolveBudget('300', 0).monthly, 300);
+  assert.equal(resolveBudget('300', sl(0)).monthly, 300);
 });
 
-test('limitUsd does not cancel the env 0 opt-out', () => {
-  assert.equal(resolveBudget('0', 500).budgetOptedOut, true);
+test('non-monthly spend_limit period is ignored', () => {
+  assert.equal(resolveBudget('300', { limit_usd: 500, period: 'this week' }).monthly, 300);
+  assert.equal(resolveBudget('300', { limit_usd: 500 }).monthly, 300);
+});
+
+test('spend_limit does not cancel the env 0 opt-out', () => {
+  assert.equal(resolveBudget('0', { limit_usd: 500, period: 'this month' }).budgetOptedOut, true);
 });
 
 // --- STATUSLINE_COST_MULTIPLIER: display-time calibration to a plan's meter ---

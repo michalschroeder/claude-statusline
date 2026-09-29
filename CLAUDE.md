@@ -187,7 +187,7 @@ Each segment is emitted only when its source field is present/non-empty. Separat
 | cost | `cost.total_cost_usd` + `cost-summary.json` | s/d/w/m chip group joined by dim `·`. `s` = this session's recomputed spend (cached recomputed total + live delta), absolute USD thresholds (green <$5, yellow <$10, orange <$20, red ≥$20), omitted when ≤0. Once the session has run ≥60s a dim burn rate `$X/h` (= `total_cost_usd ÷ elapsed hours`, ≥$100/h rounded to integer) is appended to `s` — no state, straight from the payload. `d`/`w`/`m` = today / this week / this month = **all sessions' recomputed, day-bucketed spend (from `cost-summary.json`) + the current session's live delta (`max(0, live − cached total)`) folded into the current windows**, budget-relative coloring via `STATUSLINE_MONTHLY_BUDGET`. d/w/m hidden when `STATUSLINE_MONTHLY_BUDGET=0` |
 | duration | `cost.total_duration_ms` | `󰔛`; `Ns` / `Nm` / `Nh Nm` |
 | lines | `cost.total_lines_added` / `total_lines_removed` | `󰷈 +A -R` (green/red) |
-| rate limits (`ratelimits`) | `rate_limits.five_hour.used_percentage`, `rate_limits.seven_day.used_percentage`, `rate_limits.spend_limit` | `󰔚 5h N%`, `󰃭 7d N%`, `󰖄 $used/$limit <period> ↻ Mon D`, joined with `·`. Spend chip (`formatSpendLimit`) = Claude apps gateway spend limit only (a direct claude.ai login never gets the field, even when `/usage` shows it): `used_usd`/`limit_usd`/`period` need CC ≥2.1.284, else `󰖄 N%` from `used_percentage` (2.1.251+); dollars ≥$100 rounded; reset date from `resets_at` in `STATUSLINE_TIMEZONE`; dim <80%, yellow ≥80, red ≥100; 5h/7d stay dim |
+| rate limits (`ratelimits`) | `rate_limits.five_hour.used_percentage`, `rate_limits.seven_day.used_percentage`, `rate_limits.spend_limit` | `󰔚 5h N%`, `󰃭 7d N%`, `󰖄 $used/$limit <period> ↻ Mon D` (`N%` form pre-2.1.284), joined with `·`. Spend chip = Claude apps gateway only (never on a direct claude.ai login); dim <80%, yellow ≥80, red ≥100 — details in `formatSpendLimit` |
 | context | `context_window.used_percentage` (falls back to `100 − remaining_percentage`), `context_window.total_input_tokens` | 10-cell block bar with per-cell coloring (256-color "ramp B": forest → olive → amber → red), dim grey empty cells, `N%` of panic threshold, followed by dim compact input tokens `Xk󰁝`. Replaces the prior standalone `tokens` segment — single segment name `context` |
 
 ### Context bar — per-cell palette and thresholds
@@ -224,8 +224,8 @@ So a 200k model fills cell N at `20k · N` tokens; a 1M model fills cell N at `1
 `STATUSLINE_MONTHLY_BUDGET` env var sets the budget for the cost segment's d/w/m budget-relative
 coloring. Unset → $1000/mo default; `0` → hide d/w/m chips; a number → that monthly budget. In the
 renderer a gateway `rate_limits.spend_limit.limit_usd` wins over the env when its `period` mentions
-`month` (a weekly limit would skew the d/w/m derivation); the env `0` opt-out still hides d/w/m. The
-viewer has no payload, so it stays on env → $1000. Derived:
+`month` (`resolveBudget(raw, spendLimit)`; a weekly limit would skew the d/w/m derivation); the env
+`0` opt-out still hides d/w/m. The viewer has no payload, so it stays on env → $1000. Derived:
 daily = monthly/30, weekly = monthly×7/30. Resolved by `lib/budget.js` (`resolveBudget`).
 
 `STATUSLINE_COST_MULTIPLIER` scales the **displayed** cost figures (the `s`/`d`/`w`/`m` chips and

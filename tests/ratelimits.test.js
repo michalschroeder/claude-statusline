@@ -39,9 +39,7 @@ test('spend limit: appended after 5h/7d with the rsep', async () => {
 });
 
 test('spend limit: absent → no chip, 5h/7d unchanged', async () => {
-  const i = baseInput();
-  i.rate_limits = { five_hour: { used_percentage: 12 } };
-  const out = await run(i);
+  const out = await run(withSpend(undefined, { five_hour: { used_percentage: 12 } }));
   assert.match(out, /󰔚 5h 12%/);
   assert.doesNotMatch(out, /󰖄/);
 });

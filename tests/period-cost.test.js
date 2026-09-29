@@ -149,10 +149,11 @@ function withSpendLimit(spend_limit) {
   i.rate_limits = { spend_limit };
   return i;
 }
+const month250 = () => stateWithCache({ other: { days: { [todayKey()]: 250 }, total: 250 } });
 
 test('limit_usd (monthly) overrides STATUSLINE_MONTHLY_BUDGET for colouring', async () => {
   // month $250: of env $300 = 83% (orange); of limit_usd $260 = 96% (red).
-  const xdg = stateWithCache({ other: { days: { [todayKey()]: 250 }, total: 250 } });
+  const xdg = month250();
   const env = { XDG_STATE_HOME: xdg, STATUSLINE_MONTHLY_BUDGET: '300' };
   const envOnly = await runRaw(withSpendLimit(undefined), env);
   const gw = await runRaw(withSpendLimit({ used_usd: 250, limit_usd: 260, period: 'this month' }), env);
@@ -161,14 +162,14 @@ test('limit_usd (monthly) overrides STATUSLINE_MONTHLY_BUDGET for colouring', as
 });
 
 test('limit_usd for a non-monthly period is ignored for the budget', async () => {
-  const xdg = stateWithCache({ other: { days: { [todayKey()]: 250 }, total: 250 } });
+  const xdg = month250();
   const out = await runRaw(withSpendLimit({ used_usd: 250, limit_usd: 260, period: 'this week' }),
     { XDG_STATE_HOME: xdg, STATUSLINE_MONTHLY_BUDGET: '300' });
   assert.equal(colorOf(out, 'm $250.00'), '38;5;208');
 });
 
 test('STATUSLINE_MONTHLY_BUDGET=0 still hides d/w/m when limit_usd is present', async () => {
-  const xdg = stateWithCache({ other: { days: { [todayKey()]: 250 }, total: 250 } });
+  const xdg = month250();
   const out = await run(withSpendLimit({ used_usd: 250, limit_usd: 260, period: 'this month' }),
     { XDG_STATE_HOME: xdg, STATUSLINE_MONTHLY_BUDGET: '0' });
   assert.doesNotMatch(out, /m \$250/);
