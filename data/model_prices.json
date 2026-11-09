@@ -17,6 +17,16 @@
       "us": 1.1
     }
   },
+  "claude-fable-5-2": {
+    "input_cost_per_token": 0.000008,
+    "output_cost_per_token": 0.00004,
+    "cache_creation_input_token_cost": 0.00001,
+    "cache_read_input_token_cost": 0.0000002,
+    "provider_specific_entry": {
+      "us": 1.1,
+      "fast": 2
+    }
+  },
   "claude-mythos-5": {
     "input_cost_per_token": 0.00001,
     "output_cost_per_token": 0.00005,
